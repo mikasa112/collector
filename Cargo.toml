@@ -6,6 +6,8 @@ members = ["collector-cmd", "collector-core", "protocol"]
 [workspace.dependencies]
 # 序列化
 serde = { version = "1.0.217", features = ["derive"] }
+# 栈上数组
+smallvec = "1.15.1"
 # 错误处理
 thiserror = "2.0.11"
 # 错误处理

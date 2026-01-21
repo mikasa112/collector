@@ -9,3 +9,4 @@ serde = { workspace = true }
 tokio = { workspace = true }
 thiserror = { workspace = true }
 async-trait = { workspace = true }
+smallvec = { workspace = true }
