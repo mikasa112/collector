@@ -1,0 +1,10 @@
+[package]
+name = "collector-cmd"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+# 命令行框架
+clap = { version = "4.5.28", features = ["derive"] }
+mimalloc = {workspace = true}
+tokio = { workspace = true }
