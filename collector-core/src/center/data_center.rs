@@ -5,8 +5,8 @@ use std::collections::HashMap;
 use crate::{
     center::{Center, Error},
     core::{
-        Identifiable,
         point::{Point, Val},
+        Identifiable,
     },
 };
 
@@ -109,7 +109,7 @@ mod test {
     struct TestDev {}
     impl Identifiable for TestDev {
         fn id(&self) -> String {
-            return "BCU".to_string();
+            "BCU".to_string()
         }
     }
 
