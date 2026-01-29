@@ -1,5 +1,10 @@
-use crate::core::Identifiable;
-use crate::core::point::Point;
+use std::sync::OnceLock;
+
+use crate::{
+    center::data_center::{DataCenter, Entry},
+    core::point::Point,
+    dev::Identifiable,
+};
 
 pub mod data_center;
 
@@ -34,4 +39,10 @@ impl<T> From<tokio::sync::mpsc::error::SendError<Vec<T>>> for Error {
     fn from(value: tokio::sync::mpsc::error::SendError<Vec<T>>) -> Self {
         Error::SendError(value.to_string())
     }
+}
+
+static CENTER: OnceLock<DataCenter<Entry>> = OnceLock::new();
+
+pub fn global_center() -> &'static DataCenter<Entry> {
+    CENTER.get_or_init(|| DataCenter::new(32))
 }

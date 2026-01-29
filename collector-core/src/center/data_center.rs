@@ -1,24 +1,21 @@
 use dashmap::DashMap;
 use serde::Serialize;
-use std::collections::HashMap;
 
 use crate::{
     center::{Center, Error},
-    core::{
-        point::{Point, Val},
-        Identifiable,
-    },
+    core::point::{Point, Val},
+    dev::Identifiable,
 };
 
-#[derive(Debug, Serialize, Clone, Copy)]
+#[derive(Debug, Serialize, PartialEq, Clone)]
 pub struct Entry {
-    pub key: &'static str,
+    pub key: String,
     pub value: Val,
 }
 
 impl Point for Entry {
-    fn key(&self) -> &'static str {
-        self.key
+    fn key(&self) -> String {
+        self.key.clone()
     }
 
     fn value(&self) -> Val {
@@ -31,7 +28,7 @@ where
     T: Point,
 {
     down_chan: DashMap<String, tokio::sync::mpsc::Sender<Vec<T>>>,
-    latest: DashMap<String, HashMap<&'static str, T>>,
+    latest: DashMap<String, DashMap<String, T>>,
 }
 
 impl<T> DataCenter<T>
@@ -53,9 +50,20 @@ where
 {
     fn ingest(&self, dev: &impl Identifiable, msg: impl IntoIterator<Item = T>) {
         let dev_id = dev.id();
-        let mut points = self.latest.entry(dev_id).or_default();
+        let points = self.latest.entry(dev_id).or_default();
         for p in msg {
-            points.insert(p.key(), p);
+            let key = p.key();
+            let new_val = p.value();
+            let need_update = points
+                .get(&key)
+                .map(|old| {
+                    let old_t = old.value();
+                    old_t.value() != new_val
+                })
+                .unwrap_or(true);
+            if need_update {
+                points.insert(key, p);
+            }
         }
     }
 
@@ -72,13 +80,13 @@ where
 
     fn snapshot(&self, dev: &impl Identifiable) -> Option<Vec<T>> {
         let guard = self.latest.get(&dev.id())?;
-        let iter = guard.values().copied();
+        let iter = guard.iter().map(|v| v.value().clone());
         Some(iter.collect())
     }
 
     fn read(&self, dev: &impl Identifiable, key: &str) -> Option<T> {
         let guard = self.latest.get(&dev.id())?;
-        guard.get(key).copied()
+        guard.get(key).map(|v| v.value().clone())
     }
 
     fn attach(
@@ -122,7 +130,7 @@ mod test {
         center.ingest(
             &dev,
             vec![Entry {
-                key: "SOH",
+                key: String::from("SOH"),
                 value: Val::F32(100.0),
             }],
         );
@@ -143,7 +151,7 @@ mod test {
             .dispatch(
                 &dev,
                 vec![Entry {
-                    key: "SOC",
+                    key: String::from("SOC"),
                     value: Val::F32(84.3),
                 }],
             )
@@ -151,7 +159,7 @@ mod test {
         center.ingest(
             &dev,
             vec![Entry {
-                key: "SOH",
+                key: String::from("SOH"),
                 value: Val::F32(100.0),
             }],
         );
