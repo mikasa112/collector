@@ -1,3 +1,4 @@
+pub mod can_dev;
 pub mod manager;
 pub mod modbus_dev;
 
@@ -19,9 +20,6 @@ pub enum LifecycleState {
 pub trait Lifecycle {
     async fn start(&self) -> Result<(), DeviceError>;
     async fn stop(&self) -> Result<(), DeviceError>;
-    async fn connect(&self) -> Result<(), DeviceError>;
-    async fn disconnect(&self) -> Result<(), DeviceError>;
-    async fn reconnect(&self) -> Result<(), DeviceError>;
     fn state(&self) -> LifecycleState;
 }
 

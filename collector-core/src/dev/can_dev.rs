@@ -1,17 +1,11 @@
-use crate::dev::{DeviceError, Identifiable, Lifecycle, LifecycleState};
+use crate::dev::{DeviceError, Lifecycle, LifecycleState};
 
-pub struct ModbusDev {}
+pub struct CanDev {}
 
-impl ModbusDev {}
-
-impl Identifiable for ModbusDev {
-    fn id(&self) -> String {
-        unimplemented!()
-    }
-}
+impl CanDev {}
 
 #[async_trait::async_trait]
-impl Lifecycle for ModbusDev {
+impl Lifecycle for CanDev {
     async fn start(&self) -> Result<(), DeviceError> {
         unimplemented!()
     }

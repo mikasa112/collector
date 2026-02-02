@@ -1,0 +1,162 @@
+﻿{
+  "productType": "EMU",
+  "project": "康明斯",
+  "ip": "127.0.0.1",
+  "port": 8083,
+  "devices": {
+    "BCU": {
+      "id": "BCU 1",
+      "type": "BCU",
+      "desc": null,
+      "config": {
+        "type": "BCU",
+        "comType": "ModbusTCP",
+        "registerFile": null,
+        "interval": 1000,
+        "timeout": 500,
+        "ip": "127.0.0.1",
+        "port": 502,
+        "slave": 1,
+        "serialTty": null,
+        "baudRate": null,
+        "dataBits": null,
+        "parity": null,
+        "stopBits": null,
+        "interface": null,
+        "desc": null
+      }
+    },
+    "PCS": {
+      "id": "PCS",
+      "type": "PCS",
+      "desc": null,
+      "config": {
+        "type": "PCS",
+        "comType": "ModbusTCP",
+        "registerFile": null,
+        "interval": 1000,
+        "timeout": 500,
+        "ip": "127.0.0.1",
+        "port": 502,
+        "slave": 1,
+        "serialTty": null,
+        "baudRate": null,
+        "dataBits": null,
+        "parity": null,
+        "stopBits": null,
+        "interface": null,
+        "desc": null
+      }
+    },
+    "LiquidCool1": {
+      "id": "LiquidCool1",
+      "type": "LiquidCool",
+      "desc": null,
+      "config": {
+        "type": "LiquidCool",
+        "comType": "ModbusRTU",
+        "registerFile": null,
+        "interval": 1000,
+        "timeout": 500,
+        "ip": null,
+        "port": null,
+        "slave": 1,
+        "serialTty": "/dev/ttyXRUSB2",
+        "baudRate": 9600,
+        "dataBits": 8,
+        "parity": "N",
+        "stopBits": 1,
+        "interface": null,
+        "desc": null
+      }
+    },
+    "LiquidCool2": {
+      "id": "LiquidCool2",
+      "type": "LiquidCool",
+      "desc": null,
+      "config": {
+        "type": "LiquidCool",
+        "comType": "ModbusRTU",
+        "registerFile": null,
+        "interval": 1000,
+        "timeout": 500,
+        "ip": null,
+        "port": null,
+        "slave": 1,
+        "serialTty": "/dev/ttyXRUSB3",
+        "baudRate": 9600,
+        "dataBits": 8,
+        "parity": "N",
+        "stopBits": 1,
+        "interface": null,
+        "desc": null
+      }
+    },
+    "LiquidCool3": {
+      "id": "LiquidCool3",
+      "type": "LiquidCool",
+      "desc": null,
+      "config": {
+        "type": "LiquidCool",
+        "comType": "ModbusRTU",
+        "registerFile": null,
+        "interval": 1000,
+        "timeout": 500,
+        "ip": null,
+        "port": null,
+        "slave": 1,
+        "serialTty": "/dev/ttyXRUSB1",
+        "baudRate": 9600,
+        "dataBits": 8,
+        "parity": "N",
+        "stopBits": 1,
+        "interface": null,
+        "desc": null
+      }
+    },
+    "Firefighting": {
+      "id": "FireFirefighting",
+      "type": "Firefighting",
+      "desc": null,
+      "config": {
+        "type": "Firefighting",
+        "comType": "ModbusRTU",
+        "registerFile": null,
+        "interval": 1000,
+        "timeout": 500,
+        "ip": null,
+        "port": null,
+        "slave": 1,
+        "serialTty": "/dev/ttyXRUSB4",
+        "baudRate": 9600,
+        "dataBits": 8,
+        "parity": "N",
+        "stopBits": 1,
+        "interface": null,
+        "desc": null
+      }
+    },
+    "Dehumidifier": {
+      "id": "Dehumidifier",
+      "type": "Dehumidifier",
+      "desc": null,
+      "config": {
+        "type": "Dehumidifier",
+        "comType": "ModbusRTU",
+        "registerFile": null,
+        "interval": 1000,
+        "timeout": 500,
+        "ip": null,
+        "port": null,
+        "slave": 1,
+        "serialTty": "/dev/ttyXRUSB5",
+        "baudRate": 9600,
+        "dataBits": 8,
+        "parity": "N",
+        "stopBits": 1,
+        "interface": null,
+        "desc": null
+      }
+    }
+  }
+}
