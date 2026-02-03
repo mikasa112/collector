@@ -33,7 +33,7 @@
       "config": {
         "type": "PCS",
         "comType": "ModbusTCP",
-        "registerFile": null,
+        "registerFile": "./config/PCS_450.xlsx",
         "interval": 1000,
         "timeout": 500,
         "ip": "127.0.0.1",

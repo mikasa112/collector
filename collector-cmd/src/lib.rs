@@ -7,6 +7,8 @@ use tracing_subscriber::fmt::format::FmtSpan;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::{EnvFilter, Layer, Registry, fmt};
 
+use crate::config::modbus_conf::{ModbusConfig, ModbusConfigs};
+
 pub mod config;
 
 pub fn init_tracing() -> tracing_appender::non_blocking::WorkerGuard {
@@ -46,7 +48,17 @@ struct Args {
 pub async fn cmd() {
     let args = Args::parse();
     match config::ConfigCenter::new(args.config).await {
-        Ok(config) => {}
+        Ok(mut config) => config
+            .project
+            .devices
+            .iter_mut()
+            .filter(|it| it.0 == "PCS")
+            .for_each(|it| {
+                if let Some(take) = it.1.config.register_file.take() {
+                    let config = ModbusConfigs::new(take).unwrap();
+                    println!("{:?}", config.yc);
+                }
+            }),
         Err(err) => {
             error!("{}", err)
         }
