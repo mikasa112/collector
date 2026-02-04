@@ -46,7 +46,9 @@ struct Args {
 pub async fn cmd() {
     let args = Args::parse();
     match config::Configuration::new(args.config).await {
-        Ok(p) => {}
+        Ok(mut p) => {
+            p.load_device_configs().await;
+        }
         Err(e) => {
             error!("{}", e);
         }
