@@ -271,12 +271,14 @@ name = "collector-core"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "collector-cmd",
  "dashmap",
  "serde",
  "smallvec",
  "thiserror",
  "tokio",
  "tokio-modbus",
+ "tokio-serial",
 ]
 
 [[package]]

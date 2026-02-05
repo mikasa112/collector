@@ -1,8 +1,25 @@
+use crate::dev::dev_config::{ModbusRtuConfError, ModbusTcpConfError};
+
 pub mod can_dev;
+pub(crate) mod dev_config;
 pub mod manager;
 pub mod modbus_dev;
 
-pub enum DeviceError {}
+#[derive(Debug, thiserror::Error)]
+pub enum DeviceError {
+    #[error("无效的ID")]
+    InvalidId,
+    #[error("无效的通信类型")]
+    InvalidComType,
+    #[error("不支持的通信类型")]
+    UnSupportedComType,
+    #[error("Modbus TCP配置错误")]
+    ModbusTcpConfigError(#[from] ModbusTcpConfError),
+    #[error("Modbus RTU配置错误")]
+    ModbusRtuConfigError(#[from] ModbusRtuConfError),
+    #[error("找不到点位表")]
+    NotFoundConfigs,
+}
 
 pub trait Identifiable: Sync + Send {
     fn id(&self) -> String;

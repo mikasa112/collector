@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+collector-cmd = { path = "../collector-cmd" }
 dashmap = "6.1.0"
 serde = { workspace = true }
 tokio = { workspace = true }
@@ -11,3 +12,4 @@ thiserror = { workspace = true }
 async-trait = { workspace = true }
 smallvec = { workspace = true }
 tokio-modbus = { version = "0.16.1", features = ["rtu", "tcp"] }
+tokio-serial = "5.4.5"
