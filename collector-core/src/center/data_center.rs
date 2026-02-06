@@ -104,7 +104,7 @@ where
         }
     }
 
-    fn detach(&self, dev: impl Identifiable) {
+    fn detach(&self, dev: &impl Identifiable) {
         self.down_chan.remove(&dev.id());
     }
 }
@@ -169,6 +169,6 @@ mod test {
         let c = rx.recv().await;
         assert!(c.is_some());
         assert_eq!(c.unwrap()[0].value, Val::F32(84.3));
-        center.detach(dev);
+        center.detach(&dev);
     }
 }

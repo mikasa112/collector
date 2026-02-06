@@ -251,12 +251,10 @@ name = "collector-cmd"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "calamine",
  "clap",
+ "collector-core",
  "log",
  "mimalloc",
- "serde",
- "serde_json",
  "thiserror",
  "tokio",
  "tracing",
@@ -270,15 +268,18 @@ dependencies = [
 name = "collector-core"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "async-trait",
- "collector-cmd",
+ "calamine",
  "dashmap",
  "serde",
+ "serde_json",
  "smallvec",
  "thiserror",
  "tokio",
  "tokio-modbus",
  "tokio-serial",
+ "tracing",
 ]
 
 [[package]]

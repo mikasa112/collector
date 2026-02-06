@@ -1,6 +1,6 @@
 use std::net::IpAddr;
 
-use collector_cmd::config::DeviceConfig;
+use crate::config::DeviceConfig;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ModbusTcpConfError {

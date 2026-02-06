@@ -1,13 +1,12 @@
-use collector_cmd::config::Device;
-use collector_cmd::config::modbus_conf::ModbusConfigs;
-use tokio_modbus::{
-    Slave,
-    client::{rtu, tcp},
-};
-use tokio_serial::SerialStream;
+use crate::center::data_center::Entry;
+use crate::center::{Center, global_center};
+use crate::config::modbus_conf::ModbusConfigs;
+use crate::config::{self, Device};
+use tokio::sync::mpsc;
+use tracing::info;
 
 use crate::dev::{
-    DeviceError, Identifiable, Lifecycle, LifecycleState,
+    DeviceError, Executable, Identifiable, Lifecycle, LifecycleState,
     dev_config::{ModbusRtuConfig, ModbusTcpConfig},
 };
 
@@ -20,6 +19,8 @@ pub struct ModbusDev {
     pub id: String,
     pub protocol: Protocol,
     pub configs: ModbusConfigs,
+    pub tx: mpsc::Sender<Vec<Entry>>,
+    pub rx: mpsc::Receiver<Vec<Entry>>,
 }
 
 impl ModbusDev {
@@ -31,29 +32,33 @@ impl ModbusDev {
             return Err(DeviceError::InvalidComType);
         };
         let Some(configs) = dev.protocol_configs else {
-            return Err(DeviceError::NotFoundConfigs);
+            return Err(DeviceError::NotFoundConfigs(id));
         };
         let configs = match configs {
-            collector_cmd::config::ProtocolConfigs::Modbus(modbus_configs) => modbus_configs,
-            collector_cmd::config::ProtocolConfigs::None => {
-                return Err(DeviceError::NotFoundConfigs);
+            config::ProtocolConfigs::Modbus(modbus_configs) => modbus_configs,
+            config::ProtocolConfigs::None => {
+                return Err(DeviceError::NotFoundConfigs(id));
             }
         };
         let protocol = match com_type {
-            collector_cmd::config::ComType::ModbusTCP => {
+            config::ComType::ModbusTCP => {
                 let tcp_config = ModbusTcpConfig::try_from(dev.config)?;
                 Ok(Protocol::TCP(tcp_config))
             }
-            collector_cmd::config::ComType::ModbusRTU => {
+            config::ComType::ModbusRTU => {
                 let rtu_config = ModbusRtuConfig::try_from(dev.config)?;
                 Ok(Protocol::RTU(rtu_config))
             }
             _ => Err(DeviceError::UnSupportedComType),
         }?;
+        let (tx, rx) = tokio::sync::mpsc::channel::<Vec<Entry>>(16);
+        info!("加载{}配置成功!", id);
         Ok(ModbusDev {
             id,
             protocol,
             configs,
+            tx,
+            rx,
         })
     }
 }
@@ -67,9 +72,12 @@ impl Identifiable for ModbusDev {
 #[async_trait::async_trait]
 impl Lifecycle for ModbusDev {
     async fn start(&self) -> Result<(), DeviceError> {
+        let tx = self.tx.clone();
+        global_center().attach(self, tx);
         unimplemented!()
     }
     async fn stop(&self) -> Result<(), DeviceError> {
+        global_center().detach(self);
         unimplemented!()
     }
     fn state(&self) -> LifecycleState {
@@ -77,19 +85,4 @@ impl Lifecycle for ModbusDev {
     }
 }
 
-#[async_trait::async_trait]
-trait ModbusTransport {
-    async fn connect(&mut self) -> Result<(), DeviceError>;
-    async fn disconnect(&mut self);
-}
-
-fn rtu(config: ModbusRtuConfig) {
-    let builder = tokio_serial::new(config.serial_tty, config.baudrate);
-    let port = SerialStream::open(&builder).unwrap();
-    let mut ctx = rtu::attach_slave(port, Slave(config.slave));
-}
-
-async fn tcp(config: ModbusTcpConfig) {
-    let addr = format!("{}:{}", config.ip, config.port).parse().unwrap();
-    let mut ctx = tcp::connect_slave(addr, Slave(config.slave)).await.unwrap();
-}
+impl Executable for ModbusDev {}

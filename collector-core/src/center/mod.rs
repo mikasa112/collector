@@ -8,6 +8,8 @@ use crate::{
 
 pub mod data_center;
 
+pub type Sender<T> = tokio::sync::mpsc::Sender<Vec<T>>;
+
 #[async_trait::async_trait]
 pub trait Center<T>
 where
@@ -17,12 +19,8 @@ where
     async fn dispatch(&self, dev: &impl Identifiable, msg: Vec<T>) -> Result<(), Error>;
     fn snapshot(&self, dev: &impl Identifiable) -> Option<Vec<T>>;
     fn read(&self, dev: &impl Identifiable, key: &str) -> Option<T>;
-    fn attach(
-        &self,
-        dev: &impl Identifiable,
-        ch: tokio::sync::mpsc::Sender<Vec<T>>,
-    ) -> Result<(), Error>;
-    fn detach(&self, dev: impl Identifiable);
+    fn attach(&self, dev: &impl Identifiable, ch: Sender<T>) -> Result<(), Error>;
+    fn detach(&self, dev: &impl Identifiable);
 }
 
 #[derive(Debug, thiserror::Error)]

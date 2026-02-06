@@ -17,8 +17,8 @@ pub enum DeviceError {
     ModbusTcpConfigError(#[from] ModbusTcpConfError),
     #[error("Modbus RTU配置错误")]
     ModbusRtuConfigError(#[from] ModbusRtuConfError),
-    #[error("找不到点位表")]
-    NotFoundConfigs,
+    #[error("{0}找不到点位表")]
+    NotFoundConfigs(String),
 }
 
 pub trait Identifiable: Sync + Send {

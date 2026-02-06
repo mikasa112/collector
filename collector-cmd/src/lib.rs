@@ -1,4 +1,6 @@
 use clap::Parser;
+use collector_core::config;
+use collector_core::dev::manager::DevManager;
 use tracing::error;
 use tracing::level_filters::LevelFilter;
 use tracing_error::ErrorLayer;
@@ -6,8 +8,6 @@ use tracing_log::LogTracer;
 use tracing_subscriber::fmt::format::FmtSpan;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::{EnvFilter, Layer, Registry, fmt};
-
-pub mod config;
 
 pub fn init_tracing() -> tracing_appender::non_blocking::WorkerGuard {
     let _ = LogTracer::builder().init();
@@ -48,6 +48,7 @@ pub async fn cmd() {
     match config::Configuration::new(args.config).await {
         Ok(mut p) => {
             p.load_device_configs().await;
+            DevManager::new(p.project.devices);
         }
         Err(e) => {
             error!("{}", e);

@@ -4,9 +4,9 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+collector-core = { path = "../collector-core" }
 # 命令行框架
 clap = { version = "4.5.28", features = ["derive"] }
-calamine = "0.32.0"
 mimalloc = { workspace = true }
 tokio = { workspace = true }
 log = { workspace = true }
@@ -15,7 +15,5 @@ tracing = { workspace = true }
 tracing-appender = { workspace = true }
 tracing-log = { workspace = true }
 tracing-error = { workspace = true }
-serde = { workspace = true }
-serde_json = { workspace = true }
 thiserror = { workspace = true }
 anyhow = { workspace = true }
