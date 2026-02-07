@@ -9,7 +9,7 @@ impl Lifecycle for CanDev {
     fn init(&self) -> Result<(), DeviceError> {
         unimplemented!()
     }
-    async fn start(&self) -> Result<(), DeviceError> {
+    async fn start(&mut self) -> Result<(), DeviceError> {
         unimplemented!()
     }
     async fn stop(&self) -> Result<(), DeviceError> {
