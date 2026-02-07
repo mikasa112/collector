@@ -10,6 +10,7 @@ pub enum ModbusTcpConfError {
     InvalidIp(String),
 }
 
+#[derive(Clone)]
 pub struct ModbusTcpConfig {
     pub slave: u8,
     pub ip: String,
@@ -56,6 +57,7 @@ pub enum ModbusRtuConfError {
     ValueNotNone(String),
 }
 
+#[derive(Clone)]
 pub struct ModbusRtuConfig {
     pub slave: u8,
     pub serial_tty: String,

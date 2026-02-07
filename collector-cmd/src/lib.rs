@@ -1,8 +1,8 @@
 use clap::Parser;
 use collector_core::config;
 use collector_core::dev::manager::DevManager;
+use tracing::error;
 use tracing::level_filters::LevelFilter;
-use tracing::{error, info};
 use tracing_error::ErrorLayer;
 use tracing_log::LogTracer;
 use tracing_subscriber::fmt::format::FmtSpan;
