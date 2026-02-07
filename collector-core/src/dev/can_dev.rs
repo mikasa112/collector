@@ -6,6 +6,9 @@ impl CanDev {}
 
 #[async_trait::async_trait]
 impl Lifecycle for CanDev {
+    fn init(&self) -> Result<(), DeviceError> {
+        unimplemented!()
+    }
     async fn start(&self) -> Result<(), DeviceError> {
         unimplemented!()
     }

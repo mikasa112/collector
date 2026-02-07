@@ -1,5 +1,6 @@
 use std::{collections::HashMap, sync::Arc};
 
+use tokio::task::JoinSet;
 use tracing::error;
 
 use crate::config::{ComType, Device};
@@ -11,6 +12,7 @@ use crate::{
 
 pub struct DevManager {
     devices: Vec<Arc<dyn Executable>>,
+    tasks: JoinSet<()>,
 }
 
 impl DevManager {
@@ -29,22 +31,37 @@ impl DevManager {
                 }
             }
         }
-        DevManager { devices }
+        DevManager {
+            devices,
+            tasks: JoinSet::new(),
+        }
     }
 
     pub fn add_device(&mut self, device: Arc<dyn Executable>) {
         self.devices.push(device);
     }
 
-    pub async fn start_all(&self) {
+    pub async fn start_all(&mut self) {
         for dev in self.devices.iter() {
-            dev.start().await;
+            let dev_clone = Arc::clone(dev);
+            self.tasks.spawn(async move {
+                if let Err(err) = dev_clone.start().await {
+                    error!("{}", err);
+                }
+            });
         }
     }
 
-    pub async fn stop_all(&self) {
+    pub async fn stop_all(&mut self) {
         for dev in self.devices.iter() {
-            dev.stop().await;
+            if let Err(err) = dev.stop().await {
+                error!("{}", err);
+            }
+        }
+        while let Some(res) = self.tasks.join_next().await {
+            if let Err(err) = res {
+                error!("{}", err);
+            }
         }
     }
 }

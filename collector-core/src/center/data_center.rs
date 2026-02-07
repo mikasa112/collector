@@ -2,7 +2,7 @@ use dashmap::DashMap;
 use serde::Serialize;
 
 use crate::{
-    center::{Center, Error},
+    center::{Center, DataCenterError},
     core::point::{Point, Val},
     dev::Identifiable,
 };
@@ -67,12 +67,12 @@ where
         }
     }
 
-    async fn dispatch(&self, dev: &impl Identifiable, msg: Vec<T>) -> Result<(), Error> {
+    async fn dispatch(&self, dev: &impl Identifiable, msg: Vec<T>) -> Result<(), DataCenterError> {
         let sender = {
             let r = self
                 .down_chan
                 .get(dev.id().as_str())
-                .ok_or(Error::NotFoundDevError(dev.id()))?;
+                .ok_or(DataCenterError::NotFoundDevError(dev.id()))?;
             r.clone()
         };
         sender.send(msg).await.map_err(Into::into)
@@ -93,14 +93,14 @@ where
         &self,
         dev: &impl Identifiable,
         ch: tokio::sync::mpsc::Sender<Vec<T>>,
-    ) -> Result<(), Error> {
+    ) -> Result<(), DataCenterError> {
         use dashmap::mapref::entry::Entry as DashEntry; // 用于 entry API
         match self.down_chan.entry(dev.id()) {
             DashEntry::Vacant(v) => {
                 v.insert(ch);
                 Ok(())
             }
-            DashEntry::Occupied(_) => Err(Error::DevHasRegister(dev.id())),
+            DashEntry::Occupied(_) => Err(DataCenterError::DevHasRegister(dev.id())),
         }
     }
 

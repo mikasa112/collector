@@ -1,8 +1,8 @@
 use clap::Parser;
 use collector_core::config;
 use collector_core::dev::manager::DevManager;
-use tracing::error;
 use tracing::level_filters::LevelFilter;
+use tracing::{error, info};
 use tracing_error::ErrorLayer;
 use tracing_log::LogTracer;
 use tracing_subscriber::fmt::format::FmtSpan;
@@ -48,7 +48,12 @@ pub async fn cmd() {
     match config::Configuration::new(args.config).await {
         Ok(mut p) => {
             p.load_device_configs().await;
-            DevManager::new(p.project.devices);
+            let mut manager = DevManager::new(p.project.devices);
+            manager.start_all().await;
+            if let Err(err) = tokio::signal::ctrl_c().await {
+                error!("failed to listen for shutdown signal: {}", err);
+            }
+            manager.stop_all().await;
         }
         Err(e) => {
             error!("{}", e);

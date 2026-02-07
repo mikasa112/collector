@@ -71,15 +71,22 @@ impl Identifiable for ModbusDev {
 
 #[async_trait::async_trait]
 impl Lifecycle for ModbusDev {
-    async fn start(&self) -> Result<(), DeviceError> {
+    fn init(&self) -> Result<(), DeviceError> {
         let tx = self.tx.clone();
-        global_center().attach(self, tx);
-        unimplemented!()
+        global_center().attach(self, tx)?;
+        Ok(())
+    }
+
+    async fn start(&self) -> Result<(), DeviceError> {
+        info!("{}启动...", self.id);
+        Ok(())
     }
     async fn stop(&self) -> Result<(), DeviceError> {
         global_center().detach(self);
-        unimplemented!()
+        info!("{}已停止", self.id);
+        Ok(())
     }
+
     fn state(&self) -> LifecycleState {
         unimplemented!()
     }
