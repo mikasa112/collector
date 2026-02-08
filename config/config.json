@@ -37,7 +37,7 @@
         "interval": 1000,
         "timeout": 500,
         "ip": "127.0.0.1",
-        "port": 502,
+        "port": 33434,
         "slave": 1,
         "serialTty": null,
         "baudRate": null,
