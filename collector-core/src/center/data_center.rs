@@ -2,7 +2,7 @@ use dashmap::DashMap;
 use serde::Serialize;
 
 use crate::{
-    center::{Center, DataCenterError},
+    center::{Center, DataCenterError, Sender},
     core::point::{Point, Val},
     dev::Identifiable,
 };
@@ -48,7 +48,7 @@ impl<T> Center<T> for DataCenter<T>
 where
     T: Point,
 {
-    fn ingest(&self, dev: &impl Identifiable, msg: impl IntoIterator<Item = T>) {
+    fn ingest<D: Identifiable + ?Sized>(&self, dev: &D, msg: impl IntoIterator<Item = T>) {
         let dev_id = dev.id();
         let points = self.latest.entry(dev_id).or_default();
         for p in msg {
@@ -67,7 +67,11 @@ where
         }
     }
 
-    async fn dispatch(&self, dev: &impl Identifiable, msg: Vec<T>) -> Result<(), DataCenterError> {
+    async fn dispatch<D: Identifiable + ?Sized>(
+        &self,
+        dev: &D,
+        msg: Vec<T>,
+    ) -> Result<(), DataCenterError> {
         let sender = {
             let r = self
                 .down_chan
@@ -78,21 +82,21 @@ where
         sender.send(msg).await.map_err(Into::into)
     }
 
-    fn snapshot(&self, dev: &impl Identifiable) -> Option<Vec<T>> {
+    fn snapshot<D: Identifiable + ?Sized>(&self, dev: &D) -> Option<Vec<T>> {
         let guard = self.latest.get(&dev.id())?;
         let iter = guard.iter().map(|v| v.value().clone());
         Some(iter.collect())
     }
 
-    fn read(&self, dev: &impl Identifiable, key: &str) -> Option<T> {
+    fn read<D: Identifiable + ?Sized>(&self, dev: &D, key: &str) -> Option<T> {
         let guard = self.latest.get(&dev.id())?;
         guard.get(key).map(|v| v.value().clone())
     }
 
-    fn attach(
+    fn attach<D: Identifiable + ?Sized>(
         &self,
-        dev: &impl Identifiable,
-        ch: tokio::sync::mpsc::Sender<Vec<T>>,
+        dev: &D,
+        ch: Sender<T>,
     ) -> Result<(), DataCenterError> {
         use dashmap::mapref::entry::Entry as DashEntry; // 用于 entry API
         match self.down_chan.entry(dev.id()) {
@@ -104,7 +108,7 @@ where
         }
     }
 
-    fn detach(&self, dev: &impl Identifiable) {
+    fn detach<D: Identifiable + ?Sized>(&self, dev: &D) {
         self.down_chan.remove(&dev.id());
     }
 }

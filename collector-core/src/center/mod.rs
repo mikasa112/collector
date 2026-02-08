@@ -15,12 +15,20 @@ pub trait Center<T>
 where
     T: Point + Send + Sync,
 {
-    fn ingest(&self, dev: &impl Identifiable, msg: impl IntoIterator<Item = T>);
-    async fn dispatch(&self, dev: &impl Identifiable, msg: Vec<T>) -> Result<(), DataCenterError>;
-    fn snapshot(&self, dev: &impl Identifiable) -> Option<Vec<T>>;
-    fn read(&self, dev: &impl Identifiable, key: &str) -> Option<T>;
-    fn attach(&self, dev: &impl Identifiable, ch: Sender<T>) -> Result<(), DataCenterError>;
-    fn detach(&self, dev: &impl Identifiable);
+    fn ingest<D: Identifiable + ?Sized>(&self, dev: &D, msg: impl IntoIterator<Item = T>);
+    async fn dispatch<D: Identifiable + ?Sized>(
+        &self,
+        dev: &D,
+        msg: Vec<T>,
+    ) -> Result<(), DataCenterError>;
+    fn snapshot<D: Identifiable + ?Sized>(&self, dev: &D) -> Option<Vec<T>>;
+    fn read<D: Identifiable + ?Sized>(&self, dev: &D, key: &str) -> Option<T>;
+    fn attach<D: Identifiable + ?Sized>(
+        &self,
+        dev: &D,
+        ch: Sender<T>,
+    ) -> Result<(), DataCenterError>;
+    fn detach<D: Identifiable + ?Sized>(&self, dev: &D);
 }
 
 #[derive(Debug, thiserror::Error)]
