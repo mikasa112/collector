@@ -2,6 +2,8 @@ use std::net::AddrParseError;
 
 use tokio_modbus::{Error as ModbusError, ExceptionCode};
 
+use crate::dev::modbus_dev::block::BuildBlocksError;
+
 #[derive(Debug, thiserror::Error)]
 pub enum ModbusDevError {
     #[error("IP parse error: {0}")]
@@ -16,6 +18,8 @@ pub enum ModbusDevError {
     ModbusError(#[from] ModbusError),
     #[error("Modbus exception: {0:?}")]
     ModbusException(ExceptionCode),
+    #[error("Build blocks error: {0}")]
+    BlocksError(#[from] BuildBlocksError),
 }
 
 impl From<ExceptionCode> for ModbusDevError {

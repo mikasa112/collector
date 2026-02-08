@@ -25,7 +25,7 @@ pub struct ModbusDev {
     configs: ModbusConfigs,
     state: Arc<AtomicU8>,
     tx: mpsc::Sender<Vec<crate::center::data_center::Entry>>,
-    rx: mpsc::Receiver<Vec<crate::center::data_center::Entry>>,
+    _rx: mpsc::Receiver<Vec<crate::center::data_center::Entry>>,
     stop_tx: watch::Sender<bool>,
     stop_rx: watch::Receiver<bool>,
     task: Mutex<Option<JoinHandle<()>>>,
@@ -51,16 +51,16 @@ impl ModbusDev {
         let protocol = match com_type {
             config::ComType::ModbusTCP => {
                 let tcp_config = ModbusTcpConfig::try_from(dev.config)?;
-                Ok(Protocol::TCP(tcp_config))
+                Ok(Protocol::Tcp(tcp_config))
             }
             config::ComType::ModbusRTU => {
                 let rtu_config = ModbusRtuConfig::try_from(dev.config)?;
-                Ok(Protocol::RTU(rtu_config))
+                Ok(Protocol::Rtu(rtu_config))
             }
             _ => Err(DeviceError::UnSupportedComType),
         }?;
         let state = Arc::new(AtomicU8::new(LifecycleState::New as u8));
-        let (tx, rx) = tokio::sync::mpsc::channel::<Vec<crate::center::data_center::Entry>>(16);
+        let (tx, _rx) = tokio::sync::mpsc::channel::<Vec<crate::center::data_center::Entry>>(16);
         let (stop_tx, stop_rx) = watch::channel(false);
         info!("加载{}配置成功!", id);
         Ok(ModbusDev {
@@ -69,7 +69,7 @@ impl ModbusDev {
             state,
             configs,
             tx,
-            rx,
+            _rx,
             stop_tx,
             stop_rx,
             task: Mutex::new(None),
