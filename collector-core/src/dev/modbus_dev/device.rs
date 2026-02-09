@@ -107,11 +107,18 @@ impl Lifecycle for ModbusDev {
             return Ok(());
         }
         let (tx, rx) = tokio::sync::mpsc::channel::<Vec<crate::center::data_center::Entry>>(16);
-        match global_center().attach(self, tx) {
+        match global_center().attach(self, tx.clone()) {
             Ok(()) => {}
-            Err(DataCenterError::DevHasRegister(_)) => {}
+            Err(DataCenterError::DevHasRegister(_)) => {
+                global_center().detach(self);
+                if let Err(err) = global_center().attach(self, tx) {
+                    warn!("[{}] 重新注册数据中心失败: {}", self.id, err);
+                    return Ok(());
+                }
+            }
             Err(err) => {
                 warn!("[{}] 重新注册数据中心失败: {}", self.id, err);
+                return Ok(());
             }
         }
         let _ = self.stop_tx.send(false);

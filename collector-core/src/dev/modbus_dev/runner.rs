@@ -140,6 +140,7 @@ impl ModbusRunner {
                 msg = rx.recv() => {
                     let Some(entries) = msg else {
                         self.report_comm_status(0);
+                        store_state(&self.id, &self.state, LifecycleState::Stopped);
                         return;
                     };
                     let plan = WritePlan::build(entries, cfg_map, &self.id);
