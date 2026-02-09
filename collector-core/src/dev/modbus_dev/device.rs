@@ -2,7 +2,7 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicU8;
 use std::time::Duration;
 
-use tokio::sync::{Mutex, mpsc, watch};
+use tokio::sync::{Mutex, watch};
 use tokio::task::JoinHandle;
 use tokio::time;
 use tracing::{info, warn};
@@ -24,8 +24,6 @@ pub struct ModbusDev {
     protocol: Protocol,
     configs: ModbusConfigs,
     state: Arc<AtomicU8>,
-    tx: mpsc::Sender<Vec<crate::center::data_center::Entry>>,
-    _rx: mpsc::Receiver<Vec<crate::center::data_center::Entry>>,
     stop_tx: watch::Sender<bool>,
     stop_rx: watch::Receiver<bool>,
     task: Mutex<Option<JoinHandle<()>>>,
@@ -60,7 +58,6 @@ impl ModbusDev {
             _ => Err(DeviceError::UnSupportedComType),
         }?;
         let state = Arc::new(AtomicU8::new(LifecycleState::New as u8));
-        let (tx, _rx) = tokio::sync::mpsc::channel::<Vec<crate::center::data_center::Entry>>(16);
         let (stop_tx, stop_rx) = watch::channel(false);
         info!("加载{}配置成功!", id);
         Ok(ModbusDev {
@@ -68,8 +65,6 @@ impl ModbusDev {
             protocol,
             state,
             configs,
-            tx,
-            _rx,
             stop_tx,
             stop_rx,
             task: Mutex::new(None),
@@ -101,8 +96,6 @@ impl Lifecycle for ModbusDev {
         if !self.cas_state(LifecycleState::New, LifecycleState::Initializing) {
             return Ok(());
         }
-        let tx = self.tx.clone();
-        global_center().attach(self, tx)?;
         self.store_state(LifecycleState::Ready);
         Ok(())
     }
@@ -113,7 +106,7 @@ impl Lifecycle for ModbusDev {
         if !ok {
             return Ok(());
         }
-        let tx = self.tx.clone();
+        let (tx, rx) = tokio::sync::mpsc::channel::<Vec<crate::center::data_center::Entry>>(16);
         match global_center().attach(self, tx) {
             Ok(()) => {}
             Err(DataCenterError::DevHasRegister(_)) => {}
@@ -132,6 +125,7 @@ impl Lifecycle for ModbusDev {
             configs: self.configs.clone(),
             state: Arc::clone(&self.state),
             stop_rx: self.stop_rx.clone(),
+            rx,
         };
         let handle = tokio::spawn(async move {
             runner.run().await;

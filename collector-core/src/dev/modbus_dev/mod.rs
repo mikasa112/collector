@@ -1,6 +1,7 @@
 mod backoff;
 mod block;
 mod device;
+mod downlink;
 mod error;
 mod runner;
 mod state;

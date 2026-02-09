@@ -1,8 +1,9 @@
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::atomic::AtomicU8;
 use std::time::Duration;
 
-use tokio::sync::watch;
+use tokio::sync::{mpsc, watch};
 use tokio::time;
 use tokio_modbus::Slave;
 use tokio_modbus::client::{Context, rtu, tcp};
@@ -16,6 +17,7 @@ use crate::config::modbus_conf::{ModbusConfig, ModbusConfigs};
 use crate::core::point::Val;
 use crate::dev::modbus_dev::Protocol;
 use crate::dev::modbus_dev::block::Blocks;
+use crate::dev::modbus_dev::downlink::{WritePlan, apply_write_plan, build_cfg_map};
 use crate::dev::{Identifiable, LifecycleState};
 
 use super::backoff::Backoff;
@@ -28,6 +30,7 @@ pub(super) struct ModbusRunner {
     pub(super) configs: ModbusConfigs,
     pub(super) state: Arc<AtomicU8>,
     pub(super) stop_rx: watch::Receiver<bool>,
+    pub(super) rx: mpsc::Receiver<Vec<Entry>>,
 }
 
 impl Identifiable for ModbusRunner {
@@ -102,11 +105,17 @@ impl ModbusRunner {
         }
     }
 
-    async fn run_connected(&self, ctx: &mut Context, stop_rx: &mut watch::Receiver<bool>) {
+    async fn run_connected(
+        &mut self,
+        ctx: &mut Context,
+        stop_rx: &mut watch::Receiver<bool>,
+        cfg_map: &HashMap<String, ModbusConfig>,
+    ) {
         store_state(&self.id, &self.state, LifecycleState::Running);
         self.report_comm_status(1);
         let mut ticker = time::interval(self.poll_interval());
         loop {
+            let rx = &mut self.rx;
             tokio::select! {
                 _ = stop_rx.changed() => {
                     if Self::stop_requested(stop_rx) {
@@ -128,11 +137,24 @@ impl ModbusRunner {
                         }
                     }
                 }
+                msg = rx.recv() => {
+                    let Some(entries) = msg else {
+                        self.report_comm_status(0);
+                        return;
+                    };
+                    let plan = WritePlan::build(entries, &cfg_map, &self.id);
+                    if let Err(err) = apply_write_plan(ctx, plan).await {
+                        warn!("[{}] 下发失败, 准备重连: {}", self.id, err);
+                        self.report_comm_status(0);
+                        return;
+                    }
+                }
             }
         }
     }
 
-    pub(super) async fn run(&self) {
+    pub(super) async fn run(mut self) {
+        let cfg_map = build_cfg_map(&self.configs);
         let mut stop_rx = self.stop_rx.clone();
         let mut backoff = Backoff::new(Duration::from_millis(500), Duration::from_secs(10));
         loop {
@@ -148,7 +170,7 @@ impl ModbusRunner {
                     store_state(&self.id, &self.state, LifecycleState::Connected);
                     self.report_comm_status(1);
                     backoff.reset();
-                    self.run_connected(&mut ctx, &mut stop_rx).await;
+                    self.run_connected(&mut ctx, &mut stop_rx, &cfg_map).await;
                 }
                 Err(err) => {
                     store_state(&self.id, &self.state, LifecycleState::Failed);
