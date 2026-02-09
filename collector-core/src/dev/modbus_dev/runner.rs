@@ -142,7 +142,7 @@ impl ModbusRunner {
                         self.report_comm_status(0);
                         return;
                     };
-                    let plan = WritePlan::build(entries, &cfg_map, &self.id);
+                    let plan = WritePlan::build(entries, cfg_map, &self.id);
                     if let Err(err) = apply_write_plan(ctx, plan).await {
                         warn!("[{}] 下发失败, 准备重连: {}", self.id, err);
                         self.report_comm_status(0);

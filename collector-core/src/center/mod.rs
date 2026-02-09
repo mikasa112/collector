@@ -1,5 +1,7 @@
 use std::sync::OnceLock;
 
+use dashmap::DashMap;
+
 use crate::{
     center::data_center::{DataCenter, Entry},
     core::point::Point,
@@ -23,6 +25,14 @@ where
     ) -> Result<(), DataCenterError>;
     fn snapshot<D: Identifiable + ?Sized>(&self, dev: &D) -> Option<Vec<T>>;
     fn read<D: Identifiable + ?Sized>(&self, dev: &D, key: &str) -> Option<T>;
+    fn with_read<D, F, R>(&self, dev: &D, key: &str, f: F) -> Option<R>
+    where
+        D: Identifiable + ?Sized,
+        F: FnOnce(&T) -> R;
+    fn with_snapshot<D, F, R>(&self, dev: &D, f: F) -> Option<R>
+    where
+        D: Identifiable + ?Sized,
+        F: FnOnce(&DashMap<String, T>) -> R;
     fn attach<D: Identifiable + ?Sized>(
         &self,
         dev: &D,

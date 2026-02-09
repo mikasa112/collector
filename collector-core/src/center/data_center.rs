@@ -93,6 +93,25 @@ where
         guard.get(key).map(|v| v.value().clone())
     }
 
+    fn with_read<D, F, R>(&self, dev: &D, key: &str, f: F) -> Option<R>
+    where
+        D: Identifiable + ?Sized,
+        F: FnOnce(&T) -> R,
+    {
+        let guard = self.latest.get(&dev.id())?;
+        let point = guard.value().get(key)?;
+        Some(f(point.value()))
+    }
+
+    fn with_snapshot<D, F, R>(&self, dev: &D, f: F) -> Option<R>
+    where
+        D: Identifiable + ?Sized,
+        F: FnOnce(&DashMap<String, T>) -> R,
+    {
+        let guard = self.latest.get(&dev.id())?;
+        Some(f(guard.value()))
+    }
+
     fn attach<D: Identifiable + ?Sized>(
         &self,
         dev: &D,

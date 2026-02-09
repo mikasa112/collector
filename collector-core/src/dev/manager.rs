@@ -68,6 +68,16 @@ impl DevManager {
             }
         }
     }
+
+    pub async fn find_dev(&self, id: &str) -> Option<Arc<Mutex<dyn Executable>>> {
+        for dev in self.devices.iter() {
+            let dev_mutex = dev.lock().await;
+            if dev_mutex.id() == id {
+                return Some(dev.clone());
+            }
+        }
+        None
+    }
 }
 
 fn init_device(dev: Device, com_type: ComType) -> Result<Arc<Mutex<dyn Executable>>, DeviceError> {

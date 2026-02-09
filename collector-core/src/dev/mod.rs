@@ -32,6 +32,14 @@ pub trait Identifiable: Sync + Send {
     fn id(&self) -> String;
 }
 
+pub struct DevStr(String);
+
+impl Identifiable for DevStr {
+    fn id(&self) -> String {
+        self.0.clone()
+    }
+}
+
 #[repr(u8)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum LifecycleState {
