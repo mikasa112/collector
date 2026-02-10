@@ -282,7 +282,6 @@ mod tests {
             remarks: None,
             register_address,
             register_type,
-            quantity: 1,
             byte_order: None,
             scale: 1.0,
             offset: 0.0,

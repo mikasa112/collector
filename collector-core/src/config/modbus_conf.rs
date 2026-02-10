@@ -72,10 +72,10 @@ impl TryFrom<Option<&str>> for ByteOrder {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum RegisterType {
-    Coils,
-    DiscreteInputs,
-    HoldingRegisters,
-    InputRegisters,
+    Coils = 1,
+    DiscreteInputs = 2,
+    HoldingRegisters = 3,
+    InputRegisters = 4,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -151,14 +151,13 @@ pub(crate) fn build_configs(path: String) -> Result<ModbusConfigs, ModbusConfigs
 
 #[derive(Debug, Clone)]
 pub struct ModbusConfig {
-    pub id: u8,
+    pub id: u32,
     pub name: String,
     pub data_type: ModbusDataType,
     pub unit: Option<String>,
     pub remarks: Option<String>,
     pub register_address: u16,
     pub register_type: RegisterType,
-    pub quantity: usize,
     pub byte_order: Option<ByteOrder>,
     pub scale: f64,
     pub offset: f64,
@@ -166,12 +165,15 @@ pub struct ModbusConfig {
 
 impl ModbusConfig {
     fn build(row: &[Data]) -> Result<Self, anyhow::Error> {
-        if row.len() != 11 {
+        if row.len() != 10 {
             return Err(anyhow::Error::msg("行数据长度不正确"));
         }
         let id = row[0]
             .get_float()
-            .ok_or(anyhow::Error::msg("序号不能为空"))? as u8;
+            .ok_or(anyhow::Error::msg("序号不能为空"))? as u32;
+        if id >= (1 << 24) {
+            return Err(anyhow::Error::msg("序号(id)超出允许范围(0..2^24-1)"));
+        }
         let name = row[1]
             .get_string()
             .ok_or(anyhow::Error::msg("点位名称不能为空"))?
@@ -191,14 +193,11 @@ impl ModbusConfig {
                 .get_string()
                 .ok_or(anyhow::Error::msg("寄存器类型不能为空"))?,
         )?;
-        let quantity = row[7]
-            .get_float()
-            .ok_or(anyhow::Error::msg("数量不能为空"))? as usize;
-        let byte_order = ByteOrder::try_from(row[8].get_string()).ok();
-        let scale = row[9]
+        let byte_order = ByteOrder::try_from(row[7].get_string()).ok();
+        let scale = row[8]
             .get_float()
             .ok_or(anyhow::Error::msg("缩放不能为空"))?;
-        let offset = row[10]
+        let offset = row[9]
             .get_float()
             .ok_or(anyhow::Error::msg("偏移量不能为空"))?;
         Ok(ModbusConfig {
@@ -209,10 +208,14 @@ impl ModbusConfig {
             remarks,
             register_address,
             register_type,
-            quantity,
             byte_order,
             scale,
             offset,
         })
+    }
+
+    pub fn serial_num(&self) -> u64 {
+        let num = (self.register_type as u32) << 24 | self.id;
+        num as u64
     }
 }
