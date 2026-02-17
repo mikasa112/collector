@@ -1,6 +1,11 @@
+use std::time::Duration;
+
 use clap::Parser;
+use collector_core::center::{Center, global_center};
 use collector_core::config;
+use collector_core::dev::DevStr;
 use collector_core::dev::manager::DevManager;
+use tokio::time;
 use tracing::error;
 use tracing::level_filters::LevelFilter;
 use tracing_error::ErrorLayer;
@@ -50,6 +55,15 @@ pub async fn cmd() {
             p.load_device_configs().await;
             let mut manager = DevManager::new(p.project.devices);
             manager.start_all().await;
+            tokio::spawn(async move {
+                loop {
+                    time::sleep(Duration::from_millis(500)).await;
+                    let dev = DevStr(String::from("PCS"));
+                    global_center().with_snapshot(&dev, |it| {
+                        println!("{:?}", it);
+                    });
+                }
+            });
             if let Err(err) = tokio::signal::ctrl_c().await {
                 error!("failed to listen for shutdown signal: {}", err);
             }

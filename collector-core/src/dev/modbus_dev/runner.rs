@@ -11,10 +11,9 @@ use tokio_modbus::prelude::SlaveContext;
 use tokio_serial::{DataBits, Parity};
 use tracing::warn;
 
-use crate::center::data_center::Entry;
 use crate::center::{Center, global_center};
 use crate::config::modbus_conf::{ModbusConfig, ModbusConfigs};
-use crate::core::point::Val;
+use crate::core::point::{DataPoint, Val};
 use crate::dev::modbus_dev::Protocol;
 use crate::dev::modbus_dev::block::Blocks;
 use crate::dev::modbus_dev::downlink::{WritePlan, apply_write_plan, build_cfg_map};
@@ -30,7 +29,7 @@ pub(super) struct ModbusRunner {
     pub(super) configs: ModbusConfigs,
     pub(super) state: Arc<AtomicU8>,
     pub(super) stop_rx: watch::Receiver<bool>,
-    pub(super) rx: mpsc::Receiver<Vec<Entry>>,
+    pub(super) rx: mpsc::Receiver<Vec<DataPoint>>,
 }
 
 impl Identifiable for ModbusRunner {
@@ -43,8 +42,8 @@ impl ModbusRunner {
     fn report_comm_status(&self, v: u8) {
         global_center().ingest(
             self,
-            vec![Entry {
-                key: "COMM_STATUS".to_string(),
+            vec![DataPoint {
+                key: 0xFFFF,
                 value: Val::U8(v),
             }],
         );
@@ -109,7 +108,7 @@ impl ModbusRunner {
         &mut self,
         ctx: &mut Context,
         stop_rx: &mut watch::Receiver<bool>,
-        cfg_map: &HashMap<String, ModbusConfig>,
+        cfg_map: &HashMap<u64, ModbusConfig>,
     ) {
         store_state(&self.id, &self.state, LifecycleState::Running);
         self.report_comm_status(1);
@@ -197,14 +196,14 @@ impl ModbusRunner {
         }
     }
 
-    async fn read_all(&self, ctx: &mut Context) -> Result<Vec<Entry>, ModbusDevError> {
+    async fn read_all(&self, ctx: &mut Context) -> Result<Vec<DataPoint>, ModbusDevError> {
         let configs = self.configs.iter().collect::<Vec<&ModbusConfig>>();
         let mut blocks = Blocks::try_from(configs)?;
         let reads = blocks.request(ctx).await?;
         let parsed = blocks.parse(&reads);
         Ok(parsed
             .into_iter()
-            .map(|(key, value)| Entry { key, value })
+            .map(|(key, value)| DataPoint { key, value })
             .collect())
     }
 }

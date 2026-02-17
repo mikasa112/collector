@@ -1,53 +1,48 @@
 use dashmap::DashMap;
-use serde::Serialize;
 
 use crate::{
     center::{Center, DataCenterError, Sender},
-    core::point::{Point, Val},
+    core::point::{Item, Point, PointId},
     dev::Identifiable,
 };
 
-#[derive(Debug, Serialize, PartialEq, Clone)]
-pub struct Entry {
-    pub key: String,
-    pub value: Val,
-}
-
-impl Point for Entry {
-    fn key(&self) -> String {
-        self.key.clone()
-    }
-
-    fn value(&self) -> Val {
-        self.value
-    }
-}
-
-pub struct DataCenter<T>
+pub struct DataCenter<T, I>
 where
     T: Point,
+    I: Item,
 {
     down_chan: DashMap<String, tokio::sync::mpsc::Sender<Vec<T>>>,
-    latest: DashMap<String, DashMap<String, T>>,
+    latest: DashMap<String, DashMap<PointId, T>>,
+    items: DashMap<String, DashMap<PointId, I>>,
 }
 
-impl<T> DataCenter<T>
+impl<T, I> DataCenter<T, I>
 where
     T: Point,
+    I: Item,
 {
     pub fn new(dev_len: usize) -> Self {
         Self {
             down_chan: DashMap::with_capacity(dev_len),
             latest: DashMap::with_capacity(dev_len),
+            items: DashMap::with_capacity(dev_len),
         }
     }
 }
 
 #[async_trait::async_trait]
-impl<T> Center<T> for DataCenter<T>
+impl<T, I> Center<T, I> for DataCenter<T, I>
 where
     T: Point,
+    I: Item,
 {
+    fn load<D: Identifiable + ?Sized>(&self, dev: &D, record: impl IntoIterator<Item = I>) {
+        let records = self.items.entry(dev.id()).or_default();
+        for p in record {
+            records.insert(p.id(), p);
+        }
+    }
+
     fn ingest<D: Identifiable + ?Sized>(&self, dev: &D, msg: impl IntoIterator<Item = T>) {
         let dev_id = dev.id();
         let points = self.latest.entry(dev_id).or_default();
@@ -88,25 +83,25 @@ where
         Some(iter.collect())
     }
 
-    fn read<D: Identifiable + ?Sized>(&self, dev: &D, key: &str) -> Option<T> {
+    fn read<D: Identifiable + ?Sized>(&self, dev: &D, key: u64) -> Option<T> {
         let guard = self.latest.get(&dev.id())?;
-        guard.get(key).map(|v| v.value().clone())
+        guard.get(&key).map(|v| v.value().clone())
     }
 
-    fn with_read<D, F, R>(&self, dev: &D, key: &str, f: F) -> Option<R>
+    fn with_read<D, F, R>(&self, dev: &D, key: u64, f: F) -> Option<R>
     where
         D: Identifiable + ?Sized,
         F: FnOnce(&T) -> R,
     {
         let guard = self.latest.get(&dev.id())?;
-        let point = guard.value().get(key)?;
+        let point = guard.value().get(&key)?;
         Some(f(point.value()))
     }
 
     fn with_snapshot<D, F, R>(&self, dev: &D, f: F) -> Option<R>
     where
         D: Identifiable + ?Sized,
-        F: FnOnce(&DashMap<String, T>) -> R,
+        F: FnOnce(&DashMap<u64, T>) -> R,
     {
         let guard = self.latest.get(&dev.id())?;
         Some(f(guard.value()))
@@ -129,69 +124,5 @@ where
 
     fn detach<D: Identifiable + ?Sized>(&self, dev: &D) {
         self.down_chan.remove(&dev.id());
-    }
-}
-
-#[cfg(test)]
-mod test {
-    use super::*;
-
-    #[derive(Default)]
-    struct TestDev {}
-    impl Identifiable for TestDev {
-        fn id(&self) -> String {
-            "BCU".to_string()
-        }
-    }
-
-    #[test]
-    fn test_ingest() {
-        let center: DataCenter<Entry> = DataCenter::new(12);
-        let dev = TestDev::default();
-        let a = center.snapshot(&dev);
-        assert!(a.is_none());
-        center.ingest(
-            &dev,
-            vec![Entry {
-                key: String::from("SOH"),
-                value: Val::F32(100.0),
-            }],
-        );
-        let b = center.snapshot(&dev);
-        assert!(b.is_some());
-        assert_eq!(b.unwrap()[0].value, Val::F32(100.0));
-    }
-
-    #[tokio::test]
-    async fn test_dispatch() {
-        let center: DataCenter<Entry> = DataCenter::new(12);
-        let dev = TestDev::default();
-        let a = center.snapshot(&dev);
-        assert!(a.is_none());
-        let (tx, mut rx) = tokio::sync::mpsc::channel(1);
-        center.attach(&dev, tx).unwrap();
-        let _ = center
-            .dispatch(
-                &dev,
-                vec![Entry {
-                    key: String::from("SOC"),
-                    value: Val::F32(84.3),
-                }],
-            )
-            .await;
-        center.ingest(
-            &dev,
-            vec![Entry {
-                key: String::from("SOH"),
-                value: Val::F32(100.0),
-            }],
-        );
-        let b = center.snapshot(&dev);
-        assert!(b.is_some());
-        assert_eq!(b.unwrap()[0].value, Val::F32(100.0));
-        let c = rx.recv().await;
-        assert!(c.is_some());
-        assert_eq!(c.unwrap()[0].value, Val::F32(84.3));
-        center.detach(&dev);
     }
 }

@@ -10,6 +10,7 @@ use tracing::{info, warn};
 use crate::center::{Center, DataCenterError, global_center};
 use crate::config::modbus_conf::ModbusConfigs;
 use crate::config::{self, Device};
+use crate::core::point::{DataPoint, Record};
 use crate::dev::modbus_dev::Protocol;
 use crate::dev::{
     DeviceError, Executable, Identifiable, Lifecycle, LifecycleState,
@@ -97,6 +98,14 @@ impl Lifecycle for ModbusDev {
             return Ok(());
         }
         self.store_state(LifecycleState::Ready);
+        global_center().load(
+            self,
+            self.configs.iter().map(|it| Record {
+                id: it.id as u64,
+                name: it.name.clone(),
+                unit: it.unit.clone(),
+            }),
+        );
         Ok(())
     }
 
@@ -106,7 +115,7 @@ impl Lifecycle for ModbusDev {
         if !ok {
             return Ok(());
         }
-        let (tx, rx) = tokio::sync::mpsc::channel::<Vec<crate::center::data_center::Entry>>(16);
+        let (tx, rx) = tokio::sync::mpsc::channel::<Vec<DataPoint>>(16);
         match global_center().attach(self, tx.clone()) {
             Ok(()) => {}
             Err(DataCenterError::DevHasRegister(_)) => {

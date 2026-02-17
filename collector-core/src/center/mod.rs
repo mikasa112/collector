@@ -3,8 +3,8 @@ use std::sync::OnceLock;
 use dashmap::DashMap;
 
 use crate::{
-    center::data_center::{DataCenter, Entry},
-    core::point::Point,
+    center::data_center::DataCenter,
+    core::point::{DataPoint, Item, Point, Record},
     dev::Identifiable,
 };
 
@@ -13,9 +13,10 @@ pub mod data_center;
 pub type Sender<T> = tokio::sync::mpsc::Sender<Vec<T>>;
 
 #[async_trait::async_trait]
-pub trait Center<T>
+pub trait Center<T, I>
 where
     T: Point + Send + Sync,
+    I: Item,
 {
     fn ingest<D: Identifiable + ?Sized>(&self, dev: &D, msg: impl IntoIterator<Item = T>);
     async fn dispatch<D: Identifiable + ?Sized>(
@@ -24,21 +25,22 @@ where
         msg: Vec<T>,
     ) -> Result<(), DataCenterError>;
     fn snapshot<D: Identifiable + ?Sized>(&self, dev: &D) -> Option<Vec<T>>;
-    fn read<D: Identifiable + ?Sized>(&self, dev: &D, key: &str) -> Option<T>;
-    fn with_read<D, F, R>(&self, dev: &D, key: &str, f: F) -> Option<R>
+    fn read<D: Identifiable + ?Sized>(&self, dev: &D, key: u64) -> Option<T>;
+    fn with_read<D, F, R>(&self, dev: &D, key: u64, f: F) -> Option<R>
     where
         D: Identifiable + ?Sized,
         F: FnOnce(&T) -> R;
     fn with_snapshot<D, F, R>(&self, dev: &D, f: F) -> Option<R>
     where
         D: Identifiable + ?Sized,
-        F: FnOnce(&DashMap<String, T>) -> R;
+        F: FnOnce(&DashMap<u64, T>) -> R;
     fn attach<D: Identifiable + ?Sized>(
         &self,
         dev: &D,
         ch: Sender<T>,
     ) -> Result<(), DataCenterError>;
     fn detach<D: Identifiable + ?Sized>(&self, dev: &D);
+    fn load<D: Identifiable + ?Sized>(&self, dev: &D, record: impl IntoIterator<Item = I>);
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -57,8 +59,8 @@ impl<T> From<tokio::sync::mpsc::error::SendError<Vec<T>>> for DataCenterError {
     }
 }
 
-static CENTER: OnceLock<DataCenter<Entry>> = OnceLock::new();
+static CENTER: OnceLock<DataCenter<DataPoint, Record>> = OnceLock::new();
 
-pub fn global_center() -> &'static DataCenter<Entry> {
+pub fn global_center() -> &'static DataCenter<DataPoint, Record> {
     CENTER.get_or_init(|| DataCenter::new(32))
 }

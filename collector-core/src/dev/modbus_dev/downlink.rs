@@ -3,11 +3,10 @@ use std::collections::{BTreeMap, HashMap};
 use tokio_modbus::client::{Context, Writer};
 use tracing::warn;
 
-use crate::center::data_center::Entry;
 use crate::config::modbus_conf::{
     ByteOrder, ModbusConfig, ModbusConfigs, ModbusDataType, RegisterType,
 };
-use crate::core::point::Val;
+use crate::core::point::{DataPoint, Val};
 
 use super::error::ModbusDevError;
 
@@ -18,8 +17,8 @@ pub(super) struct WritePlan {
 
 impl WritePlan {
     pub(super) fn build(
-        entries: Vec<Entry>,
-        cfg_map: &HashMap<String, ModbusConfig>,
+        entries: Vec<DataPoint>,
+        cfg_map: &HashMap<u64, ModbusConfig>,
         dev_id: &str,
     ) -> Self {
         let mut coils: BTreeMap<u16, bool> = BTreeMap::new();
@@ -60,10 +59,10 @@ impl WritePlan {
     }
 }
 
-pub(super) fn build_cfg_map(configs: &ModbusConfigs) -> HashMap<String, ModbusConfig> {
+pub(super) fn build_cfg_map(configs: &ModbusConfigs) -> HashMap<u64, ModbusConfig> {
     let mut out = HashMap::new();
     for cfg in configs {
-        out.insert(cfg.name.clone(), cfg.clone());
+        out.insert(cfg.id as u64, cfg.clone());
     }
     out
 }

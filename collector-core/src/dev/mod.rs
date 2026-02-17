@@ -32,7 +32,7 @@ pub trait Identifiable: Sync + Send {
     fn id(&self) -> String;
 }
 
-pub struct DevStr(String);
+pub struct DevStr(pub String);
 
 impl Identifiable for DevStr {
     fn id(&self) -> String {

@@ -146,7 +146,7 @@ impl Blocks<'_> {
         Ok(reads)
     }
 
-    pub(super) fn parse(&self, reads: &[BlockRead]) -> Vec<(String, Val)> {
+    pub(super) fn parse(&self, reads: &[BlockRead]) -> Vec<(u64, Val)> {
         let mut out = Vec::new();
         for (block, read) in self.0.iter().zip(reads.iter()) {
             match (block.register_type, read) {
@@ -158,7 +158,7 @@ impl Blocks<'_> {
                             continue;
                         }
                         let v = if data[idx] { 1u8 } else { 0u8 };
-                        out.push((region.cfg.name.clone(), Val::U8(v)));
+                        out.push((region.cfg.id as u64, Val::U8(v)));
                     }
                 }
                 (RegisterType::HoldingRegisters, BlockRead::HoldingRegisters(data))
@@ -171,7 +171,7 @@ impl Blocks<'_> {
                         }
                         let slice = &data[offset..offset + width];
                         let val = decode_register_value(region.cfg, slice);
-                        out.push((region.cfg.name.clone(), val));
+                        out.push((region.cfg.id as u64, val));
                     }
                 }
                 _ => {}
