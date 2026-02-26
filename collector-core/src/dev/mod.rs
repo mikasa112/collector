@@ -29,14 +29,14 @@ pub enum DeviceError {
 }
 
 pub trait Identifiable: Sync + Send {
-    fn id(&self) -> String;
+    fn id(&self) -> &str;
 }
 
-pub struct DevStr(pub String);
+pub struct DevStr(pub &'static str);
 
 impl Identifiable for DevStr {
-    fn id(&self) -> String {
-        self.0.clone()
+    fn id(&self) -> &str {
+        self.0
     }
 }
 

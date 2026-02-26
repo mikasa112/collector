@@ -62,7 +62,7 @@ impl WritePlan {
 pub(super) fn build_cfg_map(configs: &ModbusConfigs) -> HashMap<u64, ModbusConfig> {
     let mut out = HashMap::new();
     for cfg in configs {
-        out.insert(cfg.id as u64, cfg.clone());
+        out.insert(cfg.id as u64, *cfg);
     }
     out
 }
@@ -186,22 +186,22 @@ fn encode_registers(cfg: &ModbusConfig, value: Val, dev_id: &str) -> Option<Vec<
         }
         ModbusDataType::U16 => {
             let raw = scale_to_raw(cfg, value, dev_id)?;
-            let v = to_u16(raw, dev_id, &cfg.name)?;
+            let v = to_u16(raw, dev_id, cfg.name)?;
             Some(vec![u16_with_order(v, cfg.byte_order)])
         }
         ModbusDataType::I16 => {
             let raw = scale_to_raw(cfg, value, dev_id)?;
-            let v = to_i16(raw, dev_id, &cfg.name)? as u16;
+            let v = to_i16(raw, dev_id, cfg.name)? as u16;
             Some(vec![u16_with_order(v, cfg.byte_order)])
         }
         ModbusDataType::U32 => {
             let raw = scale_to_raw(cfg, value, dev_id)?;
-            let v = to_u32(raw, dev_id, &cfg.name)?;
+            let v = to_u32(raw, dev_id, cfg.name)?;
             Some(encode_u32(v, cfg.byte_order).to_vec())
         }
         ModbusDataType::I32 => {
             let raw = scale_to_raw(cfg, value, dev_id)?;
-            let v = to_i32(raw, dev_id, &cfg.name)? as u32;
+            let v = to_i32(raw, dev_id, cfg.name)? as u32;
             Some(encode_u32(v, cfg.byte_order).to_vec())
         }
     }

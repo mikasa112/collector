@@ -9,7 +9,7 @@ use crate::{
 };
 
 #[derive(Debug)]
-pub(super) struct Blocks<'a>(pub(super) Vec<Block<'a>>);
+pub(super) struct Blocks(pub(super) Vec<Block>);
 
 #[derive(Debug, thiserror::Error)]
 pub enum BuildBlocksError {
@@ -24,17 +24,17 @@ pub enum BuildBlocksError {
     },
 }
 
-impl<'a> TryFrom<Vec<&'a ModbusConfig>> for Blocks<'a> {
+impl TryFrom<Vec<ModbusConfig>> for Blocks {
     type Error = BuildBlocksError;
 
-    fn try_from(value: Vec<&'a ModbusConfig>) -> Result<Self, Self::Error> {
+    fn try_from(value: Vec<ModbusConfig>) -> Result<Self, Self::Error> {
         // 1) 按 RegisterType 分组
-        let mut groups: BTreeMap<RegisterType, Vec<&'a ModbusConfig>> = BTreeMap::new();
+        let mut groups: BTreeMap<RegisterType, Vec<ModbusConfig>> = BTreeMap::new();
         for cfg in value {
             groups.entry(cfg.register_type).or_default().push(cfg);
         }
 
-        let mut blocks: Vec<Block<'a>> = Vec::new();
+        let mut blocks: Vec<Block> = Vec::new();
 
         // 2) 每组：排序 + 连续合并 + 长度限制
         for (rt, mut pts) in groups {
@@ -54,7 +54,7 @@ impl<'a> TryFrom<Vec<&'a ModbusConfig>> for Blocks<'a> {
 
                 let mut end_excl = start + first_w;
 
-                let mut regions: Vec<Region<'a>> = Vec::new();
+                let mut regions: Vec<Region> = Vec::new();
                 regions.push(Region {
                     cfg: first,
                     offset: 0,
@@ -117,9 +117,9 @@ pub(super) enum BlockRead {
     InputRegisters(Vec<u16>),
 }
 
-impl Blocks<'_> {
+impl Blocks {
     pub(super) async fn request(
-        &mut self,
+        &self,
         ctx: &mut Context,
     ) -> Result<Vec<BlockRead>, ModbusDevError> {
         let mut reads = Vec::with_capacity(self.0.len());
@@ -147,7 +147,8 @@ impl Blocks<'_> {
     }
 
     pub(super) fn parse(&self, reads: &[BlockRead]) -> Vec<DataPoint> {
-        let mut out = Vec::new();
+        let total_regions = self.0.iter().map(|block| block.regions.len()).sum();
+        let mut out = Vec::with_capacity(total_regions);
         for (block, read) in self.0.iter().zip(reads.iter()) {
             match (block.register_type, read) {
                 (RegisterType::Coils, BlockRead::Coils(data))
@@ -174,7 +175,7 @@ impl Blocks<'_> {
                             continue;
                         }
                         let slice = &data[offset..offset + width];
-                        let val = decode_register_value(region.cfg, slice);
+                        let val = decode_register_value(&region.cfg, slice);
                         out.push(DataPoint {
                             id: region.cfg.id as u64,
                             name: region.cfg.name,
@@ -190,16 +191,16 @@ impl Blocks<'_> {
 }
 
 #[derive(Debug)]
-pub(super) struct Block<'a> {
+pub(super) struct Block {
     pub(super) register_type: RegisterType,
     pub(super) start: u16,
     pub(super) len: u16,
-    pub(super) regions: Vec<Region<'a>>,
+    pub(super) regions: Vec<Region>,
 }
 
 #[derive(Debug)]
-pub(super) struct Region<'a> {
-    pub(super) cfg: &'a ModbusConfig,
+pub(super) struct Region {
+    pub(super) cfg: ModbusConfig,
     pub(super) offset: u16,
     pub(super) width: u16,
 }
@@ -300,7 +301,7 @@ mod tests {
     fn build_blocks_overlap_returns_error() {
         let a = cfg(RegisterType::HoldingRegisters, 10, ModbusDataType::U32); // width 2: [10,12)
         let b = cfg(RegisterType::HoldingRegisters, 11, ModbusDataType::U16); // overlap
-        let err = Blocks::try_from(vec![&a, &b]).unwrap_err();
+        let err = Blocks::try_from(vec![a, b]).unwrap_err();
         match err {
             BuildBlocksError::Overlap {
                 register_type,
@@ -320,7 +321,7 @@ mod tests {
     fn build_blocks_gap_splits_block() {
         let a = cfg(RegisterType::InputRegisters, 0, ModbusDataType::U16);
         let b = cfg(RegisterType::InputRegisters, 2, ModbusDataType::U16); // gap at 1
-        let blocks = Blocks::try_from(vec![&a, &b]).unwrap();
+        let blocks = Blocks::try_from(vec![a, b]).unwrap();
         assert_eq!(blocks.0.len(), 2);
         assert_eq!(blocks.0[0].start, 0);
         assert_eq!(blocks.0[0].len, 1);
@@ -338,8 +339,7 @@ mod tests {
                 ModbusDataType::U16,
             ));
         }
-        let refs: Vec<&ModbusConfig> = configs.iter().collect();
-        let blocks = Blocks::try_from(refs).unwrap();
+        let blocks = Blocks::try_from(configs).unwrap();
         assert_eq!(blocks.0.len(), 2);
         assert_eq!(blocks.0[0].start, 0);
         assert_eq!(blocks.0[0].len, 120);

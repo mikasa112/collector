@@ -3,7 +3,6 @@ use std::fmt::Debug;
 use serde::Serialize;
 
 pub type PointId = u64;
-pub type PointKey = &'static str;
 
 #[derive(Debug, Clone, Copy, Serialize, PartialEq)]
 pub enum Val {

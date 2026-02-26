@@ -86,8 +86,8 @@ impl ModbusDev {
 }
 
 impl Identifiable for ModbusDev {
-    fn id(&self) -> String {
-        self.id.clone()
+    fn id(&self) -> &str {
+        &self.id
     }
 }
 

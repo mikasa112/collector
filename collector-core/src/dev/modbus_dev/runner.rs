@@ -33,8 +33,8 @@ pub(super) struct ModbusRunner {
 }
 
 impl Identifiable for ModbusRunner {
-    fn id(&self) -> String {
-        self.id.clone()
+    fn id(&self) -> &str {
+        &self.id
     }
 }
 
@@ -109,6 +109,7 @@ impl ModbusRunner {
         &mut self,
         ctx: &mut Context,
         stop_rx: &mut watch::Receiver<bool>,
+        blocks: &Blocks,
         cfg_map: &HashMap<u64, ModbusConfig>,
     ) {
         store_state(&self.id, &self.state, LifecycleState::Running);
@@ -124,7 +125,7 @@ impl ModbusRunner {
                     }
                 }
                 _ = ticker.tick() => {
-                    match self.read_all(ctx).await {
+                    match self.read_all(ctx, blocks).await {
                         Ok(entries) => {
                             if !entries.is_empty() {
                                 global_center().ingest(self, entries);
@@ -156,6 +157,15 @@ impl ModbusRunner {
 
     pub(super) async fn run(mut self) {
         let cfg_map = build_cfg_map(&self.configs);
+        let blocks = match Blocks::try_from(self.configs.clone()) {
+            Ok(blocks) => blocks,
+            Err(err) => {
+                warn!("[{}] 构建读取块失败: {}", self.id, err);
+                store_state(&self.id, &self.state, LifecycleState::Failed);
+                self.report_comm_status(0);
+                return;
+            }
+        };
         let mut stop_rx = self.stop_rx.clone();
         let mut backoff = Backoff::new(Duration::from_millis(500), Duration::from_secs(10));
         loop {
@@ -171,7 +181,8 @@ impl ModbusRunner {
                     store_state(&self.id, &self.state, LifecycleState::Connected);
                     self.report_comm_status(1);
                     backoff.reset();
-                    self.run_connected(&mut ctx, &mut stop_rx, &cfg_map).await;
+                    self.run_connected(&mut ctx, &mut stop_rx, &blocks, &cfg_map)
+                        .await;
                 }
                 Err(err) => {
                     store_state(&self.id, &self.state, LifecycleState::Failed);
@@ -197,9 +208,11 @@ impl ModbusRunner {
         }
     }
 
-    async fn read_all(&self, ctx: &mut Context) -> Result<Vec<DataPoint>, ModbusDevError> {
-        let configs = self.configs.iter().collect::<Vec<&ModbusConfig>>();
-        let mut blocks = Blocks::try_from(configs)?;
+    async fn read_all(
+        &self,
+        ctx: &mut Context,
+        blocks: &Blocks,
+    ) -> Result<Vec<DataPoint>, ModbusDevError> {
         let reads = blocks.request(ctx).await?;
         let parsed = blocks.parse(&reads);
         Ok(parsed)
