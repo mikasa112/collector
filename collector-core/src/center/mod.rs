@@ -4,7 +4,7 @@ use dashmap::DashMap;
 
 use crate::{
     center::data_center::DataCenter,
-    core::point::{DataPoint, Item, Point, Record},
+    core::point::{DataPoint, Point},
     dev::Identifiable,
 };
 
@@ -13,10 +13,9 @@ pub mod data_center;
 pub type Sender<T> = tokio::sync::mpsc::Sender<Vec<T>>;
 
 #[async_trait::async_trait]
-pub trait Center<T, I>
+pub trait Center<T>
 where
     T: Point + Send + Sync,
-    I: Item,
 {
     fn ingest<D: Identifiable + ?Sized>(&self, dev: &D, msg: impl IntoIterator<Item = T>);
     async fn dispatch<D: Identifiable + ?Sized>(
@@ -40,7 +39,6 @@ where
         ch: Sender<T>,
     ) -> Result<(), DataCenterError>;
     fn detach<D: Identifiable + ?Sized>(&self, dev: &D);
-    fn load<D: Identifiable + ?Sized>(&self, dev: &D, record: impl IntoIterator<Item = I>);
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -59,8 +57,8 @@ impl<T> From<tokio::sync::mpsc::error::SendError<Vec<T>>> for DataCenterError {
     }
 }
 
-static CENTER: OnceLock<DataCenter<DataPoint, Record>> = OnceLock::new();
+static CENTER: OnceLock<DataCenter<DataPoint>> = OnceLock::new();
 
-pub fn global_center() -> &'static DataCenter<DataPoint, Record> {
+pub fn global_center() -> &'static DataCenter<DataPoint> {
     CENTER.get_or_init(|| DataCenter::new(32))
 }

@@ -4,7 +4,7 @@ use tokio_modbus::client::{Context, Reader};
 
 use crate::{
     config::modbus_conf::{ByteOrder, ModbusConfig, ModbusDataType, RegisterType},
-    core::point::Val,
+    core::point::{DataPoint, Val},
     dev::modbus_dev::ModbusDevError,
 };
 
@@ -146,7 +146,7 @@ impl Blocks<'_> {
         Ok(reads)
     }
 
-    pub(super) fn parse(&self, reads: &[BlockRead]) -> Vec<(u64, Val)> {
+    pub(super) fn parse(&self, reads: &[BlockRead]) -> Vec<DataPoint> {
         let mut out = Vec::new();
         for (block, read) in self.0.iter().zip(reads.iter()) {
             match (block.register_type, read) {
@@ -158,7 +158,11 @@ impl Blocks<'_> {
                             continue;
                         }
                         let v = if data[idx] { 1u8 } else { 0u8 };
-                        out.push((region.cfg.id as u64, Val::U8(v)));
+                        out.push(DataPoint {
+                            id: region.cfg.id as u64,
+                            name: region.cfg.name,
+                            value: Val::U8(v),
+                        });
                     }
                 }
                 (RegisterType::HoldingRegisters, BlockRead::HoldingRegisters(data))
@@ -171,7 +175,11 @@ impl Blocks<'_> {
                         }
                         let slice = &data[offset..offset + width];
                         let val = decode_register_value(region.cfg, slice);
-                        out.push((region.cfg.id as u64, val));
+                        out.push(DataPoint {
+                            id: region.cfg.id as u64,
+                            name: region.cfg.name,
+                            value: val,
+                        });
                     }
                 }
                 _ => {}
@@ -276,7 +284,7 @@ mod tests {
     ) -> ModbusConfig {
         ModbusConfig {
             id: 1,
-            name: "p".to_string(),
+            name: "p",
             data_type,
             unit: None,
             remarks: None,

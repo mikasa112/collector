@@ -2,62 +2,50 @@ use dashmap::DashMap;
 
 use crate::{
     center::{Center, DataCenterError, Sender},
-    core::point::{Item, Point, PointId},
+    core::point::{Point, PointId},
     dev::Identifiable,
 };
 
-pub struct DataCenter<T, I>
+pub struct DataCenter<T>
 where
     T: Point,
-    I: Item,
 {
     down_chan: DashMap<String, tokio::sync::mpsc::Sender<Vec<T>>>,
     latest: DashMap<String, DashMap<PointId, T>>,
-    items: DashMap<String, DashMap<PointId, I>>,
 }
 
-impl<T, I> DataCenter<T, I>
+impl<T> DataCenter<T>
 where
     T: Point,
-    I: Item,
 {
     pub fn new(dev_len: usize) -> Self {
         Self {
             down_chan: DashMap::with_capacity(dev_len),
             latest: DashMap::with_capacity(dev_len),
-            items: DashMap::with_capacity(dev_len),
         }
     }
 }
 
 #[async_trait::async_trait]
-impl<T, I> Center<T, I> for DataCenter<T, I>
+impl<T> Center<T> for DataCenter<T>
 where
     T: Point,
-    I: Item,
 {
-    fn load<D: Identifiable + ?Sized>(&self, dev: &D, record: impl IntoIterator<Item = I>) {
-        let records = self.items.entry(dev.id()).or_default();
-        for p in record {
-            records.insert(p.id(), p);
-        }
-    }
-
     fn ingest<D: Identifiable + ?Sized>(&self, dev: &D, msg: impl IntoIterator<Item = T>) {
         let dev_id = dev.id();
         let points = self.latest.entry(dev_id).or_default();
         for p in msg {
-            let key = p.key();
+            let p_id = p.id();
             let new_val = p.value();
             let need_update = points
-                .get(&key)
+                .get(&p_id)
                 .map(|old| {
                     let old_t = old.value();
                     old_t.value() != new_val
                 })
                 .unwrap_or(true);
             if need_update {
-                points.insert(key, p);
+                points.insert(p_id, p);
             }
         }
     }

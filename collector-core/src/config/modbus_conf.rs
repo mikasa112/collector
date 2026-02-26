@@ -149,13 +149,13 @@ pub(crate) fn build_configs(path: String) -> Result<ModbusConfigs, ModbusConfigs
     Ok(configs)
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct ModbusConfig {
     pub id: u32,
-    pub name: String,
+    pub name: &'static str,
     pub data_type: ModbusDataType,
-    pub unit: Option<String>,
-    pub remarks: Option<String>,
+    pub unit: Option<&'static str>,
+    pub remarks: Option<&'static str>,
     pub register_address: u16,
     pub register_type: RegisterType,
     pub byte_order: Option<ByteOrder>,
@@ -177,14 +177,21 @@ impl ModbusConfig {
         let name = row[1]
             .get_string()
             .ok_or(anyhow::Error::msg("点位名称不能为空"))?
-            .to_string();
+            .to_owned()
+            .leak();
         let data_type = ModbusDataType::try_from(
             row[2]
                 .get_string()
                 .ok_or(anyhow::Error::msg("数据类型不能为空"))?,
         )?;
-        let unit = row[3].get_string().map(str::to_string);
-        let remarks = row[4].get_string().map(str::to_string);
+        let unit = row[3].get_string().map(|s| {
+            let s: &'static str = s.to_owned().leak();
+            s
+        });
+        let remarks = row[4].get_string().map(|s| {
+            let s: &'static str = s.to_owned().leak();
+            s
+        });
         let register_address = row[5]
             .get_float()
             .ok_or(anyhow::Error::msg("寄存器地址不能为空"))? as u16;

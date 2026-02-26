@@ -25,8 +25,8 @@ impl WritePlan {
         let mut holding: BTreeMap<u16, u16> = BTreeMap::new();
 
         for entry in entries {
-            let Some(cfg) = cfg_map.get(&entry.key) else {
-                warn!("[{}] 未找到点位配置, 忽略下发: {}", dev_id, entry.key);
+            let Some(cfg) = cfg_map.get(&entry.id) else {
+                warn!("[{}] 未找到点位配置, 忽略下发: {}", dev_id, entry.id);
                 continue;
             };
             match cfg.register_type {

@@ -43,7 +43,8 @@ impl ModbusRunner {
         global_center().ingest(
             self,
             vec![DataPoint {
-                key: 0xFFFF,
+                id: 0xFFFF,
+                name: "communication_status",
                 value: Val::U8(v),
             }],
         );
@@ -201,9 +202,6 @@ impl ModbusRunner {
         let mut blocks = Blocks::try_from(configs)?;
         let reads = blocks.request(ctx).await?;
         let parsed = blocks.parse(&reads);
-        Ok(parsed
-            .into_iter()
-            .map(|(key, value)| DataPoint { key, value })
-            .collect())
+        Ok(parsed)
     }
 }
