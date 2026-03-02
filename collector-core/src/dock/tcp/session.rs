@@ -184,7 +184,7 @@ fn parse_ack_seq(frame: &Frame) -> Option<u32> {
         return None;
     }
     if frame.payload.len() < 4 {
-        return Some(frame.header.seq);
+        return None;
     }
     Some(u32::from_be_bytes([
         frame.payload[0],

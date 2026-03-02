@@ -394,7 +394,7 @@ def main():
         description="Connect to collector TCP dock server and print received Dict frames"
     )
     parser.add_argument("--host", default="127.0.0.1", help="server host")
-    parser.add_argument("--port", type=int, default=8083, help="server port")
+    parser.add_argument("--port", type=int, default=9000, help="server port")
     parser.add_argument(
         "--timeout",
         type=float,
