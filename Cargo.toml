@@ -26,6 +26,7 @@ tracing-error = "0.2.1"
 async-trait = "0.1.86"
 # 更好的内存分配器
 mimalloc = "0.1.47"
+bytes = "1.11.1"
 
 [profile.release]
 # 去除调试信息

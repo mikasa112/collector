@@ -24,15 +24,15 @@ where
         msg: Vec<T>,
     ) -> Result<(), DataCenterError>;
     fn snapshot<D: Identifiable + ?Sized>(&self, dev: &D) -> Option<Vec<T>>;
-    fn read<D: Identifiable + ?Sized>(&self, dev: &D, key: u64) -> Option<T>;
-    fn with_read<D, F, R>(&self, dev: &D, key: u64, f: F) -> Option<R>
+    fn read<D: Identifiable + ?Sized>(&self, dev: &D, key: u32) -> Option<T>;
+    fn with_read<D, F, R>(&self, dev: &D, key: u32, f: F) -> Option<R>
     where
         D: Identifiable + ?Sized,
         F: FnOnce(&T) -> R;
     fn with_snapshot<D, F, R>(&self, dev: &D, f: F) -> Option<R>
     where
         D: Identifiable + ?Sized,
-        F: FnOnce(&DashMap<u64, T>) -> R;
+        F: FnOnce(&DashMap<u32, T>) -> R;
     fn attach<D: Identifiable + ?Sized>(
         &self,
         dev: &D,

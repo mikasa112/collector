@@ -1,8 +1,9 @@
 use clap::Parser;
 use collector_core::config;
 use collector_core::dev::manager::DevManager;
-use tracing::error;
+use collector_core::dock::{TcpFrameServer, TcpServerConfig};
 use tracing::level_filters::LevelFilter;
+use tracing::{error, info};
 use tracing_error::ErrorLayer;
 use tracing_log::LogTracer;
 use tracing_subscriber::fmt::format::FmtSpan;
@@ -48,10 +49,27 @@ pub async fn cmd() {
     match config::Configuration::new(args.config).await {
         Ok(mut p) => {
             p.load_device_configs().await;
+            let tcp_cfg = build_tcp_server_config(&p.project);
+            let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
+            let tcp_task = tokio::spawn(async move {
+                if let Err(err) = TcpFrameServer::new(tcp_cfg)
+                    .run_until_shutdown(shutdown_rx)
+                    .await
+                {
+                    error!("tcp dock server exited with error: {}", err);
+                }
+            });
+
             let mut manager = DevManager::new(p.project.devices);
             manager.start_all().await;
             if let Err(err) = tokio::signal::ctrl_c().await {
                 error!("failed to listen for shutdown signal: {}", err);
+            }
+            if shutdown_tx.send(true).is_err() {
+                error!("failed to notify tcp dock server shutdown");
+            }
+            if let Err(err) = tcp_task.await {
+                error!("failed to join tcp dock server task: {}", err);
             }
             manager.stop_all().await;
         }
@@ -59,4 +77,17 @@ pub async fn cmd() {
             error!("{}", e);
         }
     }
+}
+
+fn build_tcp_server_config(project: &config::Project) -> TcpServerConfig {
+    let mut cfg = TcpServerConfig::default();
+    let host = project
+        .ip
+        .clone()
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or_else(|| "0.0.0.0".to_string());
+    let port = project.port.unwrap_or(9000);
+    cfg.bind_addr = format!("{}:{}", host, port);
+    info!("tcp dock server bind addr: {}", cfg.bind_addr);
+    cfg
 }

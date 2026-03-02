@@ -24,6 +24,10 @@ where
             latest: DashMap::with_capacity(dev_len),
         }
     }
+
+    pub fn dev_ids(&self) -> Vec<String> {
+        self.latest.iter().map(|it| it.key().to_owned()).collect()
+    }
 }
 
 #[async_trait::async_trait]
@@ -73,12 +77,12 @@ where
         Some(iter.collect())
     }
 
-    fn read<D: Identifiable + ?Sized>(&self, dev: &D, key: u64) -> Option<T> {
+    fn read<D: Identifiable + ?Sized>(&self, dev: &D, key: u32) -> Option<T> {
         let guard = self.latest.get(dev.id())?;
         guard.get(&key).map(|v| *v.value())
     }
 
-    fn with_read<D, F, R>(&self, dev: &D, key: u64, f: F) -> Option<R>
+    fn with_read<D, F, R>(&self, dev: &D, key: u32, f: F) -> Option<R>
     where
         D: Identifiable + ?Sized,
         F: FnOnce(&T) -> R,
@@ -91,7 +95,7 @@ where
     fn with_snapshot<D, F, R>(&self, dev: &D, f: F) -> Option<R>
     where
         D: Identifiable + ?Sized,
-        F: FnOnce(&DashMap<u64, T>) -> R,
+        F: FnOnce(&DashMap<u32, T>) -> R,
     {
         let guard = self.latest.get(dev.id())?;
         Some(f(guard.value()))

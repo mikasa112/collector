@@ -160,7 +160,7 @@ impl Blocks {
                         }
                         let v = if data[idx] { 1u8 } else { 0u8 };
                         out.push(DataPoint {
-                            id: region.cfg.id as u64,
+                            id: region.cfg.serial_num(),
                             name: region.cfg.name,
                             value: Val::U8(v),
                         });
@@ -177,7 +177,7 @@ impl Blocks {
                         let slice = &data[offset..offset + width];
                         let val = decode_register_value(&region.cfg, slice);
                         out.push(DataPoint {
-                            id: region.cfg.id as u64,
+                            id: region.cfg.serial_num(),
                             name: region.cfg.name,
                             value: val,
                         });

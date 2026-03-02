@@ -9,11 +9,11 @@ use tokio_modbus::Slave;
 use tokio_modbus::client::{Context, rtu, tcp};
 use tokio_modbus::prelude::SlaveContext;
 use tokio_serial::{DataBits, Parity};
-use tracing::warn;
+use tracing::{info, warn};
 
 use crate::center::{Center, global_center};
-use crate::config::modbus_conf::{ModbusConfig, ModbusConfigs};
-use crate::core::point::{DataPoint, Val};
+use crate::config::modbus_conf::{ModbusConfig, ModbusConfigs, RegisterType};
+use crate::core::point::{DataPoint, DataPoints, PointId, Val};
 use crate::dev::modbus_dev::Protocol;
 use crate::dev::modbus_dev::block::Blocks;
 use crate::dev::modbus_dev::downlink::{WritePlan, apply_write_plan, build_cfg_map};
@@ -40,10 +40,11 @@ impl Identifiable for ModbusRunner {
 
 impl ModbusRunner {
     fn report_comm_status(&self, v: u8) {
+        let h = (RegisterType::DiscreteInputs as u32) << 16;
         global_center().ingest(
             self,
             vec![DataPoint {
-                id: 0xFFFF,
+                id: h | 0xFFFF,
                 name: "communication_status",
                 value: Val::U8(v),
             }],
@@ -110,7 +111,7 @@ impl ModbusRunner {
         ctx: &mut Context,
         stop_rx: &mut watch::Receiver<bool>,
         blocks: &Blocks,
-        cfg_map: &HashMap<u64, ModbusConfig>,
+        cfg_map: &HashMap<PointId, ModbusConfig>,
     ) {
         store_state(&self.id, &self.state, LifecycleState::Running);
         self.report_comm_status(1);
@@ -139,12 +140,23 @@ impl ModbusRunner {
                     }
                 }
                 msg = rx.recv() => {
-                    let Some(entries) = msg else {
+                    let Some(mut entries) = msg else {
                         self.report_comm_status(0);
                         store_state(&self.id, &self.state, LifecycleState::Stopped);
                         return;
                     };
-                    let plan = WritePlan::build(entries, cfg_map, &self.id);
+
+                    for entry in &mut entries {
+                        if entry.name.is_empty() {
+                            if let Some(cfg) = cfg_map.get(&entry.id) {
+                                entry.name = cfg.name;
+                            }
+                        }
+                    }
+
+                    let points  = DataPoints(entries);
+                    info!("[{}] ↓: {}", self.id, points);
+                    let plan = WritePlan::build(points.0, cfg_map, &self.id);
                     if let Err(err) = apply_write_plan(ctx, plan).await {
                         warn!("[{}] 下发失败, 准备重连: {}", self.id, err);
                         self.report_comm_status(0);

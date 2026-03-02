@@ -151,7 +151,7 @@ pub(crate) fn build_configs(path: String) -> Result<ModbusConfigs, ModbusConfigs
 
 #[derive(Debug, Clone, Copy)]
 pub struct ModbusConfig {
-    pub id: u32,
+    pub id: u16,
     pub name: &'static str,
     pub data_type: ModbusDataType,
     pub unit: Option<&'static str>,
@@ -170,10 +170,11 @@ impl ModbusConfig {
         }
         let id = row[0]
             .get_float()
-            .ok_or(anyhow::Error::msg("序号不能为空"))? as u32;
-        if id >= (1 << 24) {
-            return Err(anyhow::Error::msg("序号(id)超出允许范围(0..2^24-1)"));
+            .ok_or(anyhow::Error::msg("序号不能为空"))?;
+        if !(0.0..=(u16::MAX as f64)).contains(&id) {
+            return Err(anyhow::Error::msg("序号(id)超出允许范围(0..2^16-1)"));
         }
+        let id = id as u16;
         let name = row[1]
             .get_string()
             .ok_or(anyhow::Error::msg("点位名称不能为空"))?
@@ -221,8 +222,9 @@ impl ModbusConfig {
         })
     }
 
-    pub fn serial_num(&self) -> u64 {
-        let num = (self.register_type as u32) << 24 | self.id;
-        num as u64
+    pub fn serial_num(&self) -> u32 {
+        let register_type_high = (self.register_type as u32) << 16;
+        let id_low = self.id as u32 & 0xFFFF;
+        register_type_high | id_low
     }
 }
