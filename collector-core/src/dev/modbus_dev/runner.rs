@@ -16,7 +16,7 @@ use crate::config::modbus_conf::{ModbusConfig, ModbusConfigs, RegisterType};
 use crate::core::point::{DataPoint, DataPoints, PointId, Val};
 use crate::dev::modbus_dev::Protocol;
 use crate::dev::modbus_dev::block::Blocks;
-use crate::dev::modbus_dev::downlink::{WritePlan, apply_write_plan, build_cfg_map};
+use crate::dev::modbus_dev::downlink::{WritePlan, build_cfg_map};
 use crate::dev::{Identifiable, LifecycleState};
 
 use super::backoff::Backoff;
@@ -39,6 +39,9 @@ impl Identifiable for ModbusRunner {
 }
 
 impl ModbusRunner {
+    /// 反馈通讯连接状态
+    /// # 输入
+    /// - `v`: 状态值，0表示正常，非0表示异常
     fn report_comm_status(&self, v: u8) {
         let h = (RegisterType::DiscreteInputs as u32) << 16;
         global_center().ingest(
@@ -55,6 +58,9 @@ impl ModbusRunner {
         *stop_rx.borrow()
     }
 
+    /// 获取轮询间隔时间
+    /// # 输出
+    /// - `Duration`: 轮询间隔时间
     fn poll_interval(&self) -> Duration {
         match &self.protocol {
             Protocol::Tcp(cfg) => Duration::from_millis(cfg.interval),
@@ -62,6 +68,9 @@ impl ModbusRunner {
         }
     }
 
+    /// 获取超时时间
+    /// # 输出
+    /// - `Duration`: 超时时间
     fn timeout(&self) -> Duration {
         match &self.protocol {
             Protocol::Tcp(cfg) => Duration::from_millis(cfg.timeout),
@@ -69,7 +78,13 @@ impl ModbusRunner {
         }
     }
 
+    /// 获取MODBUS的连接
+    /// # 输入
+    /// - `self`: 当前的Modbus设备实例
+    /// # 输出
+    /// - `Result<Context, ModbusDevError>`: 连接结果，成功返回Context，失败返回ModbusDevError
     async fn connect(&self) -> Result<Context, ModbusDevError> {
+        //配置连接的协议是TCP还是串口
         match &self.protocol {
             Protocol::Tcp(cfg) => {
                 let addr = format!("{}:{}", cfg.ip, cfg.port).parse()?;
@@ -106,6 +121,13 @@ impl ModbusRunner {
         }
     }
 
+    /// 连接成功后运行
+    /// # 输入
+    /// - `self`: 当前的Modbus设备实例
+    /// - `ctx`: 连接的上下文
+    /// - `stop_rx`: 停止信号接收器
+    /// - `blocks`: 块信息
+    /// - `cfg_map`: 配置映射
     async fn run_connected(
         &mut self,
         ctx: &mut Context,
@@ -115,6 +137,7 @@ impl ModbusRunner {
     ) {
         store_state(&self.id, &self.state, LifecycleState::Running);
         self.report_comm_status(1);
+        //读取任务的定时器
         let mut ticker = time::interval(self.poll_interval());
         loop {
             let rx = &mut self.rx;
@@ -125,10 +148,12 @@ impl ModbusRunner {
                         return;
                     }
                 }
+                //读取
                 _ = ticker.tick() => {
                     match self.read_all(ctx, blocks).await {
                         Ok(entries) => {
                             if !entries.is_empty() {
+                                //上送数据
                                 global_center().ingest(self, entries);
                             }
                         }
@@ -139,6 +164,7 @@ impl ModbusRunner {
                         }
                     }
                 }
+                //下发
                 msg = rx.recv() => {
                     let Some(mut entries) = msg else {
                         self.report_comm_status(0);
@@ -147,17 +173,15 @@ impl ModbusRunner {
                     };
 
                     for entry in &mut entries {
-                        if entry.name.is_empty() {
-                            if let Some(cfg) = cfg_map.get(&entry.id) {
-                                entry.name = cfg.name;
-                            }
+                        if entry.name.is_empty() && let Some(cfg) = cfg_map.get(&entry.id) {
+                            entry.name = cfg.name;
                         }
                     }
 
                     let points  = DataPoints(entries);
                     info!("[{}] ↓: {}", self.id, points);
                     let plan = WritePlan::build(points.0, cfg_map, &self.id);
-                    if let Err(err) = apply_write_plan(ctx, plan).await {
+                    if let Err(err) = plan.apply(ctx).await {
                         warn!("[{}] 下发失败, 准备重连: {}", self.id, err);
                         self.report_comm_status(0);
                         return;
@@ -167,8 +191,10 @@ impl ModbusRunner {
         }
     }
 
+    /// 启动MODBUS设备
     pub(super) async fn run(mut self) {
         let cfg_map = build_cfg_map(&self.configs);
+        //构建连续地址的寄存器块
         let blocks = match Blocks::try_from(self.configs.clone()) {
             Ok(blocks) => blocks,
             Err(err) => {
@@ -179,6 +205,7 @@ impl ModbusRunner {
             }
         };
         let mut stop_rx = self.stop_rx.clone();
+        //退避重连
         let mut backoff = Backoff::new(Duration::from_millis(500), Duration::from_secs(10));
         loop {
             if Self::stop_requested(&stop_rx) {

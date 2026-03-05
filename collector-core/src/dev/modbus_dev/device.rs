@@ -31,6 +31,11 @@ pub struct ModbusDev {
 }
 
 impl ModbusDev {
+    /// 解析并根据配置新建一个接口为Modbus的设备
+    /// # 参数
+    /// - `dev`: 设备配置信息
+    /// # 返回值
+    /// - `Result<Self, DeviceError>`: 新建的设备实例或错误信息
     pub fn new(dev: Device) -> Result<Self, DeviceError> {
         let Some(id) = dev.id else {
             return Err(DeviceError::InvalidId);
@@ -58,6 +63,7 @@ impl ModbusDev {
             }
             _ => Err(DeviceError::UnSupportedComType),
         }?;
+        // 初始生命周期
         let state = Arc::new(AtomicU8::new(LifecycleState::New as u8));
         let (stop_tx, stop_rx) = watch::channel(false);
         info!("加载{}配置成功!", id);
@@ -72,14 +78,26 @@ impl ModbusDev {
         })
     }
 
+    /// 获取设备的生命周期状态
+    /// # 返回值
+    /// - `LifecycleState`: 设备的生命周期状态
     fn load_state(&self) -> LifecycleState {
         load_state(&self.state)
     }
 
+    /// 改变设备的生命周期状态
+    /// # 参数
+    /// - `from`: 当前状态
+    /// - `to`: 目标状态
+    /// # 返回值
+    /// - `bool`: 是否成功改变状态
     fn cas_state(&self, from: LifecycleState, to: LifecycleState) -> bool {
         cas_state(&self.state, from, to)
     }
 
+    /// 存储设备的生命周期状态
+    /// # 参数
+    /// - `to`: 目标状态
     fn store_state(&self, to: LifecycleState) {
         store_state(&self.id, &self.state, to);
     }
@@ -93,7 +111,9 @@ impl Identifiable for ModbusDev {
 
 #[async_trait::async_trait]
 impl Lifecycle for ModbusDev {
+    /// 初始化生命周期
     fn init(&self) -> Result<(), DeviceError> {
+        //将状态从New转为Initializing
         if !self.cas_state(LifecycleState::New, LifecycleState::Initializing) {
             return Ok(());
         }
@@ -101,13 +121,16 @@ impl Lifecycle for ModbusDev {
         Ok(())
     }
 
+    /// 启动生命周期
     async fn start(&mut self) -> Result<(), DeviceError> {
+        //尝试将状态改为启动中，如果失败则不动作
         let ok = self.cas_state(LifecycleState::Ready, LifecycleState::Starting)
             || self.cas_state(LifecycleState::Stopped, LifecycleState::Starting);
         if !ok {
             return Ok(());
         }
         let (tx, rx) = tokio::sync::mpsc::channel::<Vec<DataPoint>>(16);
+        //将设备注册到消息中心
         match global_center().attach(self, tx.clone()) {
             Ok(()) => {}
             Err(DataCenterError::DevHasRegister(_)) => {
@@ -124,6 +147,7 @@ impl Lifecycle for ModbusDev {
         }
         let _ = self.stop_tx.send(false);
         let mut task_guard = self.task.lock().await;
+        //如果有旧的任务，先取消
         if let Some(handle) = task_guard.take() {
             handle.abort();
         }
@@ -135,13 +159,16 @@ impl Lifecycle for ModbusDev {
             stop_rx: self.stop_rx.clone(),
             rx,
         };
+        //启动任务
         let handle = tokio::spawn(async move {
             runner.run().await;
         });
+        //把任务放回去
         *task_guard = Some(handle);
         Ok(())
     }
 
+    /// 停止设备
     async fn stop(&self) -> Result<(), DeviceError> {
         let _ = self.stop_tx.send(true);
         let cur = self.load_state();
@@ -157,10 +184,11 @@ impl Lifecycle for ModbusDev {
                 let _ = self.cas_state(cur, LifecycleState::Stopping);
             }
         }
-
+        //注销设备
         global_center().detach(self);
         let mut task_guard = self.task.lock().await;
         if let Some(mut handle) = task_guard.take() {
+            //等待任务结束
             tokio::select! {
                 _ = time::sleep(Duration::from_secs(3)) => {
                     handle.abort();

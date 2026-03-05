@@ -58,8 +58,31 @@ impl WritePlan {
             holding: merge_u16_blocks(holding),
         }
     }
+
+    pub(super) async fn apply(&self, ctx: &mut Context) -> Result<(), ModbusDevError> {
+        for (start, vals) in self.coils.iter() {
+            if vals.len() == 1 {
+                ctx.write_single_coil(*start, vals[0]).await??;
+            } else {
+                ctx.write_multiple_coils(*start, &vals).await??;
+            }
+        }
+        for (start, vals) in self.holding.iter() {
+            if vals.len() == 1 {
+                ctx.write_single_register(*start, vals[0]).await??;
+            } else {
+                ctx.write_multiple_registers(*start, &vals).await??;
+            }
+        }
+        Ok(())
+    }
 }
 
+/// 构建以点位ID作为表的配置
+/// # 输入
+/// - `configs`: MODBUS设备的点位配置列表
+/// # 输出
+/// - `HashMap<PointId, ModbusConfig>`: 以点位ID作为表的配置映射
 pub(super) fn build_cfg_map(configs: &ModbusConfigs) -> HashMap<PointId, ModbusConfig> {
     let mut out = HashMap::new();
     for cfg in configs {
@@ -132,27 +155,6 @@ fn merge_u16_blocks(map: BTreeMap<u16, u16>) -> Vec<(u16, SmallVec<[u16; 16]>)> 
     }
 
     out
-}
-
-pub(super) async fn apply_write_plan(
-    ctx: &mut Context,
-    plan: WritePlan,
-) -> Result<(), ModbusDevError> {
-    for (start, vals) in plan.coils {
-        if vals.len() == 1 {
-            ctx.write_single_coil(start, vals[0]).await??;
-        } else {
-            ctx.write_multiple_coils(start, &vals).await??;
-        }
-    }
-    for (start, vals) in plan.holding {
-        if vals.len() == 1 {
-            ctx.write_single_register(start, vals[0]).await??;
-        } else {
-            ctx.write_multiple_registers(start, &vals).await??;
-        }
-    }
-    Ok(())
 }
 
 fn val_to_bool(v: Val) -> Option<bool> {

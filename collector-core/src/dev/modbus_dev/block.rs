@@ -39,7 +39,7 @@ impl TryFrom<Vec<ModbusConfig>> for Blocks {
         // 2) 每组：排序 + 连续合并 + 长度限制
         for (rt, mut pts) in groups {
             pts.sort_by_key(|it| it.register_address);
-
+            //不同的寄存器允许连续读取的长度不同
             let max_len: u16 = match rt {
                 RegisterType::Coils | RegisterType::DiscreteInputs => 2000,
                 RegisterType::HoldingRegisters | RegisterType::InputRegisters => 120,
@@ -50,6 +50,7 @@ impl TryFrom<Vec<ModbusConfig>> for Blocks {
                 let first = pts[i];
 
                 let start = first.register_address;
+                //quantity是数据长度
                 let first_w = first.data_type.quantity();
 
                 let mut end_excl = start + first_w;
@@ -67,7 +68,7 @@ impl TryFrom<Vec<ModbusConfig>> for Blocks {
                     let next = pts[i];
                     let next_start = next.register_address;
 
-                    // 更直观的三分支：连续 / gap / overlap
+                    //三分支：连续 / gap / overlap
                     if next_start == end_excl {
                         let next_w = next.data_type.quantity();
 
@@ -118,6 +119,8 @@ pub(super) enum BlockRead {
 }
 
 impl Blocks {
+    /// 读取四遥的值
+    /// # 输入
     pub(super) async fn request(
         &self,
         ctx: &mut Context,
