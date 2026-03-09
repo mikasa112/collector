@@ -175,43 +175,19 @@ impl Blocks {
     }
 
     pub(super) fn parse(&self, reads: &[BlockRead]) -> Vec<DataPoint> {
-        let mut reg_values: Vec<Option<Vec<u16>>> = vec![None; self.logical_regions.len()];
-        let mut bit_values: Vec<Option<Vec<bool>>> = vec![None; self.logical_regions.len()];
+        let mut reg_values: Vec<Option<CollectState<u16>>> = vec![None; self.logical_regions.len()];
+        let mut bit_values: Vec<Option<CollectState<bool>>> =
+            vec![None; self.logical_regions.len()];
 
         for (block, read) in self.blocks.iter().zip(reads.iter()) {
             match (block.register_type, read) {
                 (RegisterType::Coils, BlockRead::Coils(data))
                 | (RegisterType::DiscreteInputs, BlockRead::DiscreteInputs(data)) => {
-                    for segment in &block.segments {
-                        let src_offset = segment.block_offset as usize;
-                        let dst_offset = segment.region_offset as usize;
-                        let width = segment.width as usize;
-                        if src_offset + width > data.len() {
-                            continue;
-                        }
-                        let region = &self.logical_regions[segment.region_idx];
-                        let slot = &mut bit_values[segment.region_idx];
-                        let buf =
-                            slot.get_or_insert_with(|| vec![false; region.cfg.quantity as usize]);
-                        buf[dst_offset..dst_offset + width]
-                            .copy_from_slice(&data[src_offset..src_offset + width]);
-                    }
+                    collect_segments(&self.logical_regions, &block.segments, data, &mut bit_values);
                 }
                 (RegisterType::HoldingRegisters, BlockRead::HoldingRegisters(data))
                 | (RegisterType::InputRegisters, BlockRead::InputRegisters(data)) => {
-                    for segment in &block.segments {
-                        let src_offset = segment.block_offset as usize;
-                        let dst_offset = segment.region_offset as usize;
-                        let width = segment.width as usize;
-                        if src_offset + width > data.len() {
-                            continue;
-                        }
-                        let region = &self.logical_regions[segment.region_idx];
-                        let slot = &mut reg_values[segment.region_idx];
-                        let buf = slot.get_or_insert_with(|| vec![0; region.cfg.quantity as usize]);
-                        buf[dst_offset..dst_offset + width]
-                            .copy_from_slice(&data[src_offset..src_offset + width]);
-                    }
+                    collect_segments(&self.logical_regions, &block.segments, data, &mut reg_values);
                 }
                 _ => {}
             }
@@ -220,12 +196,18 @@ impl Blocks {
         let mut out = Vec::with_capacity(self.logical_regions.len());
         for (idx, region) in self.logical_regions.iter().enumerate() {
             let value = match region.cfg.register_type {
-                RegisterType::Coils | RegisterType::DiscreteInputs => bit_values[idx]
-                    .as_ref()
-                    .map(|data| decode_bit_value(&region.cfg, data)),
-                RegisterType::HoldingRegisters | RegisterType::InputRegisters => reg_values[idx]
-                    .as_ref()
-                    .map(|data| decode_register_value(&region.cfg, data)),
+                RegisterType::Coils | RegisterType::DiscreteInputs => {
+                    bit_values[idx]
+                        .as_ref()
+                        .filter(|state| state.filled == region.cfg.quantity as usize)
+                        .map(|state| decode_bit_value(&region.cfg, &state.values))
+                }
+                RegisterType::HoldingRegisters | RegisterType::InputRegisters => {
+                    reg_values[idx]
+                        .as_ref()
+                        .filter(|state| state.filled == region.cfg.quantity as usize)
+                        .map(|state| decode_register_value(&region.cfg, &state.values))
+                }
             };
             let Some(value) = value else {
                 continue;
@@ -259,6 +241,36 @@ pub(super) struct RegionSegment {
     pub(super) block_offset: u16,
     pub(super) region_offset: u16,
     pub(super) width: u16,
+}
+
+#[derive(Debug, Clone)]
+struct CollectState<T> {
+    values: Vec<T>,
+    filled: usize,
+}
+
+fn collect_segments<T: Copy + Default>(
+    logical_regions: &[LogicalRegion],
+    segments: &[RegionSegment],
+    data: &[T],
+    states: &mut [Option<CollectState<T>>],
+) {
+    for segment in segments {
+        let src_offset = segment.block_offset as usize;
+        let dst_offset = segment.region_offset as usize;
+        let width = segment.width as usize;
+        if src_offset + width > data.len() {
+            continue;
+        }
+        let region = &logical_regions[segment.region_idx];
+        let state = states[segment.region_idx].get_or_insert_with(|| CollectState {
+            values: vec![T::default(); region.cfg.quantity as usize],
+            filled: 0,
+        });
+        state.values[dst_offset..dst_offset + width]
+            .copy_from_slice(&data[src_offset..src_offset + width]);
+        state.filled += width;
+    }
 }
 
 fn decode_bit_value(cfg: &ModbusConfig, data: &[bool]) -> Val {
@@ -486,5 +498,16 @@ mod tests {
         assert_eq!(items[0], Val::U32(1));
         assert_eq!(items[119], Val::U32(120));
         assert_eq!(items[120], Val::U32(121));
+    }
+
+    #[test]
+    fn parse_skips_incomplete_large_region() {
+        let mut point = cfg(RegisterType::InputRegisters, 1000, ModbusDataType::U16);
+        point.quantity = 121;
+        let blocks = Blocks::try_from(vec![point]).unwrap();
+
+        let parsed = blocks.parse(&[BlockRead::InputRegisters(vec![1; 120])]);
+
+        assert!(parsed.is_empty());
     }
 }

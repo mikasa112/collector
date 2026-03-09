@@ -1,5 +1,6 @@
 use std::collections::{BTreeMap, HashMap};
 
+use smallvec::Array;
 use smallvec::SmallVec;
 use tokio_modbus::client::{Context, Writer};
 use tracing::warn;
@@ -32,7 +33,7 @@ impl WritePlan {
             };
             match cfg.register_type {
                 RegisterType::Coils => {
-                    let v: Result<bool, ValError> = entry.value.try_into();
+                    let v: Result<bool, ValError> = (&entry.value).try_into();
                     let Ok(v) = v else {
                         warn!("[{}] 点位类型不支持下发到线圈: {}", dev_id, cfg.name);
                         continue;
@@ -40,7 +41,7 @@ impl WritePlan {
                     coils.insert(cfg.register_address, v);
                 }
                 RegisterType::HoldingRegisters => {
-                    let Some(values) = encode_registers(cfg, entry.value, dev_id) else {
+                    let Some(values) = encode_registers(cfg, &entry.value, dev_id) else {
                         continue;
                     };
                     for (idx, v) in values.into_iter().enumerate() {
@@ -55,8 +56,8 @@ impl WritePlan {
         }
 
         WritePlan {
-            coils: merge_bool_blocks(coils),
-            holding: merge_u16_blocks(holding),
+            coils: merge_blocks::<[bool; 16]>(coils),
+            holding: merge_blocks::<[u16; 16]>(holding),
         }
     }
 
@@ -92,10 +93,14 @@ pub(super) fn build_cfg_map(configs: &ModbusConfigs) -> HashMap<PointId, ModbusC
     out
 }
 
-fn merge_bool_blocks(map: BTreeMap<u16, bool>) -> Vec<(u16, SmallVec<[bool; 16]>)> {
-    let mut out: Vec<(u16, SmallVec<[bool; 16]>)> = Vec::new();
+fn merge_blocks<A>(map: BTreeMap<u16, A::Item>) -> Vec<(u16, SmallVec<A>)>
+where
+    A: Array,
+    A::Item: Copy,
+{
+    let mut out: Vec<(u16, SmallVec<A>)> = Vec::new();
     let mut cur_start: Option<u16> = None;
-    let mut cur_vals: SmallVec<[bool; 16]> = SmallVec::new();
+    let mut cur_vals: SmallVec<A> = SmallVec::new();
     let mut last_addr: Option<u16> = None;
 
     for (addr, val) in map {
@@ -125,40 +130,7 @@ fn merge_bool_blocks(map: BTreeMap<u16, bool>) -> Vec<(u16, SmallVec<[bool; 16]>
     out
 }
 
-fn merge_u16_blocks(map: BTreeMap<u16, u16>) -> Vec<(u16, SmallVec<[u16; 16]>)> {
-    let mut out: Vec<(u16, SmallVec<[u16; 16]>)> = Vec::new();
-    let mut cur_start: Option<u16> = None;
-    let mut cur_vals: SmallVec<[u16; 16]> = SmallVec::new();
-    let mut last_addr: Option<u16> = None;
-
-    for (addr, val) in map {
-        match (cur_start, last_addr) {
-            (None, _) => {
-                cur_start = Some(addr);
-                cur_vals.push(val);
-            }
-            (Some(_), Some(last)) if addr == last.saturating_add(1) => {
-                cur_vals.push(val);
-                last_addr = Some(addr);
-                continue;
-            }
-            (Some(start), _) => {
-                out.push((start, std::mem::take(&mut cur_vals)));
-                cur_start = Some(addr);
-                cur_vals.push(val);
-            }
-        }
-        last_addr = Some(addr);
-    }
-
-    if let Some(start) = cur_start {
-        out.push((start, cur_vals));
-    }
-
-    out
-}
-
-fn encode_registers(cfg: &ModbusConfig, value: Val, dev_id: &str) -> Option<SmallVec<[u16; 2]>> {
+fn encode_registers(cfg: &ModbusConfig, value: &Val, dev_id: &str) -> Option<SmallVec<[u16; 2]>> {
     match cfg.data_type {
         ModbusDataType::Bool => {
             let v = value.try_into().ok()?;
@@ -166,50 +138,54 @@ fn encode_registers(cfg: &ModbusConfig, value: Val, dev_id: &str) -> Option<Smal
             out.push(if v { 1u16 } else { 0u16 });
             Some(out)
         }
-        ModbusDataType::U16 => {
-            let raw = scale_to_raw(cfg, value, dev_id)?;
-            let v = to_u16(raw, dev_id, cfg.name)?;
-            let mut out = SmallVec::<[u16; 2]>::new();
-            out.push(
-                cfg.byte_order
-                    .map_or(ByteOrder::AB.assemble_u16(v), |it| it.assemble_u16(v)),
-            );
-            Some(out)
-        }
-        ModbusDataType::I16 => {
-            let raw = scale_to_raw(cfg, value, dev_id)?;
-            let v = to_i16(raw, dev_id, cfg.name)? as u16;
-            let mut out = SmallVec::<[u16; 2]>::new();
-            out.push(
-                cfg.byte_order
-                    .map_or(ByteOrder::AB.assemble_u16(v), |it| it.assemble_u16(v)),
-            );
-            Some(out)
-        }
-        ModbusDataType::U32 => {
-            let raw = scale_to_raw(cfg, value, dev_id)?;
-            let v = to_u32(raw, dev_id, cfg.name)?;
-            let arr = cfg
-                .byte_order
-                .map_or(ByteOrder::ABCD.assemble_u32(v), |it| it.assemble_u32(v));
-            let mut out = SmallVec::<[u16; 2]>::new();
-            out.extend_from_slice(&arr);
-            Some(out)
-        }
-        ModbusDataType::I32 => {
-            let raw = scale_to_raw(cfg, value, dev_id)?;
-            let v = to_i32(raw, dev_id, cfg.name)? as u32;
-            let arr = cfg
-                .byte_order
-                .map_or(ByteOrder::ABCD.assemble_u32(v), |it| it.assemble_u32(v));
-            let mut out = SmallVec::<[u16; 2]>::new();
-            out.extend_from_slice(&arr);
-            Some(out)
-        }
+        ModbusDataType::U16 => encode_single_register(cfg, value, dev_id, |raw, dev_id, name| {
+            to_u16(raw, dev_id, name)
+        }),
+        ModbusDataType::I16 => encode_single_register(cfg, value, dev_id, |raw, dev_id, name| {
+            to_i16(raw, dev_id, name).map(|v| v as u16)
+        }),
+        ModbusDataType::U32 => encode_double_register(cfg, value, dev_id, |raw, dev_id, name| {
+            to_u32(raw, dev_id, name)
+        }),
+        ModbusDataType::I32 => encode_double_register(cfg, value, dev_id, |raw, dev_id, name| {
+            to_i32(raw, dev_id, name).map(|v| v as u32)
+        }),
     }
 }
 
-fn scale_to_raw(cfg: &ModbusConfig, value: Val, dev_id: &str) -> Option<f64> {
+fn encode_single_register(
+    cfg: &ModbusConfig,
+    value: &Val,
+    dev_id: &str,
+    convert: impl FnOnce(f64, &str, &str) -> Option<u16>,
+) -> Option<SmallVec<[u16; 2]>> {
+    let raw = scale_to_raw(cfg, value, dev_id)?;
+    let v = convert(raw, dev_id, cfg.name)?;
+    let mut out = SmallVec::<[u16; 2]>::new();
+    out.push(
+        cfg.byte_order
+            .map_or(ByteOrder::AB.assemble_u16(v), |it| it.assemble_u16(v)),
+    );
+    Some(out)
+}
+
+fn encode_double_register(
+    cfg: &ModbusConfig,
+    value: &Val,
+    dev_id: &str,
+    convert: impl FnOnce(f64, &str, &str) -> Option<u32>,
+) -> Option<SmallVec<[u16; 2]>> {
+    let raw = scale_to_raw(cfg, value, dev_id)?;
+    let v = convert(raw, dev_id, cfg.name)?;
+    let arr = cfg
+        .byte_order
+        .map_or(ByteOrder::ABCD.assemble_u32(v), |it| it.assemble_u32(v));
+    let mut out = SmallVec::<[u16; 2]>::new();
+    out.extend_from_slice(&arr);
+    Some(out)
+}
+
+fn scale_to_raw(cfg: &ModbusConfig, value: &Val, dev_id: &str) -> Option<f64> {
     let v: f64 = value.try_into().ok()?;
     if cfg.scale.abs() < 1e-12 {
         warn!("[{}] 点位缩放为0, 忽略下发: {}", dev_id, cfg.name);
@@ -253,19 +229,3 @@ fn to_i32(v: f64, dev_id: &str, name: &str) -> Option<i32> {
     }
     Some(r as i32)
 }
-
-// fn u16_with_order(v: u16, order: Option<ByteOrder>) -> u16 {
-//     match order {
-//         Some(ByteOrder::BA) => v.swap_bytes(),
-//         _ => v,
-//     }
-// }
-
-// fn encode_u32(raw: u32, order: Option<ByteOrder>) -> [u16; 2] {
-//     let w0 = (raw >> 16) as u16;
-//     let w1 = (raw & 0xFFFF) as u16;
-//     match order {
-//         Some(ByteOrder::CDAB) => [w1, w0],
-//         _ => [w0, w1],
-//     }
-// }

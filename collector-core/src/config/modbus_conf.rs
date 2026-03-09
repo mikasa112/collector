@@ -140,29 +140,13 @@ pub(crate) fn build_configs(path: String) -> Result<ModbusConfigs, ModbusConfigs
             }
         }
     };
-    if let Ok(range) = workbook
-        .with_header_row(HeaderRow::Row(1))
-        .worksheet_range("遥信")
-    {
-        parse(range, &mut configs);
-    }
-    if let Ok(range) = workbook
-        .with_header_row(HeaderRow::Row(1))
-        .worksheet_range("遥控")
-    {
-        parse(range, &mut configs);
-    }
-    if let Ok(range) = workbook
-        .with_header_row(HeaderRow::Row(1))
-        .worksheet_range("遥测")
-    {
-        parse(range, &mut configs);
-    }
-    if let Ok(range) = workbook
-        .with_header_row(HeaderRow::Row(1))
-        .worksheet_range("遥调")
-    {
-        parse(range, &mut configs);
+    for sheet in ["遥信", "遥控", "遥测", "遥调"] {
+        if let Ok(range) = workbook
+            .with_header_row(HeaderRow::Row(1))
+            .worksheet_range(sheet)
+        {
+            parse(range, &mut configs);
+        }
     }
     Ok(configs)
 }
@@ -187,42 +171,18 @@ impl ModbusConfig {
         if row.len() != 11 {
             return Err(anyhow::Error::msg("行数据长度不正确"));
         }
-        let id = row[0]
-            .get_float()
-            .ok_or(anyhow::Error::msg("序号不能为空"))?;
+        let id = required_f64(row, 0, "序号")?;
         if !(0.0..=(u16::MAX as f64)).contains(&id) {
             return Err(anyhow::Error::msg("序号(id)超出允许范围(0..2^16-1)"));
         }
         let id = id as u16;
-        let name = row[1]
-            .get_string()
-            .ok_or(anyhow::Error::msg("点位名称不能为空"))?
-            .to_owned()
-            .leak();
-        let data_type = ModbusDataType::try_from(
-            row[2]
-                .get_string()
-                .ok_or(anyhow::Error::msg("数据类型不能为空"))?,
-        )?;
-        let unit = row[3].get_string().map(|s| {
-            let s: &'static str = s.to_owned().leak();
-            s
-        });
-        let remarks = row[4].get_string().map(|s| {
-            let s: &'static str = s.to_owned().leak();
-            s
-        });
-        let register_address = row[5]
-            .get_float()
-            .ok_or(anyhow::Error::msg("寄存器地址不能为空"))? as u16;
-        let register_type = RegisterType::try_from(
-            row[6]
-                .get_string()
-                .ok_or(anyhow::Error::msg("寄存器类型不能为空"))?,
-        )?;
-        let quantity = row[7]
-            .get_float()
-            .ok_or(anyhow::Error::msg("数量不能为空"))? as u16;
+        let name = required_static_str(row, 1, "点位名称")?;
+        let data_type = ModbusDataType::try_from(required_str(row, 2, "数据类型")?)?;
+        let unit = optional_static_str(row, 3);
+        let remarks = optional_static_str(row, 4);
+        let register_address = required_f64(row, 5, "寄存器地址")? as u16;
+        let register_type = RegisterType::try_from(required_str(row, 6, "寄存器类型")?)?;
+        let quantity = required_u16_integerish(row, 7, "数量")?;
         let item_width = data_type.register_width();
         if quantity == 0 {
             return Err(anyhow::Error::msg("数量必须大于0"));
@@ -238,12 +198,8 @@ impl ModbusConfig {
             return Err(anyhow::Error::msg("可写寄存器点位只能配置为标量"));
         }
         let byte_order = ByteOrder::try_from(row[8].get_string()).ok();
-        let scale = row[9]
-            .get_float()
-            .ok_or(anyhow::Error::msg("缩放不能为空"))?;
-        let offset = row[10]
-            .get_float()
-            .ok_or(anyhow::Error::msg("偏移量不能为空"))?;
+        let scale = required_f64(row, 9, "缩放")?;
+        let offset = required_f64(row, 10, "偏移量")?;
         Ok(ModbusConfig {
             id,
             name,
@@ -264,4 +220,43 @@ impl ModbusConfig {
         let id_low = self.id as u32 & 0xFFFF;
         register_type_high | id_low
     }
+}
+
+fn required_f64(row: &[Data], idx: usize, field: &str) -> Result<f64, anyhow::Error> {
+    row[idx]
+        .get_float()
+        .ok_or_else(|| anyhow::Error::msg(format!("{field}不能为空")))
+}
+
+fn required_str<'a>(row: &'a [Data], idx: usize, field: &str) -> Result<&'a str, anyhow::Error> {
+    row[idx]
+        .get_string()
+        .ok_or_else(|| anyhow::Error::msg(format!("{field}不能为空")))
+}
+
+fn required_static_str(row: &[Data], idx: usize, field: &str) -> Result<&'static str, anyhow::Error> {
+    Ok(required_str(row, idx, field)?.to_owned().leak())
+}
+
+fn optional_static_str(row: &[Data], idx: usize) -> Option<&'static str> {
+    row[idx].get_string().map(|s| {
+        let leaked: &'static mut str = s.to_owned().leak();
+        leaked as &'static str
+    })
+}
+
+fn required_u16_integerish(row: &[Data], idx: usize, field: &str) -> Result<u16, anyhow::Error> {
+    if let Some(v) = row[idx].get_int() {
+        return u16::try_from(v).map_err(|_| anyhow::Error::msg(format!("{field}超出范围")));
+    }
+    if let Some(v) = row[idx].get_float() {
+        if !v.is_finite() || v.fract().abs() > f64::EPSILON {
+            return Err(anyhow::Error::msg(format!("{field}必须是整数")));
+        }
+        if !(0.0..=(u16::MAX as f64)).contains(&v) {
+            return Err(anyhow::Error::msg(format!("{field}超出范围")));
+        }
+        return Ok(v as u16);
+    }
+    Err(anyhow::Error::msg(format!("{field}不能为空")))
 }

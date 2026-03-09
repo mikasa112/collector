@@ -22,20 +22,45 @@ pub enum Val {
     List(Vec<Val>),
 }
 
+fn val_as_bool(value: &Val) -> Result<bool, ValError> {
+    match value {
+        Val::U8(v) => Ok(*v != 0),
+        Val::I8(v) => Ok(*v != 0),
+        Val::I16(v) => Ok(*v != 0),
+        Val::I32(v) => Ok(*v != 0),
+        Val::U16(v) => Ok(*v != 0),
+        Val::U32(v) => Ok(*v != 0),
+        Val::F32(v) => Ok(v.abs() > f32::EPSILON),
+        Val::List(_) => Err(ValError::InvalidValue),
+    }
+}
+
+fn val_as_f64(value: &Val) -> Result<f64, ValError> {
+    match value {
+        Val::U8(v) => Ok(*v as f64),
+        Val::I8(v) => Ok(*v as f64),
+        Val::I16(v) => Ok(*v as f64),
+        Val::I32(v) => Ok(*v as f64),
+        Val::U16(v) => Ok(*v as f64),
+        Val::U32(v) => Ok(*v as f64),
+        Val::F32(v) => Ok(*v as f64),
+        Val::List(_) => Err(ValError::InvalidValue),
+    }
+}
+
 impl TryFrom<Val> for bool {
     type Error = ValError;
 
     fn try_from(value: Val) -> Result<Self, Self::Error> {
-        match value {
-            Val::U8(v) => Ok(v != 0),
-            Val::I8(v) => Ok(v != 0),
-            Val::I16(v) => Ok(v != 0),
-            Val::I32(v) => Ok(v != 0),
-            Val::U16(v) => Ok(v != 0),
-            Val::U32(v) => Ok(v != 0),
-            Val::F32(v) => Ok(v.abs() > f32::EPSILON),
-            Val::List(_) => Err(ValError::InvalidValue),
-        }
+        val_as_bool(&value)
+    }
+}
+
+impl TryFrom<&Val> for bool {
+    type Error = ValError;
+
+    fn try_from(value: &Val) -> Result<Self, Self::Error> {
+        val_as_bool(value)
     }
 }
 
@@ -43,16 +68,15 @@ impl TryFrom<Val> for f64 {
     type Error = ValError;
 
     fn try_from(value: Val) -> Result<Self, Self::Error> {
-        match value {
-            Val::U8(v) => Ok(v as f64),
-            Val::I8(v) => Ok(v as f64),
-            Val::I16(v) => Ok(v as f64),
-            Val::I32(v) => Ok(v as f64),
-            Val::U16(v) => Ok(v as f64),
-            Val::U32(v) => Ok(v as f64),
-            Val::F32(v) => Ok(v as f64),
-            Val::List(_) => Err(ValError::InvalidValue),
-        }
+        val_as_f64(&value)
+    }
+}
+
+impl TryFrom<&Val> for f64 {
+    type Error = ValError;
+
+    fn try_from(value: &Val) -> Result<Self, Self::Error> {
+        val_as_f64(value)
     }
 }
 
