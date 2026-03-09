@@ -73,13 +73,13 @@ where
 
     fn snapshot<D: Identifiable + ?Sized>(&self, dev: &D) -> Option<Vec<T>> {
         let guard = self.latest.get(dev.id())?;
-        let iter = guard.iter().map(|v| *v.value());
+        let iter = guard.iter().map(|v| v.value().clone());
         Some(iter.collect())
     }
 
     fn read<D: Identifiable + ?Sized>(&self, dev: &D, key: u32) -> Option<T> {
         let guard = self.latest.get(dev.id())?;
-        guard.get(&key).map(|v| *v.value())
+        guard.get(&key).map(|v| v.value().clone())
     }
 
     fn with_read<D, F, R>(&self, dev: &D, key: u32, f: F) -> Option<R>

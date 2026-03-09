@@ -11,7 +11,7 @@ pub enum ModbusDataType {
 }
 
 impl ModbusDataType {
-    pub fn quantity(&self) -> u16 {
+    pub fn register_width(&self) -> u16 {
         match self {
             ModbusDataType::I32 | ModbusDataType::U32 => 2,
             _ => 1,
@@ -66,6 +66,24 @@ impl TryFrom<Option<&str>> for ByteOrder {
             Some("ABCD") => Ok(ByteOrder::ABCD),
             Some("CDAB") => Ok(ByteOrder::CDAB),
             _ => Err(ByteOrderError::InvalidByteOrder),
+        }
+    }
+}
+
+impl ByteOrder {
+    pub fn assemble_u16(&self, v: u16) -> u16 {
+        match self {
+            ByteOrder::BA => v.swap_bytes(),
+            _ => v,
+        }
+    }
+
+    pub fn assemble_u32(&self, v: u32) -> [u16; 2] {
+        let w0 = (v >> 16) as u16;
+        let w1 = (v & 0xFFFF) as u16;
+        match self {
+            ByteOrder::CDAB => [w1, w0],
+            _ => [w0, w1],
         }
     }
 }
@@ -158,6 +176,7 @@ pub struct ModbusConfig {
     pub remarks: Option<&'static str>,
     pub register_address: u16,
     pub register_type: RegisterType,
+    pub quantity: u16,
     pub byte_order: Option<ByteOrder>,
     pub scale: f64,
     pub offset: f64,
@@ -165,7 +184,7 @@ pub struct ModbusConfig {
 
 impl ModbusConfig {
     fn build(row: &[Data]) -> Result<Self, anyhow::Error> {
-        if row.len() != 10 {
+        if row.len() != 11 {
             return Err(anyhow::Error::msg("行数据长度不正确"));
         }
         let id = row[0]
@@ -201,11 +220,28 @@ impl ModbusConfig {
                 .get_string()
                 .ok_or(anyhow::Error::msg("寄存器类型不能为空"))?,
         )?;
-        let byte_order = ByteOrder::try_from(row[7].get_string()).ok();
-        let scale = row[8]
+        let quantity = row[7]
+            .get_float()
+            .ok_or(anyhow::Error::msg("数量不能为空"))? as u16;
+        let item_width = data_type.register_width();
+        if quantity == 0 {
+            return Err(anyhow::Error::msg("数量必须大于0"));
+        }
+        if !quantity.is_multiple_of(item_width) {
+            return Err(anyhow::Error::msg("数量与数据类型不匹配"));
+        }
+        if matches!(
+            register_type,
+            RegisterType::Coils | RegisterType::HoldingRegisters
+        ) && quantity != item_width
+        {
+            return Err(anyhow::Error::msg("可写寄存器点位只能配置为标量"));
+        }
+        let byte_order = ByteOrder::try_from(row[8].get_string()).ok();
+        let scale = row[9]
             .get_float()
             .ok_or(anyhow::Error::msg("缩放不能为空"))?;
-        let offset = row[9]
+        let offset = row[10]
             .get_float()
             .ok_or(anyhow::Error::msg("偏移量不能为空"))?;
         Ok(ModbusConfig {
@@ -216,6 +252,7 @@ impl ModbusConfig {
             remarks,
             register_address,
             register_type,
+            quantity,
             byte_order,
             scale,
             offset,

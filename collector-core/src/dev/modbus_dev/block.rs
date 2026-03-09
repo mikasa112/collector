@@ -9,7 +9,10 @@ use crate::{
 };
 
 #[derive(Debug)]
-pub(super) struct Blocks(pub(super) Vec<Block>);
+pub(super) struct Blocks {
+    pub(super) blocks: Vec<Block>,
+    logical_regions: Vec<LogicalRegion>,
+}
 
 #[derive(Debug, thiserror::Error)]
 pub enum BuildBlocksError {
@@ -35,6 +38,7 @@ impl TryFrom<Vec<ModbusConfig>> for Blocks {
         }
 
         let mut blocks: Vec<Block> = Vec::new();
+        let mut logical_regions: Vec<LogicalRegion> = Vec::new();
 
         // 2) 每组：排序 + 连续合并 + 长度限制
         for (rt, mut pts) in groups {
@@ -45,69 +49,90 @@ impl TryFrom<Vec<ModbusConfig>> for Blocks {
                 RegisterType::HoldingRegisters | RegisterType::InputRegisters => 120,
             };
 
-            let mut i: usize = 0;
-            while i < pts.len() {
-                let first = pts[i];
+            let mut active_range: Option<(u16, u16)> = None;
+            let mut current_block: Option<Block> = None;
 
-                let start = first.register_address;
-                //quantity是数据长度
-                let first_w = first.data_type.quantity();
+            for cfg in pts {
+                let cfg_start = cfg.register_address;
+                let cfg_end = cfg.register_address.saturating_add(cfg.quantity);
 
-                let mut end_excl = start + first_w;
-
-                let mut regions: Vec<Region> = Vec::new();
-                regions.push(Region {
-                    cfg: first,
-                    offset: 0,
-                    width: first_w,
-                });
-
-                i += 1;
-
-                while i < pts.len() {
-                    let next = pts[i];
-                    let next_start = next.register_address;
-
-                    //三分支：连续 / gap / overlap
-                    if next_start == end_excl {
-                        let next_w = next.data_type.quantity();
-
-                        let cur_len = end_excl - start;
-                        if cur_len.saturating_add(next_w) > max_len {
-                            break; // 连续但超长 -> 切块
-                        }
-
-                        regions.push(Region {
-                            cfg: next,
-                            offset: next_start - start,
-                            width: next_w,
-                        });
-
-                        end_excl += next_w;
-                        i += 1;
-                    } else if next_start > end_excl {
-                        break; // gap -> 切块（严格不允许 gap 合并）
-                    } else {
-                        // next_start < end_excl -> overlap（共享/冲突地址），点表非法
+                match active_range {
+                    Some((block_start, block_end)) if cfg_start < block_end => {
                         return Err(BuildBlocksError::Overlap {
                             register_type: rt,
-                            block_start: start,
-                            block_end: end_excl,
-                            next_start,
+                            block_start,
+                            block_end,
+                            next_start: cfg_start,
                         });
+                    }
+                    Some((_, block_end)) if cfg_start > block_end => {
+                        active_range = Some((cfg_start, cfg_end));
+                    }
+                    Some((block_start, _)) => {
+                        active_range = Some((block_start, cfg_end));
+                    }
+                    None => {
+                        active_range = Some((cfg_start, cfg_end));
                     }
                 }
 
-                blocks.push(Block {
-                    register_type: rt,
-                    start,
-                    len: end_excl - start,
-                    regions,
-                });
+                let region_idx = logical_regions.len();
+                logical_regions.push(LogicalRegion { cfg });
+
+                let mut region_offset = 0u16;
+                let mut next_addr = cfg.register_address;
+                let mut remaining = cfg.quantity;
+                while remaining > 0 {
+                    let mut appendable = false;
+                    if let Some(block) = current_block.as_ref() {
+                        appendable = block.register_type == rt
+                            && block.start.saturating_add(block.len) == next_addr
+                            && block.len < max_len;
+                    }
+
+                    if !appendable {
+                        if let Some(block) = current_block.take() {
+                            blocks.push(block);
+                        }
+                        current_block = Some(Block {
+                            register_type: rt,
+                            start: next_addr,
+                            len: 0,
+                            segments: Vec::new(),
+                        });
+                    }
+
+                    let block = current_block.as_mut().expect("block just initialized");
+                    let capacity = max_len.saturating_sub(block.len);
+                    let width = remaining.min(capacity);
+                    let block_offset = block.len;
+                    block.segments.push(RegionSegment {
+                        region_idx,
+                        block_offset,
+                        region_offset,
+                        width,
+                    });
+                    block.len = block.len.saturating_add(width);
+                    remaining = remaining.saturating_sub(width);
+                    next_addr = next_addr.saturating_add(width);
+                    region_offset = region_offset.saturating_add(width);
+
+                    if block.len >= max_len {
+                        let block = current_block.take().expect("block exists");
+                        blocks.push(block);
+                    }
+                }
+            }
+
+            if let Some(block) = current_block.take() {
+                blocks.push(block);
             }
         }
 
-        Ok(Self(blocks))
+        Ok(Self {
+            blocks,
+            logical_regions,
+        })
     }
 }
 
@@ -125,8 +150,8 @@ impl Blocks {
         &self,
         ctx: &mut Context,
     ) -> Result<Vec<BlockRead>, ModbusDevError> {
-        let mut reads = Vec::with_capacity(self.0.len());
-        for block in &self.0 {
+        let mut reads = Vec::with_capacity(self.blocks.len());
+        for block in &self.blocks {
             match block.register_type {
                 RegisterType::Coils => {
                     let data = ctx.read_coils(block.start, block.len).await??;
@@ -150,44 +175,66 @@ impl Blocks {
     }
 
     pub(super) fn parse(&self, reads: &[BlockRead]) -> Vec<DataPoint> {
-        let total_regions = self.0.iter().map(|block| block.regions.len()).sum();
-        let mut out = Vec::with_capacity(total_regions);
-        for (block, read) in self.0.iter().zip(reads.iter()) {
+        let mut reg_values: Vec<Option<Vec<u16>>> = vec![None; self.logical_regions.len()];
+        let mut bit_values: Vec<Option<Vec<bool>>> = vec![None; self.logical_regions.len()];
+
+        for (block, read) in self.blocks.iter().zip(reads.iter()) {
             match (block.register_type, read) {
                 (RegisterType::Coils, BlockRead::Coils(data))
                 | (RegisterType::DiscreteInputs, BlockRead::DiscreteInputs(data)) => {
-                    for region in &block.regions {
-                        let idx = region.offset as usize;
-                        if idx >= data.len() {
+                    for segment in &block.segments {
+                        let src_offset = segment.block_offset as usize;
+                        let dst_offset = segment.region_offset as usize;
+                        let width = segment.width as usize;
+                        if src_offset + width > data.len() {
                             continue;
                         }
-                        let v = if data[idx] { 1u8 } else { 0u8 };
-                        out.push(DataPoint {
-                            id: region.cfg.serial_num(),
-                            name: region.cfg.name,
-                            value: Val::U8(v),
-                        });
+                        let region = &self.logical_regions[segment.region_idx];
+                        let slot = &mut bit_values[segment.region_idx];
+                        let buf =
+                            slot.get_or_insert_with(|| vec![false; region.cfg.quantity as usize]);
+                        buf[dst_offset..dst_offset + width]
+                            .copy_from_slice(&data[src_offset..src_offset + width]);
                     }
                 }
                 (RegisterType::HoldingRegisters, BlockRead::HoldingRegisters(data))
                 | (RegisterType::InputRegisters, BlockRead::InputRegisters(data)) => {
-                    for region in &block.regions {
-                        let offset = region.offset as usize;
-                        let width = region.width as usize;
-                        if offset + width > data.len() {
+                    for segment in &block.segments {
+                        let src_offset = segment.block_offset as usize;
+                        let dst_offset = segment.region_offset as usize;
+                        let width = segment.width as usize;
+                        if src_offset + width > data.len() {
                             continue;
                         }
-                        let slice = &data[offset..offset + width];
-                        let val = decode_register_value(&region.cfg, slice);
-                        out.push(DataPoint {
-                            id: region.cfg.serial_num(),
-                            name: region.cfg.name,
-                            value: val,
-                        });
+                        let region = &self.logical_regions[segment.region_idx];
+                        let slot = &mut reg_values[segment.region_idx];
+                        let buf = slot.get_or_insert_with(|| vec![0; region.cfg.quantity as usize]);
+                        buf[dst_offset..dst_offset + width]
+                            .copy_from_slice(&data[src_offset..src_offset + width]);
                     }
                 }
                 _ => {}
             }
+        }
+
+        let mut out = Vec::with_capacity(self.logical_regions.len());
+        for (idx, region) in self.logical_regions.iter().enumerate() {
+            let value = match region.cfg.register_type {
+                RegisterType::Coils | RegisterType::DiscreteInputs => bit_values[idx]
+                    .as_ref()
+                    .map(|data| decode_bit_value(&region.cfg, data)),
+                RegisterType::HoldingRegisters | RegisterType::InputRegisters => reg_values[idx]
+                    .as_ref()
+                    .map(|data| decode_register_value(&region.cfg, data)),
+            };
+            let Some(value) = value else {
+                continue;
+            };
+            out.push(DataPoint {
+                id: region.cfg.serial_num(),
+                name: region.cfg.name,
+                value,
+            });
         }
         out
     }
@@ -198,17 +245,38 @@ pub(super) struct Block {
     pub(super) register_type: RegisterType,
     pub(super) start: u16,
     pub(super) len: u16,
-    pub(super) regions: Vec<Region>,
+    pub(super) segments: Vec<RegionSegment>,
 }
 
 #[derive(Debug)]
-pub(super) struct Region {
-    pub(super) cfg: ModbusConfig,
-    pub(super) offset: u16,
+struct LogicalRegion {
+    cfg: ModbusConfig,
+}
+
+#[derive(Debug)]
+pub(super) struct RegionSegment {
+    pub(super) region_idx: usize,
+    pub(super) block_offset: u16,
+    pub(super) region_offset: u16,
     pub(super) width: u16,
 }
 
-fn decode_register_value(cfg: &ModbusConfig, data: &[u16]) -> Val {
+fn decode_bit_value(cfg: &ModbusConfig, data: &[bool]) -> Val {
+    if cfg.quantity == 1 {
+        return Val::U8(if data.first().copied().unwrap_or(false) {
+            1
+        } else {
+            0
+        });
+    }
+    Val::List(
+        data.iter()
+            .map(|it| Val::U8(if *it { 1 } else { 0 }))
+            .collect(),
+    )
+}
+
+fn decode_scalar(cfg: &ModbusConfig, data: &[u16]) -> Val {
     match cfg.data_type {
         ModbusDataType::Bool => {
             let v = if data.first().copied().unwrap_or(0) != 0 {
@@ -242,6 +310,21 @@ fn decode_register_value(cfg: &ModbusConfig, data: &[u16]) -> Val {
             to_val_numeric(v)
         }
     }
+}
+
+fn decode_register_value(cfg: &ModbusConfig, data: &[u16]) -> Val {
+    let item_width = cfg.data_type.register_width() as usize;
+    if cfg.quantity as usize == item_width {
+        return decode_scalar(cfg, data);
+    }
+    let mut out = Vec::with_capacity(data.len() / item_width);
+    for chunk in data.chunks(item_width) {
+        if chunk.len() < item_width {
+            break;
+        }
+        out.push(decode_scalar(cfg, chunk));
+    }
+    Val::List(out)
 }
 
 fn u16_with_order(v: u16, order: Option<ByteOrder>) -> u16 {
@@ -294,6 +377,7 @@ mod tests {
             remarks: None,
             register_address,
             register_type,
+            quantity: data_type.register_width(),
             byte_order: None,
             scale: 1.0,
             offset: 0.0,
@@ -325,11 +409,11 @@ mod tests {
         let a = cfg(RegisterType::InputRegisters, 0, ModbusDataType::U16);
         let b = cfg(RegisterType::InputRegisters, 2, ModbusDataType::U16); // gap at 1
         let blocks = Blocks::try_from(vec![a, b]).unwrap();
-        assert_eq!(blocks.0.len(), 2);
-        assert_eq!(blocks.0[0].start, 0);
-        assert_eq!(blocks.0[0].len, 1);
-        assert_eq!(blocks.0[1].start, 2);
-        assert_eq!(blocks.0[1].len, 1);
+        assert_eq!(blocks.blocks.len(), 2);
+        assert_eq!(blocks.blocks[0].start, 0);
+        assert_eq!(blocks.blocks[0].len, 1);
+        assert_eq!(blocks.blocks[1].start, 2);
+        assert_eq!(blocks.blocks[1].len, 1);
     }
 
     #[test]
@@ -343,10 +427,64 @@ mod tests {
             ));
         }
         let blocks = Blocks::try_from(configs).unwrap();
-        assert_eq!(blocks.0.len(), 2);
-        assert_eq!(blocks.0[0].start, 0);
-        assert_eq!(blocks.0[0].len, 120);
-        assert_eq!(blocks.0[1].start, 120);
-        assert_eq!(blocks.0[1].len, 1);
+        assert_eq!(blocks.blocks.len(), 2);
+        assert_eq!(blocks.blocks[0].start, 0);
+        assert_eq!(blocks.blocks[0].len, 120);
+        assert_eq!(blocks.blocks[1].start, 120);
+        assert_eq!(blocks.blocks[1].len, 1);
+    }
+
+    #[test]
+    fn decode_register_value_returns_list_for_multi_u16() {
+        let mut cfg = cfg(RegisterType::InputRegisters, 0, ModbusDataType::U16);
+        cfg.quantity = 3;
+        cfg.scale = 0.1;
+
+        let val = decode_register_value(&cfg, &[10, 20, 30]);
+
+        assert_eq!(val, Val::List(vec![Val::U32(1), Val::U32(2), Val::U32(3)]));
+    }
+
+    #[test]
+    fn build_blocks_splits_single_large_region_across_blocks() {
+        let mut point = cfg(RegisterType::InputRegisters, 1000, ModbusDataType::U16);
+        point.quantity = 416;
+        let blocks = Blocks::try_from(vec![point]).unwrap();
+
+        assert_eq!(blocks.blocks.len(), 4);
+        assert_eq!(blocks.blocks[0].start, 1000);
+        assert_eq!(blocks.blocks[0].len, 120);
+        assert_eq!(blocks.blocks[1].start, 1120);
+        assert_eq!(blocks.blocks[1].len, 120);
+        assert_eq!(blocks.blocks[2].start, 1240);
+        assert_eq!(blocks.blocks[2].len, 120);
+        assert_eq!(blocks.blocks[3].start, 1360);
+        assert_eq!(blocks.blocks[3].len, 56);
+    }
+
+    #[test]
+    fn parse_reassembles_large_region_from_multiple_blocks() {
+        let mut point = cfg(RegisterType::InputRegisters, 1000, ModbusDataType::U16);
+        point.quantity = 121;
+        point.scale = 0.1;
+        let blocks = Blocks::try_from(vec![point]).unwrap();
+        let mut first = vec![0u16; 120];
+        first[0] = 10;
+        first[119] = 1200;
+        let reads = vec![
+            BlockRead::InputRegisters(first),
+            BlockRead::InputRegisters(vec![1210]),
+        ];
+
+        let parsed = blocks.parse(&reads);
+
+        assert_eq!(parsed.len(), 1);
+        let Val::List(items) = &parsed[0].value else {
+            panic!("expected list");
+        };
+        assert_eq!(items.len(), 121);
+        assert_eq!(items[0], Val::U32(1));
+        assert_eq!(items[119], Val::U32(120));
+        assert_eq!(items[120], Val::U32(121));
     }
 }
