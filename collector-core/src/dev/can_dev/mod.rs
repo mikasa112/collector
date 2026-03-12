@@ -1,1 +1,1 @@
-pub mod devices;
+pub mod device;

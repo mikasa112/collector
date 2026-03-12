@@ -82,9 +82,11 @@ impl DevManager {
 
 fn init_device(dev: Device, com_type: ComType) -> Result<Arc<Mutex<dyn Executable>>, DeviceError> {
     let my_dev = match com_type {
-        config::ComType::ModbusTCP => ModbusDev::new(dev)?,
-        config::ComType::ModbusRTU => ModbusDev::new(dev)?,
+        config::ComType::ModbusTCP | config::ComType::ModbusRTU => ModbusDev::new(dev)?,
+        #[cfg(target_os = "linux")]
         config::ComType::CAN => todo!(),
+        #[cfg(not(target_os = "linux"))]
+        config::ComType::CAN => return Err(DeviceError::UnSupportedComType),
         config::ComType::IEC104 => todo!(),
         config::ComType::IEC61850 => todo!(),
     };

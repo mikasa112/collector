@@ -1,6 +1,15 @@
-use crate::dev::{DeviceError, Lifecycle, LifecycleState};
+use std::sync::{Arc, atomic::AtomicU8};
 
-pub struct CanDev {}
+use crate::{
+    config::can_conf::CanConfigs,
+    dev::{DeviceError, Lifecycle, LifecycleState},
+};
+
+pub struct CanDev {
+    id: String,
+    configs: CanConfigs,
+    state: Arc<AtomicU8>,
+}
 
 impl CanDev {}
 

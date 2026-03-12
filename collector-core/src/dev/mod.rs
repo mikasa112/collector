@@ -5,6 +5,7 @@ use crate::{
     dev::dev_config::{ModbusRtuConfError, ModbusTcpConfError},
 };
 
+#[cfg(target_os = "linux")]
 pub mod can_dev;
 pub(crate) mod dev_config;
 pub mod manager;
