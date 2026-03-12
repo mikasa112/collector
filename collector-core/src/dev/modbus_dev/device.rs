@@ -48,6 +48,9 @@ impl ModbusDev {
         };
         let configs = match configs {
             config::ProtocolConfigs::Modbus(modbus_configs) => modbus_configs,
+            config::ProtocolConfigs::CAN(_) => {
+                return Err(DeviceError::UnSupportedComType);
+            }
             config::ProtocolConfigs::None => {
                 return Err(DeviceError::NotFoundConfigs(id));
             }

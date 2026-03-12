@@ -395,15 +395,19 @@ impl CanSignalExtConfig {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
 pub enum CanSignal {
     Normal(CanSignalConfig),
     Ext(CanSignalExtConfig),
 }
 
+#[derive(Debug, Clone)]
 pub struct CanConfig {
     pub frame: CanFrameConfig,
     pub signals: Vec<CanSignal>,
 }
+
+pub type CanConfigs = Vec<CanConfig>;
 
 impl CanConfig {}
 

@@ -4,8 +4,6 @@ use std::collections::HashMap;
 use tokio::fs;
 use tracing::error;
 
-use crate::config::modbus_conf::{ModbusConfigs, build_configs};
-
 pub mod can_conf;
 pub mod modbus_conf;
 
@@ -38,34 +36,53 @@ impl Configuration {
 
     pub async fn load_device_configs(&mut self) {
         for (_, dev) in self.project.devices.iter_mut() {
-            let Some(com) = dev.config.com_type else {
-                dev.protocol_configs = Some(ProtocolConfigs::None);
-                continue;
-            };
-            let Some(file) = dev.config.register_file.as_deref() else {
-                dev.protocol_configs = Some(ProtocolConfigs::None);
-                continue;
-            };
-            match com {
-                ComType::ModbusTCP => {
-                    let file = file.to_string();
-                    if let Ok(result) = tokio::task::spawn_blocking(|| build_configs(file)).await {
-                        match result {
-                            Ok(configs) => {
-                                dev.protocol_configs = Some(ProtocolConfigs::Modbus(configs))
-                            }
-                            Err(err) => {
-                                error!("Failed to build {:?} configs: {}", dev.id, err);
-                                dev.protocol_configs = Some(ProtocolConfigs::None);
-                            }
-                        }
-                    }
-                }
-                ComType::ModbusRTU => unimplemented!(),
-                ComType::CAN => unimplemented!(),
-                ComType::IEC104 => unimplemented!(),
-                ComType::IEC61850 => unimplemented!(),
-            }
+            dev.protocol_configs = Some(load_protocol_configs(dev).await);
+        }
+    }
+}
+
+async fn load_protocol_configs(dev: &Device) -> ProtocolConfigs {
+    let Some(com) = dev.config.com_type else {
+        return ProtocolConfigs::None;
+    };
+    let Some(file) = dev.config.register_file.clone() else {
+        return ProtocolConfigs::None;
+    };
+    let dev_id = dev.id.clone();
+
+    match com {
+        ComType::ModbusTCP | ComType::ModbusRTU => {
+            load_configs(file, dev_id, modbus_conf::build_configs, ProtocolConfigs::Modbus).await
+        }
+        ComType::CAN => {
+            load_configs(file, dev_id, can_conf::build_configs, ProtocolConfigs::CAN).await
+        }
+        ComType::IEC104 => unimplemented!(),
+        ComType::IEC61850 => unimplemented!(),
+    }
+}
+
+async fn load_configs<T, E, B, W>(
+    file: String,
+    dev_id: Option<String>,
+    build: B,
+    wrap: W,
+) -> ProtocolConfigs
+where
+    T: Send + 'static,
+    E: std::fmt::Display + Send + 'static,
+    B: FnOnce(String) -> Result<T, E> + Send + 'static,
+    W: FnOnce(T) -> ProtocolConfigs,
+{
+    match tokio::task::spawn_blocking(move || build(file)).await {
+        Ok(Ok(configs)) => wrap(configs),
+        Ok(Err(err)) => {
+            error!("Failed to build {:?} configs: {}", dev_id, err);
+            ProtocolConfigs::None
+        }
+        Err(err) => {
+            error!("Failed to join config loader for {:?}: {}", dev_id, err);
+            ProtocolConfigs::None
         }
     }
 }
@@ -129,7 +146,8 @@ pub struct DeviceConfig {
 
 #[derive(Debug, Clone)]
 pub enum ProtocolConfigs {
-    Modbus(ModbusConfigs),
+    Modbus(modbus_conf::ModbusConfigs),
+    CAN(can_conf::CanConfigs),
     None,
 }
 
