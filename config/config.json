@@ -1,11 +1,15 @@
 ﻿{
-  "productType": "EMU",
+  "product_type": "EMU",
   "project": "康明斯",
   "ip": "127.0.0.1",
   "port": 8083,
+  "mqtt_host": "8.153.70.217",
+  "mqtt_port": 1883,
+  "mqtt_username": "root",
+  "mqtt_password": "Jjj156428!",
   "devices": {
-    "BCU": {
-      "id": "BCU 1",
+    "bcu1": {
+      "id": "bcu1",
       "type": "BCU",
       "desc": null,
       "config": {
@@ -26,8 +30,8 @@
         "desc": null
       }
     },
-    "PCS": {
-      "id": "PCS",
+    "pcs": {
+      "id": "pcs",
       "type": "PCS",
       "desc": null,
       "config": {
@@ -48,8 +52,8 @@
         "desc": null
       }
     },
-    "LiquidCool1": {
-      "id": "LiquidCool1",
+    "liquidcool1": {
+      "id": "liquidcool1",
       "type": "LiquidCool",
       "desc": null,
       "config": {
@@ -70,8 +74,8 @@
         "desc": null
       }
     },
-    "LiquidCool2": {
-      "id": "LiquidCool2",
+    "liquidcool2": {
+      "id": "liquidcool2",
       "type": "LiquidCool",
       "desc": null,
       "config": {
@@ -92,8 +96,8 @@
         "desc": null
       }
     },
-    "LiquidCool3": {
-      "id": "LiquidCool3",
+    "liquidcool3": {
+      "id": "liquidcool3",
       "type": "LiquidCool",
       "desc": null,
       "config": {
@@ -114,8 +118,8 @@
         "desc": null
       }
     },
-    "Firefighting": {
-      "id": "FireFirefighting",
+    "firefighting": {
+      "id": "firefighting",
       "type": "Firefighting",
       "desc": null,
       "config": {
@@ -136,8 +140,8 @@
         "desc": null
       }
     },
-    "Dehumidifier": {
-      "id": "Dehumidifier",
+    "dehumidifier": {
+      "id": "dehumidifier",
       "type": "Dehumidifier",
       "desc": null,
       "config": {

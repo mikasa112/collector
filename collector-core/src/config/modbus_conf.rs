@@ -1,6 +1,10 @@
 use calamine::{Data, DataType, HeaderRow, Range, Reader, Xlsx, open_workbook};
 use tracing::error;
 
+use crate::config::{
+    optional_static_str, required_f64, required_static_str, required_str, required_usize_integerish,
+};
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum ModbusDataType {
     Bool,
@@ -182,7 +186,7 @@ impl ModbusConfig {
         let remarks = optional_static_str(row, 4);
         let register_address = required_f64(row, 5, "寄存器地址")? as u16;
         let register_type = RegisterType::try_from(required_str(row, 6, "寄存器类型")?)?;
-        let quantity = required_u16_integerish(row, 7, "数量")?;
+        let quantity = required_usize_integerish(row, 7, "数量")? as u16;
         let item_width = data_type.register_width();
         if quantity == 0 {
             return Err(anyhow::Error::msg("数量必须大于0"));
@@ -220,43 +224,4 @@ impl ModbusConfig {
         let id_low = self.id as u32 & 0xFFFF;
         register_type_high | id_low
     }
-}
-
-fn required_f64(row: &[Data], idx: usize, field: &str) -> Result<f64, anyhow::Error> {
-    row[idx]
-        .get_float()
-        .ok_or_else(|| anyhow::Error::msg(format!("{field}不能为空")))
-}
-
-fn required_str<'a>(row: &'a [Data], idx: usize, field: &str) -> Result<&'a str, anyhow::Error> {
-    row[idx]
-        .get_string()
-        .ok_or_else(|| anyhow::Error::msg(format!("{field}不能为空")))
-}
-
-fn required_static_str(row: &[Data], idx: usize, field: &str) -> Result<&'static str, anyhow::Error> {
-    Ok(required_str(row, idx, field)?.to_owned().leak())
-}
-
-fn optional_static_str(row: &[Data], idx: usize) -> Option<&'static str> {
-    row[idx].get_string().map(|s| {
-        let leaked: &'static mut str = s.to_owned().leak();
-        leaked as &'static str
-    })
-}
-
-fn required_u16_integerish(row: &[Data], idx: usize, field: &str) -> Result<u16, anyhow::Error> {
-    if let Some(v) = row[idx].get_int() {
-        return u16::try_from(v).map_err(|_| anyhow::Error::msg(format!("{field}超出范围")));
-    }
-    if let Some(v) = row[idx].get_float() {
-        if !v.is_finite() || v.fract().abs() > f64::EPSILON {
-            return Err(anyhow::Error::msg(format!("{field}必须是整数")));
-        }
-        if !(0.0..=(u16::MAX as f64)).contains(&v) {
-            return Err(anyhow::Error::msg(format!("{field}超出范围")));
-        }
-        return Ok(v as u16);
-    }
-    Err(anyhow::Error::msg(format!("{field}不能为空")))
 }
