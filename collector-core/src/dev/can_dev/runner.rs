@@ -26,6 +26,11 @@ pub(super) struct CanRunner {
     pub(super) rx: mpsc::Receiver<Vec<DataPoint>>,
 }
 
+#[derive(Default)]
+struct ExtSignalCache {
+    values: HashMap<u32, Vec<Option<Val>>>,
+}
+
 impl Identifiable for CanRunner {
     fn id(&self) -> &str {
         &self.id
@@ -66,7 +71,11 @@ impl CanRunner {
         Ok(CanSocket::open(&self.config.interface)?)
     }
 
-    fn decode_frame(frame: &CanFrame, states: &mut HashMap<u32, FrameState>) -> Vec<DataPoint> {
+    fn decode_frame(
+        frame: &CanFrame,
+        states: &mut HashMap<u32, FrameState>,
+        ext_cache: &mut ExtSignalCache,
+    ) -> Vec<DataPoint> {
         let raw_id = frame.raw_id();
         let Some(state) = states.get_mut(&raw_id) else {
             return Vec::new();
@@ -84,7 +93,7 @@ impl CanRunner {
                     }
                 }
                 CanSignal::Ext(cfg) => {
-                    if let Some(point) = decode_ext_signal(cfg, frame.data(), raw_id) {
+                    if let Some(point) = decode_ext_signal(cfg, frame.data(), raw_id, ext_cache) {
                         points.push(point);
                     }
                 }
@@ -139,6 +148,7 @@ impl CanRunner {
         let connected_at = Instant::now();
         let mut last_rx_at = connected_at;
         let mut ticker = time::interval(self.config.interval);
+        let mut ext_cache = ExtSignalCache::default();
 
         loop {
             tokio::select! {
@@ -168,7 +178,7 @@ impl CanRunner {
                 result = socket.read_frame() => {
                     let frame = result.map_err(CanDevError::ReadFrame)?;
                     last_rx_at = Instant::now();
-                    let points = Self::decode_frame(&frame, frame_states);
+                    let points = Self::decode_frame(&frame, frame_states, &mut ext_cache);
                     if !points.is_empty() {
                         // info!("[{}] ↑: {}", self.id, DataPoints(points.clone()));
                         global_center().ingest(self, points);
@@ -288,7 +298,38 @@ fn decode_signal(cfg: &CanSignalConfig, data: &[u8]) -> Option<DataPoint> {
     })
 }
 
-fn decode_ext_signal(cfg: &CanSignalExtConfig, data: &[u8], raw_id: u32) -> Option<DataPoint> {
+fn decode_ext_signal(
+    cfg: &CanSignalExtConfig,
+    data: &[u8],
+    raw_id: u32,
+    ext_cache: &mut ExtSignalCache,
+) -> Option<DataPoint> {
+    let segment = decode_ext_segment(cfg, data, raw_id)?;
+    let cache = ext_cache
+        .values
+        .entry(cfg.id)
+        .or_insert_with(|| vec![None; usize::from(cfg.total_element)]);
+
+    for (idx, value) in segment.values.into_iter().enumerate() {
+        let target_idx = segment.start_idx + idx;
+        if target_idx >= cache.len() {
+            break;
+        }
+        cache[target_idx] = Some(value);
+    }
+
+    if cache.iter().any(|value| value.is_none()) {
+        return None;
+    }
+
+    Some(DataPoint {
+        id: cfg.id,
+        name: cfg.name,
+        value: Val::List(cache.iter().filter_map(Clone::clone).collect()),
+    })
+}
+
+fn decode_ext_segment(cfg: &CanSignalExtConfig, data: &[u8], raw_id: u32) -> Option<ExtSegment> {
     let frame_step = u32::from(cfg.frame_id_step.max(1));
     let frame_offset = raw_id.checked_sub(cfg.frame_id)? / frame_step;
     let element_offset = usize::try_from(frame_offset).ok()? * usize::from(cfg.each_frame_element);
@@ -322,11 +363,15 @@ fn decode_ext_signal(cfg: &CanSignalExtConfig, data: &[u8], raw_id: u32) -> Opti
         return None;
     }
 
-    Some(DataPoint {
-        id: cfg.id,
-        name: cfg.name,
-        value: Val::List(values),
+    Some(ExtSegment {
+        start_idx: element_offset,
+        values,
     })
+}
+
+struct ExtSegment {
+    start_idx: usize,
+    values: Vec<Val>,
 }
 
 pub(super) fn extract_raw(
@@ -425,7 +470,7 @@ fn sign_extend(raw: u32, bit_len: u8) -> i32 {
 mod tests {
     use std::time::Duration;
 
-    use super::{decode_ext_signal, runtime_frame_ids};
+    use super::{ExtSignalCache, decode_ext_signal, runtime_frame_ids};
     use crate::config::can_conf::{
         ByteOrder, CanConfig, CanDataType, CanFrameConfig, CanSignal, CanSignalConfig,
         CanSignalExtConfig, IdType, Rule,
@@ -500,7 +545,7 @@ mod tests {
             frame_num: 3,
             frame_id_step: 2,
             each_frame_element: 4,
-            total_element: 12,
+            total_element: 8,
             element_start_bit: 0,
             single_ele_bit_len: 8,
             byte_order: ByteOrder::Intel,
@@ -511,13 +556,22 @@ mod tests {
             invalid_val: None,
         };
 
-        let point = decode_ext_signal(&cfg, &[5, 6, 7, 8], 0x102).expect("point");
+        let mut cache = ExtSignalCache::default();
+        assert!(decode_ext_signal(&cfg, &[1, 2, 3, 4], 0x100, &mut cache).is_none());
+        let point = decode_ext_signal(&cfg, &[5, 6, 7, 8], 0x102, &mut cache).expect("point");
 
-        assert_eq!(point.id, 11);
-        assert_eq!(point.name, "cells");
         assert_eq!(
             point.value,
-            Val::List(vec![Val::U8(5), Val::U8(6), Val::U8(7), Val::U8(8)])
+            Val::List(vec![
+                Val::U8(1),
+                Val::U8(2),
+                Val::U8(3),
+                Val::U8(4),
+                Val::U8(5),
+                Val::U8(6),
+                Val::U8(7),
+                Val::U8(8),
+            ])
         );
     }
 }
