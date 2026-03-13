@@ -4,7 +4,6 @@ mod device;
 mod downlink;
 mod error;
 mod runner;
-mod state;
 
 pub use device::ModbusDev;
 pub use error::ModbusDevError;

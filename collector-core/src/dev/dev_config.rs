@@ -1,4 +1,5 @@
 use std::net::IpAddr;
+use std::time::Duration;
 
 use crate::config::DeviceConfig;
 
@@ -106,6 +107,40 @@ impl TryFrom<DeviceConfig> for ModbusRtuConfig {
             stop_bits,
             interval,
             timeout,
+        })
+    }
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum CanConfError {
+    #[error("{0}不能为空")]
+    ValueNotNone(String),
+}
+
+#[derive(Clone)]
+pub struct CanDeviceConfig {
+    pub interface: String,
+    pub interval: Duration,
+    pub timeout: Duration,
+}
+
+impl TryFrom<DeviceConfig> for CanDeviceConfig {
+    type Error = CanConfError;
+
+    fn try_from(value: DeviceConfig) -> Result<Self, Self::Error> {
+        let Some(interface) = value.interface else {
+            return Err(CanConfError::ValueNotNone(String::from("CAN接口")));
+        };
+        let Some(interval) = value.interval else {
+            return Err(CanConfError::ValueNotNone(String::from("间隔时间")));
+        };
+        let Some(timeout) = value.timeout else {
+            return Err(CanConfError::ValueNotNone(String::from("超时时间")));
+        };
+        Ok(Self {
+            interface,
+            interval: Duration::from_millis(interval),
+            timeout: Duration::from_millis(timeout),
         })
     }
 }

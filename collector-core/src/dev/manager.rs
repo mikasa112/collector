@@ -6,20 +6,22 @@ use tracing::error;
 
 use crate::config::{ComType, Device};
 
-use crate::dev::Lifecycle;
 use crate::{
     config,
     dev::{DeviceError, Executable, modbus_dev::ModbusDev},
 };
 
+#[cfg(target_os = "linux")]
+use crate::dev::can_dev::CanDev;
+
 pub struct DevManager {
-    devices: Vec<Arc<Mutex<dyn Executable>>>,
+    devices: Vec<Arc<Mutex<Box<dyn Executable>>>>,
     tasks: JoinSet<()>,
 }
 
 impl DevManager {
     pub fn new(map: HashMap<String, Device>) -> Self {
-        let mut devices: Vec<Arc<Mutex<dyn Executable>>> = Vec::new();
+        let mut devices: Vec<Arc<Mutex<Box<dyn Executable>>>> = Vec::new();
         for (_, dev) in map.into_iter() {
             let Some(com_type) = dev.config.com_type else {
                 continue;
@@ -39,7 +41,7 @@ impl DevManager {
         }
     }
 
-    pub fn add_device(&mut self, device: Arc<Mutex<dyn Executable>>) {
+    pub fn add_device(&mut self, device: Arc<Mutex<Box<dyn Executable>>>) {
         self.devices.push(device);
     }
 
@@ -69,7 +71,7 @@ impl DevManager {
         }
     }
 
-    pub async fn find_dev(&self, id: &str) -> Option<Arc<Mutex<dyn Executable>>> {
+    pub async fn find_dev(&self, id: &str) -> Option<Arc<Mutex<Box<dyn Executable>>>> {
         for dev in self.devices.iter() {
             let dev_mutex = dev.lock().await;
             if dev_mutex.id() == id {
@@ -80,11 +82,14 @@ impl DevManager {
     }
 }
 
-fn init_device(dev: Device, com_type: ComType) -> Result<Arc<Mutex<dyn Executable>>, DeviceError> {
-    let my_dev = match com_type {
-        config::ComType::ModbusTCP | config::ComType::ModbusRTU => ModbusDev::new(dev)?,
+fn init_device(
+    dev: Device,
+    com_type: ComType,
+) -> Result<Arc<Mutex<Box<dyn Executable>>>, DeviceError> {
+    let my_dev: Box<dyn Executable> = match com_type {
+        config::ComType::ModbusTCP | config::ComType::ModbusRTU => Box::new(ModbusDev::new(dev)?),
         #[cfg(target_os = "linux")]
-        config::ComType::CAN => todo!(),
+        config::ComType::CAN => Box::new(CanDev::new(dev)?),
         #[cfg(not(target_os = "linux"))]
         config::ComType::CAN => return Err(DeviceError::UnSupportedComType),
         config::ComType::IEC104 => todo!(),

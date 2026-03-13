@@ -2,7 +2,7 @@ use std::fmt;
 
 use crate::{
     center::DataCenterError,
-    dev::dev_config::{ModbusRtuConfError, ModbusTcpConfError},
+    dev::dev_config::{CanConfError, ModbusRtuConfError, ModbusTcpConfError},
 };
 
 #[cfg(target_os = "linux")]
@@ -10,6 +10,7 @@ pub mod can_dev;
 pub(crate) mod dev_config;
 pub mod manager;
 pub mod modbus_dev;
+pub(crate) mod state;
 
 #[derive(Debug, thiserror::Error)]
 pub enum DeviceError {
@@ -23,6 +24,8 @@ pub enum DeviceError {
     ModbusTcpConfigError(#[from] ModbusTcpConfError),
     #[error("Modbus RTU配置错误")]
     ModbusRtuConfigError(#[from] ModbusRtuConfError),
+    #[error("CAN配置错误")]
+    CanConfigError(#[from] CanConfError),
     #[error("{0}找不到点位表")]
     NotFoundConfigs(String),
     #[error("数据中心错误")]

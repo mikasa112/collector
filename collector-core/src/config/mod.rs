@@ -52,7 +52,13 @@ async fn load_protocol_configs(dev: &Device) -> ProtocolConfigs {
 
     match com {
         ComType::ModbusTCP | ComType::ModbusRTU => {
-            load_configs(file, dev_id, modbus_conf::build_configs, ProtocolConfigs::Modbus).await
+            load_configs(
+                file,
+                dev_id,
+                modbus_conf::build_configs,
+                ProtocolConfigs::Modbus,
+            )
+            .await
         }
         #[cfg(target_os = "linux")]
         ComType::CAN => {
@@ -60,7 +66,10 @@ async fn load_protocol_configs(dev: &Device) -> ProtocolConfigs {
         }
         #[cfg(not(target_os = "linux"))]
         ComType::CAN => {
-            error!("Failed to build {:?} configs: CAN is only supported on Linux", dev_id);
+            error!(
+                "Failed to build {:?} configs: CAN is only supported on Linux",
+                dev_id
+            );
             ProtocolConfigs::None
         }
         ComType::IEC104 => unimplemented!(),

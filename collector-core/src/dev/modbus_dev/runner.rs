@@ -1,6 +1,4 @@
 use std::collections::HashMap;
-use std::sync::Arc;
-use std::sync::atomic::AtomicU8;
 use std::time::Duration;
 
 use tokio::sync::{mpsc, watch};
@@ -17,17 +15,16 @@ use crate::core::point::{DataPoint, DataPoints, PointId, Val};
 use crate::dev::modbus_dev::Protocol;
 use crate::dev::modbus_dev::block::Blocks;
 use crate::dev::modbus_dev::downlink::{WritePlan, build_cfg_map};
-use crate::dev::{Identifiable, LifecycleState};
+use crate::dev::{Identifiable, LifecycleState, state::SharedState};
 
 use super::backoff::Backoff;
 use super::error::ModbusDevError;
-use super::state::store_state;
 
 pub(super) struct ModbusRunner {
     pub(super) id: String,
     pub(super) protocol: Protocol,
     pub(super) configs: ModbusConfigs,
-    pub(super) state: Arc<AtomicU8>,
+    pub(super) state: SharedState,
     pub(super) stop_rx: watch::Receiver<bool>,
     pub(super) rx: mpsc::Receiver<Vec<DataPoint>>,
 }
@@ -135,7 +132,7 @@ impl ModbusRunner {
         blocks: &Blocks,
         cfg_map: &HashMap<PointId, ModbusConfig>,
     ) {
-        store_state(&self.id, &self.state, LifecycleState::Running);
+        self.state.store(&self.id, LifecycleState::Running);
         self.report_comm_status(1);
         //读取任务的定时器
         let mut ticker = time::interval(self.poll_interval());
@@ -168,7 +165,7 @@ impl ModbusRunner {
                 msg = rx.recv() => {
                     let Some(mut entries) = msg else {
                         self.report_comm_status(0);
-                        store_state(&self.id, &self.state, LifecycleState::Stopped);
+                        self.state.store(&self.id, LifecycleState::Stopped);
                         return;
                     };
 
@@ -199,7 +196,7 @@ impl ModbusRunner {
             Ok(blocks) => blocks,
             Err(err) => {
                 warn!("[{}] 构建读取块失败: {}", self.id, err);
-                store_state(&self.id, &self.state, LifecycleState::Failed);
+                self.state.store(&self.id, LifecycleState::Failed);
                 self.report_comm_status(0);
                 return;
             }
@@ -209,28 +206,28 @@ impl ModbusRunner {
         let mut backoff = Backoff::new(Duration::from_millis(500), Duration::from_secs(10));
         loop {
             if Self::stop_requested(&stop_rx) {
-                store_state(&self.id, &self.state, LifecycleState::Stopped);
+                self.state.store(&self.id, LifecycleState::Stopped);
                 self.report_comm_status(0);
                 return;
             }
-            store_state(&self.id, &self.state, LifecycleState::Connecting);
+            self.state.store(&self.id, LifecycleState::Connecting);
             self.report_comm_status(0);
             match self.connect().await {
                 Ok(mut ctx) => {
-                    store_state(&self.id, &self.state, LifecycleState::Connected);
+                    self.state.store(&self.id, LifecycleState::Connected);
                     self.report_comm_status(1);
                     backoff.reset();
                     self.run_connected(&mut ctx, &mut stop_rx, &blocks, &cfg_map)
                         .await;
                 }
                 Err(err) => {
-                    store_state(&self.id, &self.state, LifecycleState::Failed);
+                    self.state.store(&self.id, LifecycleState::Failed);
                     warn!("[{}] 连接失败, 准备重连: {}", self.id, err);
                     self.report_comm_status(0);
                 }
             }
             if Self::stop_requested(&stop_rx) {
-                store_state(&self.id, &self.state, LifecycleState::Stopped);
+                self.state.store(&self.id, LifecycleState::Stopped);
                 self.report_comm_status(0);
                 return;
             }
@@ -239,7 +236,7 @@ impl ModbusRunner {
                 _ = time::sleep(delay) => {}
                 _ = stop_rx.changed() => {
                     if Self::stop_requested(&stop_rx) {
-                        store_state(&self.id, &self.state, LifecycleState::Stopped);
+                        self.state.store(&self.id, LifecycleState::Stopped);
                         return;
                     }
                 }

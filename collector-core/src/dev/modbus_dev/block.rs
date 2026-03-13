@@ -183,11 +183,21 @@ impl Blocks {
             match (block.register_type, read) {
                 (RegisterType::Coils, BlockRead::Coils(data))
                 | (RegisterType::DiscreteInputs, BlockRead::DiscreteInputs(data)) => {
-                    collect_segments(&self.logical_regions, &block.segments, data, &mut bit_values);
+                    collect_segments(
+                        &self.logical_regions,
+                        &block.segments,
+                        data,
+                        &mut bit_values,
+                    );
                 }
                 (RegisterType::HoldingRegisters, BlockRead::HoldingRegisters(data))
                 | (RegisterType::InputRegisters, BlockRead::InputRegisters(data)) => {
-                    collect_segments(&self.logical_regions, &block.segments, data, &mut reg_values);
+                    collect_segments(
+                        &self.logical_regions,
+                        &block.segments,
+                        data,
+                        &mut reg_values,
+                    );
                 }
                 _ => {}
             }
@@ -196,18 +206,14 @@ impl Blocks {
         let mut out = Vec::with_capacity(self.logical_regions.len());
         for (idx, region) in self.logical_regions.iter().enumerate() {
             let value = match region.cfg.register_type {
-                RegisterType::Coils | RegisterType::DiscreteInputs => {
-                    bit_values[idx]
-                        .as_ref()
-                        .filter(|state| state.filled == region.cfg.quantity as usize)
-                        .map(|state| decode_bit_value(&region.cfg, &state.values))
-                }
-                RegisterType::HoldingRegisters | RegisterType::InputRegisters => {
-                    reg_values[idx]
-                        .as_ref()
-                        .filter(|state| state.filled == region.cfg.quantity as usize)
-                        .map(|state| decode_register_value(&region.cfg, &state.values))
-                }
+                RegisterType::Coils | RegisterType::DiscreteInputs => bit_values[idx]
+                    .as_ref()
+                    .filter(|state| state.filled == region.cfg.quantity as usize)
+                    .map(|state| decode_bit_value(&region.cfg, &state.values)),
+                RegisterType::HoldingRegisters | RegisterType::InputRegisters => reg_values[idx]
+                    .as_ref()
+                    .filter(|state| state.filled == region.cfg.quantity as usize)
+                    .map(|state| decode_register_value(&region.cfg, &state.values)),
             };
             let Some(value) = value else {
                 continue;

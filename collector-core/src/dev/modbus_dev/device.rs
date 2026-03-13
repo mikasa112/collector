@@ -1,5 +1,3 @@
-use std::sync::Arc;
-use std::sync::atomic::AtomicU8;
 use std::time::Duration;
 
 use tokio::sync::{Mutex, watch};
@@ -15,16 +13,16 @@ use crate::dev::modbus_dev::Protocol;
 use crate::dev::{
     DeviceError, Executable, Identifiable, Lifecycle, LifecycleState,
     dev_config::{ModbusRtuConfig, ModbusTcpConfig},
+    state::SharedState,
 };
 
 use super::runner::ModbusRunner;
-use super::state::{cas_state, load_state, store_state};
 
 pub struct ModbusDev {
     id: String,
     protocol: Protocol,
     configs: ModbusConfigs,
-    state: Arc<AtomicU8>,
+    state: SharedState,
     stop_tx: watch::Sender<bool>,
     stop_rx: watch::Receiver<bool>,
     task: Mutex<Option<JoinHandle<()>>>,
@@ -68,7 +66,7 @@ impl ModbusDev {
             _ => Err(DeviceError::UnSupportedComType),
         }?;
         // 初始生命周期
-        let state = Arc::new(AtomicU8::new(LifecycleState::New as u8));
+        let state = SharedState::new(LifecycleState::New);
         let (stop_tx, stop_rx) = watch::channel(false);
         info!("加载{}配置成功!", id);
         Ok(ModbusDev {
@@ -86,7 +84,7 @@ impl ModbusDev {
     /// # 返回值
     /// - `LifecycleState`: 设备的生命周期状态
     fn load_state(&self) -> LifecycleState {
-        load_state(&self.state)
+        self.state.load()
     }
 
     /// 改变设备的生命周期状态
@@ -96,14 +94,14 @@ impl ModbusDev {
     /// # 返回值
     /// - `bool`: 是否成功改变状态
     fn cas_state(&self, from: LifecycleState, to: LifecycleState) -> bool {
-        cas_state(&self.state, from, to)
+        self.state.cas(from, to)
     }
 
     /// 存储设备的生命周期状态
     /// # 参数
     /// - `to`: 目标状态
     fn store_state(&self, to: LifecycleState) {
-        store_state(&self.id, &self.state, to);
+        self.state.store(&self.id, to);
     }
 }
 
@@ -159,7 +157,7 @@ impl Lifecycle for ModbusDev {
             id: self.id.clone(),
             protocol: self.protocol.clone(),
             configs: self.configs.clone(),
-            state: Arc::clone(&self.state),
+            state: self.state.clone(),
             stop_rx: self.stop_rx.clone(),
             rx,
         };

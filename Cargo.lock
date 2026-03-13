@@ -1319,15 +1319,18 @@ checksum = "7654092b2859221c29ac4b43dc502a8e156a7f2533e8617aaaa056b664d1230e"
 dependencies = [
  "bitflags 2.11.0",
  "embedded-can",
+ "futures",
  "hex",
  "itertools",
  "libc",
  "log",
+ "mio",
  "nb",
  "neli",
  "nix 0.29.0",
  "socket2 0.5.10",
  "thiserror",
+ "tokio",
 ]
 
 [[package]]
