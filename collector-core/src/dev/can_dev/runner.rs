@@ -310,6 +310,10 @@ fn decode_ext_signal(
         .entry(cfg.id)
         .or_insert_with(|| vec![None; usize::from(cfg.total_element)]);
 
+    if segment.start_idx == 0 {
+        cache.fill(None);
+    }
+
     for (idx, value) in segment.values.into_iter().enumerate() {
         let target_idx = segment.start_idx + idx;
         if target_idx >= cache.len() {
@@ -571,6 +575,63 @@ mod tests {
                 Val::U8(6),
                 Val::U8(7),
                 Val::U8(8),
+            ])
+        );
+    }
+
+    #[test]
+    fn decode_ext_signal_resets_cache_when_new_cycle_starts() {
+        let cfg = CanSignalExtConfig {
+            id: 11,
+            name: "cells",
+            poly_name: "cells",
+            frame_id: 0x100,
+            frame_num: 2,
+            frame_id_step: 2,
+            each_frame_element: 4,
+            total_element: 8,
+            element_start_bit: 0,
+            single_ele_bit_len: 8,
+            byte_order: ByteOrder::Intel,
+            data_type: CanDataType::U8,
+            scale: 1.0,
+            offset: 0.0,
+            unit: "",
+            invalid_val: None,
+        };
+
+        let mut cache = ExtSignalCache::default();
+        assert!(decode_ext_signal(&cfg, &[1, 2, 3, 4], 0x100, &mut cache).is_none());
+        let first_cycle =
+            decode_ext_signal(&cfg, &[5, 6, 7, 8], 0x102, &mut cache).expect("first cycle");
+        assert_eq!(
+            first_cycle.value,
+            Val::List(vec![
+                Val::U8(1),
+                Val::U8(2),
+                Val::U8(3),
+                Val::U8(4),
+                Val::U8(5),
+                Val::U8(6),
+                Val::U8(7),
+                Val::U8(8),
+            ])
+        );
+
+        assert!(decode_ext_signal(&cfg, &[11, 12, 13, 14], 0x100, &mut cache).is_none());
+        let second_cycle =
+            decode_ext_signal(&cfg, &[15, 16, 17, 18], 0x102, &mut cache).expect("second cycle");
+        assert_eq!(
+            second_cycle.value,
+            Val::List(vec![
+                Val::U8(11),
+                Val::U8(12),
+                Val::U8(13),
+                Val::U8(14),
+                Val::U8(15),
+                Val::U8(16),
+                Val::U8(17),
+                Val::U8(18),
             ])
         );
     }
