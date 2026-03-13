@@ -49,19 +49,17 @@ impl CanRunner {
     }
 
     fn build_runtime_frame_map(&self) -> HashMap<u32, FrameState> {
-        self.configs
-            .iter()
-            .filter(|cfg| cfg.frame.enable)
-            .map(|cfg| {
-                (
-                    cfg.frame.frame_id,
-                    FrameState {
-                        config: cfg.clone(),
-                        last_seen: None,
-                    },
-                )
-            })
-            .collect()
+        let mut states = HashMap::new();
+        for cfg in self.configs.iter().filter(|cfg| cfg.frame.enable) {
+            for raw_id in runtime_frame_ids(cfg) {
+                states.entry(raw_id).or_insert_with(|| FrameState {
+                    raw_id,
+                    config: cfg.clone(),
+                    last_seen: None,
+                });
+            }
+        }
+        states
     }
 
     fn connect(&self) -> Result<CanSocket, CanDevError> {
@@ -120,7 +118,7 @@ impl CanRunner {
             if elapsed >= timeout {
                 return Err(CanDevError::Timeout(format!(
                     "报文0x{:X}超时{:?}",
-                    state.config.frame.frame_id, timeout
+                    state.raw_id, timeout
                 )));
             }
         }
@@ -249,8 +247,26 @@ impl CanRunner {
 
 #[derive(Clone)]
 struct FrameState {
+    raw_id: u32,
     config: CanConfig,
     last_seen: Option<Instant>,
+}
+
+fn runtime_frame_ids(cfg: &CanConfig) -> Vec<u32> {
+    let mut raw_ids = vec![cfg.frame.frame_id];
+    for signal in &cfg.signals {
+        let CanSignal::Ext(ext) = signal else {
+            continue;
+        };
+        let frame_step = u32::from(ext.frame_id_step.max(1));
+        for idx in 0..u32::from(ext.frame_num) {
+            let raw_id = ext.frame_id + idx * frame_step;
+            if !raw_ids.contains(&raw_id) {
+                raw_ids.push(raw_id);
+            }
+        }
+    }
+    raw_ids
 }
 
 fn matches_id_type(frame: &CanFrame, id_type: IdType) -> bool {
@@ -313,7 +329,12 @@ fn decode_ext_signal(cfg: &CanSignalExtConfig, data: &[u8], raw_id: u32) -> Opti
     })
 }
 
-fn extract_raw(data: &[u8], start_bit: u8, bit_len: u8, byte_order: ByteOrder) -> Option<u32> {
+pub(super) fn extract_raw(
+    data: &[u8],
+    start_bit: u8,
+    bit_len: u8,
+    byte_order: ByteOrder,
+) -> Option<u32> {
     if bit_len == 0 || bit_len > 32 {
         return None;
     }
@@ -398,4 +419,105 @@ fn sign_extend(raw: u32, bit_len: u8) -> i32 {
     }
     let shift = 32 - u32::from(bit_len);
     ((raw << shift) as i32) >> shift
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::Duration;
+
+    use super::{decode_ext_signal, runtime_frame_ids};
+    use crate::config::can_conf::{
+        ByteOrder, CanConfig, CanDataType, CanFrameConfig, CanSignal, CanSignalConfig,
+        CanSignalExtConfig, IdType, Rule,
+    };
+    use crate::core::point::Val;
+
+    #[test]
+    fn runtime_frame_ids_include_extended_sequence_frames() {
+        let cfg = CanConfig {
+            frame: CanFrameConfig {
+                id: 1,
+                name: "frame",
+                frame_id: 0x100,
+                id_type: IdType::Extended,
+                dlc: 8,
+                cycle_duration: Duration::from_millis(100),
+                timeout_duration: Duration::from_millis(200),
+                send: "a",
+                receive: "b",
+                rule: Rule::Cycle,
+                enable: true,
+            },
+            signals: vec![
+                CanSignal::Normal(CanSignalConfig {
+                    id: 10,
+                    name: "speed",
+                    frame_id: 0x100,
+                    signal_name: "speed",
+                    start_bit: 0,
+                    bit_len: 16,
+                    byte_order: ByteOrder::Intel,
+                    data_type: CanDataType::U16,
+                    scale: 1.0,
+                    offset: 0.0,
+                    unit: "",
+                    invalid_val: None,
+                    enum_values: "",
+                }),
+                CanSignal::Ext(CanSignalExtConfig {
+                    id: 11,
+                    name: "cells",
+                    poly_name: "cells",
+                    frame_id: 0x100,
+                    frame_num: 3,
+                    frame_id_step: 2,
+                    each_frame_element: 4,
+                    total_element: 12,
+                    element_start_bit: 0,
+                    single_ele_bit_len: 8,
+                    byte_order: ByteOrder::Intel,
+                    data_type: CanDataType::U8,
+                    scale: 1.0,
+                    offset: 0.0,
+                    unit: "",
+                    invalid_val: None,
+                }),
+            ],
+        };
+
+        let raw_ids = runtime_frame_ids(&cfg);
+
+        assert_eq!(raw_ids, vec![0x100, 0x102, 0x104]);
+    }
+
+    #[test]
+    fn decode_ext_signal_uses_frame_offset_for_later_frames() {
+        let cfg = CanSignalExtConfig {
+            id: 11,
+            name: "cells",
+            poly_name: "cells",
+            frame_id: 0x100,
+            frame_num: 3,
+            frame_id_step: 2,
+            each_frame_element: 4,
+            total_element: 12,
+            element_start_bit: 0,
+            single_ele_bit_len: 8,
+            byte_order: ByteOrder::Intel,
+            data_type: CanDataType::U8,
+            scale: 1.0,
+            offset: 0.0,
+            unit: "",
+            invalid_val: None,
+        };
+
+        let point = decode_ext_signal(&cfg, &[5, 6, 7, 8], 0x102).expect("point");
+
+        assert_eq!(point.id, 11);
+        assert_eq!(point.name, "cells");
+        assert_eq!(
+            point.value,
+            Val::List(vec![Val::U8(5), Val::U8(6), Val::U8(7), Val::U8(8)])
+        );
+    }
 }

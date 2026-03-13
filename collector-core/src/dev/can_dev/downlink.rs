@@ -118,7 +118,7 @@ impl FramePayload {
 
 pub(super) fn build_point_map(configs: &[CanConfig]) -> HashMap<PointId, CanPointConfig> {
     let mut map = HashMap::new();
-    for cfg in configs {
+    for cfg in configs.iter().filter(|cfg| cfg.frame.enable) {
         for signal in &cfg.signals {
             let id = match signal {
                 CanSignal::Normal(signal) => signal.id,
@@ -139,7 +139,7 @@ pub(super) fn build_point_map(configs: &[CanConfig]) -> HashMap<PointId, CanPoin
 
 pub(super) fn build_frame_map(configs: &[CanConfig]) -> HashMap<u32, FrameBinding> {
     let mut map = HashMap::new();
-    for cfg in configs {
+    for cfg in configs.iter().filter(|cfg| cfg.frame.enable) {
         let point_ids = cfg
             .signals
             .iter()
@@ -310,5 +310,106 @@ fn set_motorola(data: &mut [u8], start_bit: u8, bit_len: u8, raw: u32) {
             *byte &= !mask;
         }
         pos = if pos % 8 == 0 { pos + 15 } else { pos - 1 };
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::Duration;
+
+    use super::{build_frame_map, build_point_map, set_raw};
+    use crate::config::can_conf::{
+        ByteOrder, CanConfig, CanDataType, CanFrameConfig, CanSignal, CanSignalConfig, IdType, Rule,
+    };
+    use crate::dev::can_dev::runner::extract_raw;
+
+    #[test]
+    fn disabled_frames_are_excluded_from_downlink_maps() {
+        let enabled = CanConfig {
+            frame: CanFrameConfig {
+                id: 1,
+                name: "enabled",
+                frame_id: 0x100,
+                id_type: IdType::Standard,
+                dlc: 8,
+                cycle_duration: Duration::from_millis(100),
+                timeout_duration: Duration::from_millis(200),
+                send: "a",
+                receive: "b",
+                rule: Rule::Cycle,
+                enable: true,
+            },
+            signals: vec![CanSignal::Normal(CanSignalConfig {
+                id: 10,
+                name: "enabled_point",
+                frame_id: 0x100,
+                signal_name: "enabled_point",
+                start_bit: 0,
+                bit_len: 8,
+                byte_order: ByteOrder::Intel,
+                data_type: CanDataType::U8,
+                scale: 1.0,
+                offset: 0.0,
+                unit: "",
+                invalid_val: None,
+                enum_values: "",
+            })],
+        };
+        let disabled = CanConfig {
+            frame: CanFrameConfig {
+                id: 2,
+                name: "disabled",
+                frame_id: 0x200,
+                id_type: IdType::Standard,
+                dlc: 8,
+                cycle_duration: Duration::from_millis(100),
+                timeout_duration: Duration::from_millis(200),
+                send: "a",
+                receive: "b",
+                rule: Rule::Cycle,
+                enable: false,
+            },
+            signals: vec![CanSignal::Normal(CanSignalConfig {
+                id: 20,
+                name: "disabled_point",
+                frame_id: 0x200,
+                signal_name: "disabled_point",
+                start_bit: 0,
+                bit_len: 8,
+                byte_order: ByteOrder::Intel,
+                data_type: CanDataType::U8,
+                scale: 1.0,
+                offset: 0.0,
+                unit: "",
+                invalid_val: None,
+                enum_values: "",
+            })],
+        };
+
+        let point_map = build_point_map(&[enabled.clone(), disabled.clone()]);
+        let frame_map = build_frame_map(&[enabled, disabled]);
+
+        assert!(point_map.contains_key(&10));
+        assert!(!point_map.contains_key(&20));
+        assert!(frame_map.contains_key(&0x100));
+        assert!(!frame_map.contains_key(&0x200));
+    }
+
+    #[test]
+    fn intel_bit_packing_round_trips() {
+        let mut data = [0u8; 8];
+
+        set_raw(&mut data, 3, 12, ByteOrder::Intel, 0xABC);
+
+        assert_eq!(extract_raw(&data, 3, 12, ByteOrder::Intel), Some(0xABC));
+    }
+
+    #[test]
+    fn motorola_bit_packing_round_trips() {
+        let mut data = [0u8; 8];
+
+        set_raw(&mut data, 15, 12, ByteOrder::Motorola, 0xABC);
+
+        assert_eq!(extract_raw(&data, 15, 12, ByteOrder::Motorola), Some(0xABC));
     }
 }
