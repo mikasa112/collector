@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use calamine::{Data, DataType, HeaderRow, Range, Reader, Xlsx, open_workbook};
 use tracing::error;
 
@@ -126,6 +128,8 @@ pub type ModbusConfigs = Vec<ModbusConfig>;
 pub enum ModbusConfigsError {
     #[error("Failed to open workbook")]
     OpenWorkbookError(#[from] calamine::XlsxError),
+    #[error("存在重复点位ID: {0}")]
+    DuplicatePointId(u16),
 }
 
 pub(crate) fn build_configs(path: String) -> Result<ModbusConfigs, ModbusConfigsError> {
@@ -150,6 +154,12 @@ pub(crate) fn build_configs(path: String) -> Result<ModbusConfigs, ModbusConfigs
             .worksheet_range(sheet)
         {
             parse(range, &mut configs);
+        }
+    }
+    let mut seen = HashSet::with_capacity(configs.len());
+    for cfg in &configs {
+        if !seen.insert(cfg.id) {
+            return Err(ModbusConfigsError::DuplicatePointId(cfg.id));
         }
     }
     Ok(configs)
@@ -217,11 +227,5 @@ impl ModbusConfig {
             scale,
             offset,
         })
-    }
-
-    pub fn serial_num(&self) -> u32 {
-        let register_type_high = (self.register_type as u32) << 16;
-        let id_low = self.id as u32 & 0xFFFF;
-        register_type_high | id_low
     }
 }

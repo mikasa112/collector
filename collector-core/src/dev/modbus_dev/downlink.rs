@@ -88,7 +88,7 @@ impl WritePlan {
 pub(super) fn build_cfg_map(configs: &ModbusConfigs) -> HashMap<PointId, ModbusConfig> {
     let mut out = HashMap::new();
     for cfg in configs {
-        out.insert(cfg.serial_num(), *cfg);
+        out.insert(cfg.id as u32, *cfg);
     }
     out
 }

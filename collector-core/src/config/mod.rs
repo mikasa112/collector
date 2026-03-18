@@ -4,6 +4,8 @@ use std::collections::HashMap;
 use tokio::fs;
 use tracing::error;
 
+use crate::core::point::PointId;
+
 pub mod can_conf;
 pub mod modbus_conf;
 
@@ -103,17 +105,22 @@ where
 }
 
 #[derive(Deserialize, Debug)]
-#[serde(rename_all = "camelCase")]
 pub struct Project {
     pub product_type: Option<String>,
     pub project: Option<String>,
     pub ip: Option<String>,
     pub port: Option<u16>,
+    pub mqtt_host: Option<String>,
+    pub mqtt_port: Option<u16>,
+    pub mqtt_username: Option<String>,
+    pub mqtt_password: Option<String>,
+    pub mqtt_yt: Option<String>,
+    pub mqtt_yk: Option<String>,
     pub devices: HashMap<String, Device>,
+    pub mqtt_routes: Option<Vec<MqttRoute>>,
 }
 
 #[derive(Deserialize, Clone, Debug)]
-#[serde(rename_all = "camelCase")]
 pub struct Device {
     pub id: Option<String>,
     pub desc: Option<String>,
@@ -138,11 +145,9 @@ pub enum ComType {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
 pub struct DeviceConfig {
     #[serde(rename = "type")]
     pub device_type: Option<String>,
-    #[serde(rename = "comType")]
     pub com_type: Option<ComType>,
     pub register_file: Option<String>,
     pub interval: Option<u64>,
@@ -165,6 +170,18 @@ pub enum ProtocolConfigs {
     #[cfg(target_os = "linux")]
     CAN(can_conf::CanConfigs),
     None,
+}
+
+#[derive(Deserialize, Debug)]
+pub struct MqttRoute {
+    pub device_id: String,
+    pub rules: Vec<MqttRule>,
+}
+
+#[derive(Deserialize, Debug)]
+pub struct MqttRule {
+    pub topic: String,
+    pub point_ids: Vec<PointId>,
 }
 
 pub(crate) fn required_f64(row: &[Data], idx: usize, field: &str) -> Result<f64, anyhow::Error> {

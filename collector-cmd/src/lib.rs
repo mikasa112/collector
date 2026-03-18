@@ -1,6 +1,7 @@
 use clap::Parser;
 use collector_core::config;
 use collector_core::dev::manager::DevManager;
+use collector_core::dock::mqtt::MqttClient;
 use tracing::error;
 use tracing::level_filters::LevelFilter;
 use tracing_error::ErrorLayer;
@@ -48,12 +49,24 @@ pub async fn cmd() {
     match config::Configuration::new(args.config).await {
         Ok(mut p) => {
             p.load_device_configs().await;
+            let mqtt_client = match MqttClient::from_project(&mut p.project) {
+                Ok(client) => client,
+                Err(err) => {
+                    error!("failed to initialize mqtt client: {}", err);
+                    None
+                }
+            };
             let mut manager = DevManager::new(p.project.devices);
             manager.start_all().await;
             if let Err(err) = tokio::signal::ctrl_c().await {
                 error!("failed to listen for shutdown signal: {}", err);
             }
             manager.stop_all().await;
+            if let Some(client) = mqtt_client.as_ref()
+                && let Err(err) = client.stop().await
+            {
+                error!("failed to stop mqtt client: {}", err);
+            }
         }
         Err(e) => {
             error!("{}", e);

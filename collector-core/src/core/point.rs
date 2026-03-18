@@ -129,20 +129,20 @@ impl Display for Val {
 }
 
 pub trait Point: Send + Sync + Clone {
-    fn id(&self) -> u32;
+    fn id(&self) -> PointId;
     fn name(&self) -> &'static str;
     fn value(&self) -> &Val;
 }
 
 #[derive(Debug, Serialize, Clone)]
 pub struct DataPoint {
-    pub id: u32,
+    pub id: PointId,
     pub name: &'static str,
     pub value: Val,
 }
 
 impl Point for DataPoint {
-    fn id(&self) -> u32 {
+    fn id(&self) -> PointId {
         self.id
     }
 

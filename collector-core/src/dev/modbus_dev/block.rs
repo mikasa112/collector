@@ -219,7 +219,7 @@ impl Blocks {
                 continue;
             };
             out.push(DataPoint {
-                id: region.cfg.serial_num(),
+                id: region.cfg.id as u32,
                 name: region.cfg.name,
                 value,
             });

@@ -1,12 +1,14 @@
-﻿{
+{
   "product_type": "EMU",
   "project": "康明斯",
   "ip": "127.0.0.1",
   "port": 8083,
-  "mqtt_host": "8.153.70.217",
+  "mqtt_host": "192.168.100.155",
   "mqtt_port": 1883,
   "mqtt_username": "root",
-  "mqtt_password": "Jjj156428!",
+  "mqtt_password": "inpower",
+  "mqtt_yt": "/asw/+/+/yt",
+  "mqtt_yk": "/asw/+/+/yk",
   "devices": {
     "bcu1": {
       "id": "bcu1",
@@ -14,18 +16,18 @@
       "desc": null,
       "config": {
         "type": "BCU",
-        "comType": "CAN",
-        "registerFile": "./config/BCU_GOLD.xlsx",
+        "com_type": "CAN",
+        "register_file": "./config/BCU_GOLD.xlsx",
         "interval": 1000,
         "timeout": 500,
         "ip": null,
         "port": null,
         "slave": null,
-        "serialTty": null,
-        "baudRate": 500000,
-        "dataBits": null,
+        "serial_tty": null,
+        "baud_rate": 500000,
+        "data_bits": null,
         "parity": null,
-        "stopBits": null,
+        "stop_bits": null,
         "interface": "vcan0",
         "desc": null
       }
@@ -36,18 +38,18 @@
       "desc": null,
       "config": {
         "type": "PCS",
-        "comType": "ModbusTCP",
-        "registerFile": "./config/PCS_450.xlsx",
+        "com_type": "ModbusTCP",
+        "register_file": "./config/PCS_450.xlsx",
         "interval": 1000,
         "timeout": 500,
         "ip": "127.0.0.1",
-        "port": 502,
+        "port": 33434,
         "slave": 1,
-        "serialTty": null,
-        "baudRate": null,
-        "dataBits": null,
+        "serial_tty": null,
+        "baud_rate": null,
+        "data_bits": null,
         "parity": null,
-        "stopBits": null,
+        "stop_bits": null,
         "interface": null,
         "desc": null
       }
@@ -58,18 +60,18 @@
       "desc": null,
       "config": {
         "type": "LiquidCool",
-        "comType": "ModbusRTU",
-        "registerFile": null,
+        "com_type": "ModbusRTU",
+        "register_file": null,
         "interval": 1000,
         "timeout": 500,
         "ip": null,
         "port": null,
         "slave": 1,
-        "serialTty": "/dev/ttyXRUSB2",
-        "baudRate": 9600,
-        "dataBits": 8,
+        "serial_tty": "/dev/ttyXRUSB2",
+        "baud_rate": 9600,
+        "data_bits": 8,
         "parity": "N",
-        "stopBits": 1,
+        "stop_bits": 1,
         "interface": null,
         "desc": null
       }
@@ -80,18 +82,18 @@
       "desc": null,
       "config": {
         "type": "LiquidCool",
-        "comType": "ModbusRTU",
-        "registerFile": null,
+        "com_type": "ModbusRTU",
+        "register_file": null,
         "interval": 1000,
         "timeout": 500,
         "ip": null,
         "port": null,
         "slave": 1,
-        "serialTty": "/dev/ttyXRUSB3",
-        "baudRate": 9600,
-        "dataBits": 8,
+        "serial_tty": "/dev/ttyXRUSB3",
+        "baud_rate": 9600,
+        "data_bits": 8,
         "parity": "N",
-        "stopBits": 1,
+        "stop_bits": 1,
         "interface": null,
         "desc": null
       }
@@ -102,18 +104,18 @@
       "desc": null,
       "config": {
         "type": "LiquidCool",
-        "comType": "ModbusRTU",
-        "registerFile": null,
+        "com_type": "ModbusRTU",
+        "register_file": null,
         "interval": 1000,
         "timeout": 500,
         "ip": null,
         "port": null,
         "slave": 1,
-        "serialTty": "/dev/ttyXRUSB1",
-        "baudRate": 9600,
-        "dataBits": 8,
+        "serial_tty": "/dev/ttyXRUSB1",
+        "baud_rate": 9600,
+        "data_bits": 8,
         "parity": "N",
-        "stopBits": 1,
+        "stop_bits": 1,
         "interface": null,
         "desc": null
       }
@@ -124,18 +126,18 @@
       "desc": null,
       "config": {
         "type": "Firefighting",
-        "comType": "ModbusRTU",
-        "registerFile": null,
+        "com_type": "ModbusRTU",
+        "register_file": null,
         "interval": 1000,
         "timeout": 500,
         "ip": null,
         "port": null,
         "slave": 1,
-        "serialTty": "/dev/ttyXRUSB4",
-        "baudRate": 9600,
-        "dataBits": 8,
+        "serial_tty": "/dev/ttyXRUSB4",
+        "baud_rate": 9600,
+        "data_bits": 8,
         "parity": "N",
-        "stopBits": 1,
+        "stop_bits": 1,
         "interface": null,
         "desc": null
       }
@@ -146,21 +148,53 @@
       "desc": null,
       "config": {
         "type": "Dehumidifier",
-        "comType": "ModbusRTU",
-        "registerFile": null,
+        "com_type": "ModbusRTU",
+        "register_file": null,
         "interval": 1000,
         "timeout": 500,
         "ip": null,
         "port": null,
         "slave": 1,
-        "serialTty": "/dev/ttyXRUSB5",
-        "baudRate": 9600,
-        "dataBits": 8,
+        "serial_tty": "/dev/ttyXRUSB5",
+        "baud_rate": 9600,
+        "data_bits": 8,
         "parity": "N",
-        "stopBits": 1,
+        "stop_bits": 1,
         "interface": null,
         "desc": null
       }
     }
-  }
+  },
+  "mqtt_routes": [
+    {
+      "device_id": "pcs",
+      "rules": [
+        {
+          "topic": "/pcs/0/yx",
+          "point_ids": [1000]
+        },
+        {
+          "topic": "/pcs/0/yc",
+          "point_ids": [1, 2, 3]
+        },
+        {
+          "topic": "/pcs/0/yt",
+          "point_ids": [2000]
+        },
+        {
+          "topic": "/pcs/0/yk",
+          "point_ids": [3000, 3001]
+        }
+      ]
+    },
+    {
+      "device_id": "bcu1",
+      "rules": [
+        {
+          "topic": "/bcu/0/yc",
+          "point_ids": [1, 2, 2001]
+        }
+      ]
+    }
+  ]
 }

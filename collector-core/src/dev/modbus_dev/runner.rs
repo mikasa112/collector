@@ -10,7 +10,7 @@ use tokio_serial::{DataBits, Parity};
 use tracing::{info, warn};
 
 use crate::center::{Center, global_center};
-use crate::config::modbus_conf::{ModbusConfig, ModbusConfigs, RegisterType};
+use crate::config::modbus_conf::{ModbusConfig, ModbusConfigs};
 use crate::core::point::{DataPoint, DataPoints, PointId, Val};
 use crate::dev::modbus_dev::Protocol;
 use crate::dev::modbus_dev::block::Blocks;
@@ -40,11 +40,10 @@ impl ModbusRunner {
     /// # 输入
     /// - `v`: 状态值，0表示正常，非0表示异常
     fn report_comm_status(&self, v: u8) {
-        let h = (RegisterType::DiscreteInputs as u32) << 16;
         global_center().ingest(
             self,
             vec![DataPoint {
-                id: h | 0xFFFF,
+                id: 0xFFFF,
                 name: "communication_status",
                 value: Val::U8(v),
             }],
