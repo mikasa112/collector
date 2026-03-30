@@ -87,7 +87,7 @@ impl MqttClient {
         let event_task = tokio::spawn(async move {
             if !mqtt_yt.is_empty()
                 && let Err(e) = event_client
-                    .subscribe(mqtt_yt.clone(), QoS::AtLeastOnce)
+                    .subscribe(mqtt_yt.as_str(), QoS::AtLeastOnce)
                     .await
             {
                 error!("mqtt subscribe yt error: {:?}", e);
@@ -95,7 +95,7 @@ impl MqttClient {
             if !mqtt_yk.is_empty()
                 && mqtt_yk != mqtt_yt
                 && let Err(e) = event_client
-                    .subscribe(mqtt_yk.clone(), QoS::AtLeastOnce)
+                    .subscribe(mqtt_yk.as_str(), QoS::AtLeastOnce)
                     .await
             {
                 error!("mqtt subscribe yk error: {:?}", e);

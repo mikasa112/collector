@@ -3,8 +3,8 @@
   "project": "康明斯",
   "ip": "127.0.0.1",
   "port": 8083,
-  "mqtt_host": "192.168.100.155",
-  "mqtt_port": 1883,
+  "mqtt_host": "118.193.44.31",
+  "mqtt_port": 10031,
   "mqtt_username": "root",
   "mqtt_password": "inpower",
   "mqtt_yt": "/asw/+/+/yt",
@@ -171,19 +171,30 @@
       "rules": [
         {
           "topic": "/pcs/0/yx",
-          "point_ids": [1000]
+          "point_ids": [
+            1000
+          ]
         },
         {
           "topic": "/pcs/0/yc",
-          "point_ids": [1, 2, 3]
+          "point_ids": [
+            1,
+            2,
+            3
+          ]
         },
         {
           "topic": "/pcs/0/yt",
-          "point_ids": [2000]
+          "point_ids": [
+            2000
+          ]
         },
         {
           "topic": "/pcs/0/yk",
-          "point_ids": [3000, 3001]
+          "point_ids": [
+            3000,
+            3001
+          ]
         }
       ]
     },
@@ -192,7 +203,11 @@
       "rules": [
         {
           "topic": "/bcu/0/yc",
-          "point_ids": [1, 2, 2001]
+          "point_ids": [
+            1,
+            2,
+            2001
+          ]
         }
       ]
     }
