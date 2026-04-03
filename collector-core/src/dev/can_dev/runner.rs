@@ -29,7 +29,12 @@ pub(super) struct CanRunner {
 
 #[derive(Default)]
 struct ExtSignalCache {
-    values: HashMap<u32, Vec<Option<Val>>>,
+    values: HashMap<u32, ExtSignalState>,
+}
+
+struct ExtSignalState {
+    values: Vec<Option<Val>>,
+    filled: usize,
 }
 
 impl CanRunner {
@@ -70,6 +75,7 @@ impl CanRunner {
         frame: &CanFrame,
         states: &mut HashMap<u32, FrameState>,
         ext_cache: &mut ExtSignalCache,
+        now: Instant,
     ) -> Vec<DataPoint> {
         let raw_id = frame.raw_id();
         let Some(state) = states.get_mut(&raw_id) else {
@@ -78,7 +84,7 @@ impl CanRunner {
         if !matches_id_type(frame, state.config.frame.id_type) {
             return Vec::new();
         }
-        state.last_seen = Some(Instant::now());
+        state.last_seen = Some(now);
         let mut points = Vec::new();
         for signal in &state.config.signals {
             match signal {
@@ -100,10 +106,11 @@ impl CanRunner {
     fn check_timeouts(
         &self,
         states: &HashMap<u32, FrameState>,
+        now: Instant,
         connected_at: Instant,
         last_rx_at: Instant,
     ) -> Result<(), CanDevError> {
-        if last_rx_at.elapsed() >= self.config.timeout {
+        if now.duration_since(last_rx_at) >= self.config.timeout {
             return Err(CanDevError::Timeout(format!(
                 "接口{}在{:?}内未收到CAN报文",
                 self.config.interface, self.config.timeout
@@ -117,8 +124,8 @@ impl CanRunner {
             }
             let elapsed = state
                 .last_seen
-                .map(|instant| instant.elapsed())
-                .unwrap_or_else(|| connected_at.elapsed());
+                .map(|instant| now.duration_since(instant))
+                .unwrap_or_else(|| now.duration_since(connected_at));
             if elapsed >= timeout {
                 return Err(CanDevError::Timeout(format!(
                     "报文0x{:X}超时{:?}",
@@ -154,7 +161,8 @@ impl CanRunner {
                     }
                 }
                 _ = ticker.tick() => {
-                    self.check_timeouts(frame_states, connected_at, last_rx_at)?;
+                    let now = Instant::now();
+                    self.check_timeouts(frame_states, now, connected_at, last_rx_at)?;
                 }
                 msg = self.rx.recv() => {
                     let Some(entries) = msg else {
@@ -173,8 +181,9 @@ impl CanRunner {
                 }
                 result = socket.read_frame() => {
                     let frame = result.map_err(CanDevError::ReadFrame)?;
-                    last_rx_at = Instant::now();
-                    let points = Self::decode_frame(&frame, frame_states, &mut ext_cache);
+                    let now = Instant::now();
+                    last_rx_at = now;
+                    let points = Self::decode_frame(&frame, frame_states, &mut ext_cache, now);
                     if !points.is_empty() {
                         // info!("[{}] ↑: {}", self.id, DataPoints(points.clone()));
                         self.center.ingest(&self.id, points);
@@ -300,78 +309,84 @@ fn decode_ext_signal(
     raw_id: u32,
     ext_cache: &mut ExtSignalCache,
 ) -> Option<DataPoint> {
-    let segment = decode_ext_segment(cfg, data, raw_id)?;
-    let cache = ext_cache
+    let state = ext_cache
         .values
         .entry(cfg.id)
-        .or_insert_with(|| vec![None; usize::from(cfg.total_element)]);
+        .or_insert_with(|| ExtSignalState {
+            values: vec![None; usize::from(cfg.total_element)],
+            filled: 0,
+        });
 
-    if segment.start_idx == 0 {
-        cache.fill(None);
+    let frame_step = u32::from(cfg.frame_id_step.max(1));
+    let frame_offset = raw_id.checked_sub(cfg.frame_id)? / frame_step;
+    let element_offset = usize::try_from(frame_offset).ok()? * usize::from(cfg.each_frame_element);
+
+    if element_offset == 0 {
+        state.values.fill(None);
+        state.filled = 0;
     }
 
-    for (idx, value) in segment.values.into_iter().enumerate() {
-        let target_idx = segment.start_idx + idx;
-        if target_idx >= cache.len() {
-            break;
-        }
-        cache[target_idx] = Some(value);
+    if !decode_ext_segment_into(cfg, data, element_offset, state) {
+        return None;
     }
 
-    if cache.iter().any(|value| value.is_none()) {
+    if state.filled != state.values.len() {
         return None;
     }
 
     Some(DataPoint {
         id: cfg.id,
         name: cfg.name,
-        value: Val::List(cache.iter().filter_map(Clone::clone).collect()),
+        value: Val::List(
+            state
+                .values
+                .iter()
+                .map(|value| {
+                    value
+                        .clone()
+                        .expect("ext signal cache should be fully populated before publishing")
+                })
+                .collect(),
+        ),
     })
 }
 
-fn decode_ext_segment(cfg: &CanSignalExtConfig, data: &[u8], raw_id: u32) -> Option<ExtSegment> {
-    let frame_step = u32::from(cfg.frame_id_step.max(1));
-    let frame_offset = raw_id.checked_sub(cfg.frame_id)? / frame_step;
-    let element_offset = usize::try_from(frame_offset).ok()? * usize::from(cfg.each_frame_element);
-    let mut values = Vec::new();
-
+fn decode_ext_segment_into(
+    cfg: &CanSignalExtConfig,
+    data: &[u8],
+    element_offset: usize,
+    state: &mut ExtSignalState,
+) -> bool {
+    let mut wrote_value = false;
     for idx in 0..usize::from(cfg.each_frame_element) {
         if element_offset + idx >= usize::from(cfg.total_element) {
             break;
         }
         let start_bit =
             usize::from(cfg.element_start_bit) + idx * usize::from(cfg.single_ele_bit_len);
-        let raw = extract_raw(
-            data,
-            u8::try_from(start_bit).ok()?,
-            cfg.single_ele_bit_len,
-            cfg.byte_order,
-        )?;
+        let Some(start_bit) = u8::try_from(start_bit).ok() else {
+            return false;
+        };
+        let Some(raw) = extract_raw(data, start_bit, cfg.single_ele_bit_len, cfg.byte_order) else {
+            return false;
+        };
         if cfg.invalid_val.is_some_and(|invalid| invalid == raw) {
             continue;
         }
-        values.push(decode_value(
+        let target_idx = element_offset + idx;
+        if state.values[target_idx].is_none() {
+            state.filled += 1;
+        }
+        state.values[target_idx] = Some(decode_value(
             raw,
             cfg.single_ele_bit_len,
             cfg.data_type,
             cfg.scale,
             cfg.offset,
         ));
+        wrote_value = true;
     }
-
-    if values.is_empty() {
-        return None;
-    }
-
-    Some(ExtSegment {
-        start_idx: element_offset,
-        values,
-    })
-}
-
-struct ExtSegment {
-    start_idx: usize,
-    values: Vec<Val>,
+    wrote_value
 }
 
 pub(super) fn extract_raw(
