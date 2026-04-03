@@ -1,122 +1,253 @@
-use dashmap::DashMap;
-
-use crate::{
-    center::{Center, DataCenterError, Sender},
-    core::point::{Point, PointId},
-    dev::Identifiable,
+use std::{
+    collections::HashMap,
+    sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard},
 };
 
-pub struct DataCenter<T>
-where
-    T: Point,
-{
-    down_chan: DashMap<String, tokio::sync::mpsc::Sender<Vec<T>>>,
-    latest: DashMap<String, DashMap<PointId, T>>,
+use dashmap::DashMap;
+use tracing::warn;
+
+use crate::{
+    center::{DataCenterError, DownlinkSender, PointCenter},
+    core::point::{DataPoint, Point, PointId},
+};
+
+pub struct DataCenter {
+    downlinks: DashMap<String, DownlinkSender>,
+    devices: DashMap<String, Arc<RwLock<DeviceCache>>>,
 }
 
-impl<T> DataCenter<T>
-where
-    T: Point,
-{
+impl DataCenter {
     pub fn new(dev_len: usize) -> Self {
         Self {
-            down_chan: DashMap::with_capacity(dev_len),
-            latest: DashMap::with_capacity(dev_len),
+            downlinks: DashMap::with_capacity(dev_len),
+            devices: DashMap::with_capacity(dev_len),
         }
     }
 
+    fn get_or_create_device(&self, dev_id: &str) -> Arc<RwLock<DeviceCache>> {
+        self.devices
+            .entry(dev_id.to_owned())
+            .or_insert_with(|| Arc::new(RwLock::new(DeviceCache::default())))
+            .clone()
+    }
+
     pub fn dev_ids(&self) -> Vec<String> {
-        self.latest.iter().map(|it| it.key().to_owned()).collect()
+        self.devices.iter().map(|it| it.key().to_owned()).collect()
+    }
+
+    fn read_cache<'a>(
+        device: &'a Arc<RwLock<DeviceCache>>,
+        dev_id: &str,
+    ) -> RwLockReadGuard<'a, DeviceCache> {
+        match device.read() {
+            Ok(cache) => cache,
+            Err(err) => {
+                warn!("[{}] device cache read lock poisoned, recovering", dev_id);
+                err.into_inner()
+            }
+        }
+    }
+
+    fn write_cache<'a>(
+        device: &'a Arc<RwLock<DeviceCache>>,
+        dev_id: &str,
+    ) -> RwLockWriteGuard<'a, DeviceCache> {
+        match device.write() {
+            Ok(cache) => cache,
+            Err(err) => {
+                warn!("[{}] device cache write lock poisoned, recovering", dev_id);
+                err.into_inner()
+            }
+        }
+    }
+}
+
+struct DeviceCache {
+    latest_by_id: HashMap<PointId, DataPoint>,
+    snapshot: Arc<[DataPoint]>,
+    version: u64,
+    snapshot_version: u64,
+}
+
+impl Default for DeviceCache {
+    fn default() -> Self {
+        Self {
+            latest_by_id: HashMap::new(),
+            snapshot: Arc::from([]),
+            version: 0,
+            snapshot_version: 0,
+        }
     }
 }
 
 #[async_trait::async_trait]
-impl<T> Center<T> for DataCenter<T>
-where
-    T: Point,
-{
-    fn ingest<D: Identifiable + ?Sized>(&self, dev: &D, msg: impl IntoIterator<Item = T>) {
-        use dashmap::mapref::entry::Entry as DashEntry;
+impl PointCenter for DataCenter {
+    fn ingest(&self, dev_id: &str, points: Vec<DataPoint>) {
+        let device = self.get_or_create_device(dev_id);
+        let mut cache = Self::write_cache(&device, dev_id);
 
-        let points = self.latest.entry(dev.id().to_owned()).or_default();
-        for p in msg {
-            let p_id = p.id();
-            let new_val = p.value();
-            match points.entry(p_id) {
-                DashEntry::Vacant(v) => {
-                    v.insert(p);
-                }
-                DashEntry::Occupied(mut o) => {
-                    if o.get().value() != new_val {
-                        o.insert(p);
-                    }
+        let mut changed = false;
+
+        for point in points {
+            let point_id = point.id();
+            let new_value = point.value().clone();
+
+            match cache.latest_by_id.get(&point_id) {
+                Some(old) if old.value() == &new_value => {}
+                _ => {
+                    cache.latest_by_id.insert(point_id, point);
+                    changed = true;
                 }
             }
         }
+
+        if changed {
+            cache.version = cache.version.wrapping_add(1);
+        }
     }
 
-    async fn dispatch<D: Identifiable + ?Sized>(
-        &self,
-        dev: &D,
-        msg: Vec<T>,
-    ) -> Result<(), DataCenterError> {
-        let dev_id = dev.id();
+    async fn dispatch(&self, dev_id: &str, points: Vec<DataPoint>) -> Result<(), DataCenterError> {
         let sender = {
-            let r = self
-                .down_chan
+            let sender = self
+                .downlinks
                 .get(dev_id)
                 .ok_or(DataCenterError::NotFoundDevError(dev_id.to_owned()))?;
-            r.clone()
+            sender.clone()
         };
-        sender.send(msg).await.map_err(Into::into)
+
+        sender.send(points).await.map_err(Into::into)
     }
 
-    fn snapshot<D: Identifiable + ?Sized>(&self, dev: &D) -> Option<Vec<T>> {
-        let guard = self.latest.get(dev.id())?;
-        let iter = guard.iter().map(|v| v.value().clone());
-        Some(iter.collect())
+    fn read(&self, dev_id: &str, point_id: PointId) -> Option<DataPoint> {
+        let device = self.devices.get(dev_id)?;
+        let cache = Self::read_cache(&device, dev_id);
+        cache.latest_by_id.get(&point_id).cloned()
     }
 
-    fn read<D: Identifiable + ?Sized>(&self, dev: &D, key: u32) -> Option<T> {
-        let guard = self.latest.get(dev.id())?;
-        guard.get(&key).map(|v| v.value().clone())
+    fn read_many(&self, dev_id: &str, point_ids: &[PointId]) -> Vec<DataPoint> {
+        let Some(device) = self.devices.get(dev_id) else {
+            return Vec::new();
+        };
+
+        let cache = Self::read_cache(&device, dev_id);
+
+        point_ids
+            .iter()
+            .filter_map(|point_id| cache.latest_by_id.get(point_id).cloned())
+            .collect()
     }
 
-    fn with_read<D, F, R>(&self, dev: &D, key: u32, f: F) -> Option<R>
-    where
-        D: Identifiable + ?Sized,
-        F: FnOnce(&T) -> R,
-    {
-        let guard = self.latest.get(dev.id())?;
-        let point = guard.value().get(&key)?;
-        Some(f(point.value()))
+    fn read_all(&self, dev_id: &str) -> Arc<[DataPoint]> {
+        let Some(device) = self.devices.get(dev_id) else {
+            return Arc::from([]);
+        };
+
+        {
+            let cache = Self::read_cache(&device, dev_id);
+            if cache.snapshot_version == cache.version {
+                return cache.snapshot.clone();
+            }
+        }
+
+        let mut cache = Self::write_cache(&device, dev_id);
+
+        if cache.snapshot_version != cache.version {
+            let mut points: Vec<DataPoint> = cache.latest_by_id.values().cloned().collect();
+            points.sort_by_key(|point| point.id);
+            cache.snapshot = Arc::from(points);
+            cache.snapshot_version = cache.version;
+        }
+
+        cache.snapshot.clone()
     }
 
-    fn with_snapshot<D, F, R>(&self, dev: &D, f: F) -> Option<R>
-    where
-        D: Identifiable + ?Sized,
-        F: FnOnce(&DashMap<u32, T>) -> R,
-    {
-        let guard = self.latest.get(dev.id())?;
-        Some(f(guard.value()))
+    fn dev_ids(&self) -> Vec<String> {
+        self.devices.iter().map(|it| it.key().to_owned()).collect()
     }
 
-    fn attach<D: Identifiable + ?Sized>(
-        &self,
-        dev: &D,
-        ch: Sender<T>,
-    ) -> Result<(), DataCenterError> {
-        use dashmap::mapref::entry::Entry as DashEntry; // 用于 entry API
-        match self.down_chan.entry(dev.id().to_owned()) {
+    fn attach_downlink(&self, dev_id: &str, tx: DownlinkSender) -> Result<(), DataCenterError> {
+        use dashmap::mapref::entry::Entry as DashEntry;
+
+        match self.downlinks.entry(dev_id.to_owned()) {
             DashEntry::Vacant(v) => {
-                v.insert(ch);
+                v.insert(tx);
                 Ok(())
             }
-            DashEntry::Occupied(_) => Err(DataCenterError::DevHasRegister(dev.id().to_owned())),
+            DashEntry::Occupied(_) => Err(DataCenterError::DevHasRegister(dev_id.to_owned())),
         }
     }
 
-    fn detach<D: Identifiable + ?Sized>(&self, dev: &D) {
-        self.down_chan.remove(dev.id());
+    fn detach_downlink(&self, dev_id: &str) {
+        self.downlinks.remove(dev_id);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use super::DataCenter;
+    use crate::{
+        center::PointCenter,
+        core::point::{DataPoint, Val},
+    };
+
+    fn point(id: u32, value: u8) -> DataPoint {
+        DataPoint {
+            id,
+            name: "p",
+            value: Val::U8(value),
+        }
+    }
+
+    #[test]
+    fn read_all_returns_sorted_snapshot() {
+        let center = DataCenter::new(1);
+        center.ingest("dev-1", vec![point(2, 2), point(1, 1), point(3, 3)]);
+
+        let snapshot = center.read_all("dev-1");
+        let ids: Vec<u32> = snapshot.iter().map(|point| point.id).collect();
+
+        assert_eq!(ids, vec![1, 2, 3]);
+    }
+
+    #[test]
+    fn read_all_reuses_snapshot_when_cache_unchanged() {
+        let center = DataCenter::new(1);
+        center.ingest("dev-1", vec![point(1, 1), point(2, 2)]);
+
+        let first = center.read_all("dev-1");
+        let second = center.read_all("dev-1");
+
+        assert!(Arc::ptr_eq(&first, &second));
+    }
+
+    #[test]
+    fn read_all_rebuilds_snapshot_after_value_change() {
+        let center = DataCenter::new(1);
+        center.ingest("dev-1", vec![point(1, 1)]);
+
+        let first = center.read_all("dev-1");
+
+        center.ingest("dev-1", vec![point(1, 2)]);
+
+        let second = center.read_all("dev-1");
+
+        assert!(!Arc::ptr_eq(&first, &second));
+        assert_eq!(second[0].value, Val::U8(2));
+    }
+
+    #[test]
+    fn ingest_same_value_does_not_invalidate_snapshot() {
+        let center = DataCenter::new(1);
+        center.ingest("dev-1", vec![point(1, 1)]);
+
+        let first = center.read_all("dev-1");
+
+        center.ingest("dev-1", vec![point(1, 1)]);
+
+        let second = center.read_all("dev-1");
+
+        assert!(Arc::ptr_eq(&first, &second));
     }
 }

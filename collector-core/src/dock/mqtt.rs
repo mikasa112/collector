@@ -12,10 +12,9 @@ use tokio::{
 use tracing::{error, info};
 
 use crate::{
-    center::{Center, global_center},
+    center::SharedPointCenter,
     config::{MqttRoute, Project},
-    core::point::{DataPoint, Val},
-    dev::Identifiable,
+    core::point::{DataPoint, Point, Val},
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -52,23 +51,18 @@ struct MqttClientConf {
     mqtt_routes: Vec<MqttRoute>,
 }
 
-struct DevIdRef<'a>(&'a str);
-
-impl Identifiable for DevIdRef<'_> {
-    fn id(&self) -> &str {
-        self.0
-    }
-}
-
 impl MqttClient {
-    pub fn from_project(project: &mut Project) -> Result<Option<Self>, MqttClientError> {
+    pub fn from_project(
+        project: &mut Project,
+        center: SharedPointCenter,
+    ) -> Result<Option<Self>, MqttClientError> {
         let Some(conf) = MqttClientConf::from_project(project) else {
             return Ok(None);
         };
-        Self::new(conf).map(Some)
+        Self::new(conf, center).map(Some)
     }
 
-    fn new(conf: MqttClientConf) -> Result<Self, MqttClientError> {
+    fn new(conf: MqttClientConf, center: SharedPointCenter) -> Result<Self, MqttClientError> {
         let MqttClientConf {
             mqtt_host,
             mqtt_port,
@@ -84,6 +78,7 @@ impl MqttClient {
         let (watch_tx, mut watch_rx) = watch::channel(false);
         let (client, mut eventloop) = AsyncClient::new(mqttoptions, 10);
         let event_client = client.clone();
+        let event_center = center.clone();
         let event_task = tokio::spawn(async move {
             if !mqtt_yt.is_empty()
                 && let Err(e) = event_client
@@ -112,7 +107,11 @@ impl MqttClient {
                     event = eventloop.poll() => {
                         match event {
                             Ok(Event::Incoming(Packet::Publish(p))) => {
-                                if let Err(e) = handle_incoming_publish(p.topic.as_str(), &p.payload).await {
+                                if let Err(e) = handle_incoming_publish(
+                                    event_center.as_ref(),
+                                    p.topic.as_str(),
+                                    &p.payload,
+                                ).await {
                                     error!("mqtt receive error: {}", e);
                                 }
                             }
@@ -128,6 +127,7 @@ impl MqttClient {
         });
         let publish_client = client.clone();
         let publish_routes = mqtt_routes;
+        let publish_center = center;
         let mut publish_stop_rx = watch_tx.subscribe();
         let publish_task = tokio::spawn(async move {
             let mut ticker = time::interval(Duration::from_secs(1));
@@ -141,7 +141,8 @@ impl MqttClient {
                         }
                     }
                     _ = ticker.tick() => {
-                        publish_routes_task(&publish_client, &publish_routes).await;
+                        publish_routes_task(publish_center.as_ref(), &publish_client, &publish_routes)
+                            .await;
                     }
                 }
             }
@@ -184,7 +185,11 @@ impl MqttClientConf {
     }
 }
 
-async fn handle_incoming_publish(topic: &str, payload: &Bytes) -> Result<(), MqttReceiveError> {
+async fn handle_incoming_publish(
+    center: &dyn crate::center::PointCenter,
+    topic: &str,
+    payload: &Bytes,
+) -> Result<(), MqttReceiveError> {
     let text = std::str::from_utf8(payload.as_ref()).unwrap_or_default();
     let raw: serde_json::Value = serde_json::from_str(text)?;
     let device_id = parse_device_id_from_topic(topic)?;
@@ -192,8 +197,7 @@ async fn handle_incoming_publish(topic: &str, payload: &Bytes) -> Result<(), Mqt
     if points.is_empty() {
         return Ok(());
     }
-    let dev = DevIdRef(device_id);
-    if let Err(e) = global_center().dispatch(&dev, points).await {
+    if let Err(e) = center.dispatch(device_id, points).await {
         error!("mqtt dispatch error on topic {}: {}", topic, e);
     }
     Ok(())
@@ -287,28 +291,25 @@ fn i64_to_val(value: i64) -> Val {
     }
 }
 
-async fn publish_routes_task(client: &AsyncClient, routes: &[MqttRoute]) {
+async fn publish_routes_task(
+    center: &dyn crate::center::PointCenter,
+    client: &AsyncClient,
+    routes: &[MqttRoute],
+) {
     for route in routes {
-        let dev = DevIdRef(route.device_id.as_str());
         for rule in &route.rules {
-            let json = global_center()
-                .with_snapshot(&dev, |snapshot| {
-                    let mut map = serde_json::Map::with_capacity(rule.point_ids.len());
-                    for it in snapshot.iter() {
-                        if !rule.point_ids.contains(it.key()) {
-                            continue;
-                        }
-                        if let Ok(v) = serde_json::to_value(&it.value) {
-                            map.insert(it.key().to_string(), v);
-                        }
-                    }
-                    if map.is_empty() {
-                        None
-                    } else {
-                        serde_json::to_vec(&map).ok()
-                    }
-                })
-                .flatten();
+            let points = center.read_many(route.device_id.as_str(), &rule.point_ids);
+            let mut map = serde_json::Map::with_capacity(points.len());
+            for point in points {
+                if let Ok(value) = serde_json::to_value(&point.value) {
+                    map.insert(point.id().to_string(), value);
+                }
+            }
+            let json = if map.is_empty() {
+                None
+            } else {
+                serde_json::to_vec(&map).ok()
+            };
             if let Some(data) = json {
                 let result = client
                     .publish(rule.topic.as_str(), QoS::AtLeastOnce, false, data)

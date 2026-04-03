@@ -4,6 +4,7 @@ use tokio::sync::Mutex;
 use tokio::task::JoinSet;
 use tracing::error;
 
+use crate::center::SharedPointCenter;
 use crate::config::{ComType, Device};
 
 use crate::{
@@ -20,13 +21,14 @@ pub struct DevManager {
 }
 
 impl DevManager {
-    pub fn new(map: HashMap<String, Device>) -> Self {
+    pub fn new(map: HashMap<String, Device>, center: SharedPointCenter) -> Self {
         let mut devices: Vec<Arc<Mutex<Box<dyn Executable>>>> = Vec::new();
         for (_, dev) in map.into_iter() {
             let Some(com_type) = dev.config.com_type else {
                 continue;
             };
-            match init_device(dev, com_type) {
+            let center_clone = center.clone();
+            match init_device(dev, com_type, center_clone) {
                 Ok(dev) => {
                     devices.push(dev);
                 }
@@ -85,11 +87,14 @@ impl DevManager {
 fn init_device(
     dev: Device,
     com_type: ComType,
+    center: SharedPointCenter,
 ) -> Result<Arc<Mutex<Box<dyn Executable>>>, DeviceError> {
     let my_dev: Box<dyn Executable> = match com_type {
-        config::ComType::ModbusTCP | config::ComType::ModbusRTU => Box::new(ModbusDev::new(dev)?),
+        config::ComType::ModbusTCP | config::ComType::ModbusRTU => {
+            Box::new(ModbusDev::new(dev, center)?)
+        }
         #[cfg(target_os = "linux")]
-        config::ComType::CAN => Box::new(CanDev::new(dev)?),
+        config::ComType::CAN => Box::new(CanDev::new(dev, center)?),
         #[cfg(not(target_os = "linux"))]
         config::ComType::CAN => return Err(DeviceError::UnSupportedComType),
         config::ComType::IEC104 => todo!(),

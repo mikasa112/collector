@@ -1,7 +1,7 @@
 [workspace]
 resolver = "3"
 
-members = ["collector-cmd", "collector-core", "protocol"]
+members = ["collector-cmd", "collector-core", "collector-derive"]
 
 [workspace.dependencies]
 # 序列化

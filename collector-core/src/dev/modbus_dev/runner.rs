@@ -9,13 +9,13 @@ use tokio_modbus::prelude::SlaveContext;
 use tokio_serial::{DataBits, Parity};
 use tracing::{info, warn};
 
-use crate::center::{Center, global_center};
+use crate::center::SharedPointCenter;
 use crate::config::modbus_conf::{ModbusConfig, ModbusConfigs};
 use crate::core::point::{DataPoint, DataPoints, PointId, Val};
 use crate::dev::modbus_dev::Protocol;
 use crate::dev::modbus_dev::block::Blocks;
 use crate::dev::modbus_dev::downlink::{WritePlan, build_cfg_map};
-use crate::dev::{Identifiable, LifecycleState, state::SharedState};
+use crate::dev::{LifecycleState, state::SharedState};
 
 use super::backoff::Backoff;
 use super::error::ModbusDevError;
@@ -27,12 +27,7 @@ pub(super) struct ModbusRunner {
     pub(super) state: SharedState,
     pub(super) stop_rx: watch::Receiver<bool>,
     pub(super) rx: mpsc::Receiver<Vec<DataPoint>>,
-}
-
-impl Identifiable for ModbusRunner {
-    fn id(&self) -> &str {
-        &self.id
-    }
+    pub(super) center: SharedPointCenter,
 }
 
 impl ModbusRunner {
@@ -40,8 +35,8 @@ impl ModbusRunner {
     /// # 输入
     /// - `v`: 状态值，0表示正常，非0表示异常
     fn report_comm_status(&self, v: u8) {
-        global_center().ingest(
-            self,
+        self.center.ingest(
+            &self.id,
             vec![DataPoint {
                 id: 0xFFFF,
                 name: "communication_status",
@@ -150,7 +145,7 @@ impl ModbusRunner {
                         Ok(entries) => {
                             if !entries.is_empty() {
                                 //上送数据
-                                global_center().ingest(self, entries);
+                                self.center.ingest(&self.id, entries);
                             }
                         }
                         Err(err) => {

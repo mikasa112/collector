@@ -1,4 +1,8 @@
+use std::sync::Arc;
+
 use clap::Parser;
+use collector_core::center::DataCenter;
+use collector_core::center::SharedPointCenter;
 use collector_core::config;
 use collector_core::dev::manager::DevManager;
 use collector_core::dock::mqtt::MqttClient;
@@ -49,14 +53,15 @@ pub async fn cmd() {
     match config::Configuration::new(args.config).await {
         Ok(mut p) => {
             p.load_device_configs().await;
-            let mqtt_client = match MqttClient::from_project(&mut p.project) {
+            let center: SharedPointCenter = Arc::new(DataCenter::new(32));
+            let mqtt_client = match MqttClient::from_project(&mut p.project, center.clone()) {
                 Ok(client) => client,
                 Err(err) => {
                     error!("failed to initialize mqtt client: {}", err);
                     None
                 }
             };
-            let mut manager = DevManager::new(p.project.devices);
+            let mut manager = DevManager::new(p.project.devices, center);
             manager.start_all().await;
             if let Err(err) = tokio::signal::ctrl_c().await {
                 error!("failed to listen for shutdown signal: {}", err);

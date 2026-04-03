@@ -3,12 +3,11 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use socketcan::{CanFrame, EmbeddedFrame, ExtendedId, Id, StandardId};
 use tracing::warn;
 
-use crate::center::{Center, global_center};
+use crate::center::PointCenter;
 use crate::config::can_conf::{
     ByteOrder, CanConfig, CanDataType, CanFrameConfig, CanSignal, IdType,
 };
 use crate::core::point::{DataPoint, PointId, Val};
-use crate::dev::Identifiable;
 use crate::dev::can_dev::CanDevError;
 
 pub(super) struct WritePlan {
@@ -16,26 +15,27 @@ pub(super) struct WritePlan {
 }
 
 impl WritePlan {
-    pub(super) fn build<D: Identifiable + ?Sized>(
+    pub(super) fn build(
         entries: Vec<DataPoint>,
         point_map: &HashMap<PointId, CanPointConfig>,
         frame_map: &HashMap<u32, FrameBinding>,
-        dev: &D,
+        center: &dyn PointCenter,
+        dev_id: &str,
     ) -> Self {
         let mut payloads: BTreeMap<u32, FramePayload> = BTreeMap::new();
         let mut initialized_bindings: HashSet<u32> = HashSet::new();
 
         for entry in &entries {
             let Some(point_cfg) = point_map.get(&entry.id) else {
-                warn!("[{}] 未找到点位配置, 忽略CAN下发: {}", dev.id(), entry.id);
+                warn!("[{}] 未找到点位配置, 忽略CAN下发: {}", dev_id, entry.id);
                 continue;
             };
             let Some(binding) = frame_map.get(&point_cfg.binding_frame_id) else {
-                warn!("[{}] 未找到报文配置, 忽略CAN下发: {}", dev.id(), entry.id);
+                warn!("[{}] 未找到报文配置, 忽略CAN下发: {}", dev_id, entry.id);
                 continue;
             };
             if initialized_bindings.insert(binding.frame.frame_id) {
-                preload_frame_payloads(&mut payloads, binding, point_map, dev);
+                preload_frame_payloads(center, &mut payloads, binding, point_map, dev_id);
             }
         }
 
@@ -43,13 +43,13 @@ impl WritePlan {
             let Some(point_cfg) = point_map.get(&entry.id) else {
                 continue;
             };
-            encode_entry(&mut payloads, point_cfg, &entry.value, dev.id());
+            encode_entry(&mut payloads, point_cfg, &entry.value, dev_id);
         }
 
         WritePlan {
             frames: payloads
                 .into_values()
-                .filter_map(|payload| payload.build_frame(dev.id()))
+                .filter_map(|payload| payload.build_frame(dev_id))
                 .collect(),
         }
     }
@@ -159,20 +159,21 @@ pub(super) fn build_frame_map(configs: &[CanConfig]) -> HashMap<u32, FrameBindin
     map
 }
 
-fn preload_frame_payloads<D: Identifiable + ?Sized>(
+fn preload_frame_payloads(
+    center: &dyn PointCenter,
     payloads: &mut BTreeMap<u32, FramePayload>,
     binding: &FrameBinding,
     point_map: &HashMap<PointId, CanPointConfig>,
-    dev: &D,
+    dev_id: &str,
 ) {
     for point_id in &binding.point_ids {
-        let Some(entry) = global_center().read(dev, *point_id) else {
+        let Some(entry) = center.read(dev_id, *point_id) else {
             continue;
         };
         let Some(point_cfg) = point_map.get(point_id) else {
             continue;
         };
-        encode_entry(payloads, point_cfg, &entry.value, dev.id());
+        encode_entry(payloads, point_cfg, &entry.value, dev_id);
     }
 }
 

@@ -1,44 +1,31 @@
-use std::sync::OnceLock;
+use std::sync::Arc;
 
-use dashmap::DashMap;
-
-use crate::{
-    center::data_center::DataCenter,
-    core::point::{DataPoint, Point},
-    dev::Identifiable,
-};
+use crate::core::point::{DataPoint, PointId};
 
 pub mod data_center;
 
-pub type Sender<T> = tokio::sync::mpsc::Sender<Vec<T>>;
+pub use data_center::DataCenter;
+
+pub type DownlinkSender = tokio::sync::mpsc::Sender<Vec<DataPoint>>;
+pub type SharedPointCenter = Arc<dyn PointCenter>;
 
 #[async_trait::async_trait]
-pub trait Center<T>
-where
-    T: Point + Send + Sync,
-{
-    fn ingest<D: Identifiable + ?Sized>(&self, dev: &D, msg: impl IntoIterator<Item = T>);
-    async fn dispatch<D: Identifiable + ?Sized>(
-        &self,
-        dev: &D,
-        msg: Vec<T>,
-    ) -> Result<(), DataCenterError>;
-    fn snapshot<D: Identifiable + ?Sized>(&self, dev: &D) -> Option<Vec<T>>;
-    fn read<D: Identifiable + ?Sized>(&self, dev: &D, key: u32) -> Option<T>;
-    fn with_read<D, F, R>(&self, dev: &D, key: u32, f: F) -> Option<R>
-    where
-        D: Identifiable + ?Sized,
-        F: FnOnce(&T) -> R;
-    fn with_snapshot<D, F, R>(&self, dev: &D, f: F) -> Option<R>
-    where
-        D: Identifiable + ?Sized,
-        F: FnOnce(&DashMap<u32, T>) -> R;
-    fn attach<D: Identifiable + ?Sized>(
-        &self,
-        dev: &D,
-        ch: Sender<T>,
-    ) -> Result<(), DataCenterError>;
-    fn detach<D: Identifiable + ?Sized>(&self, dev: &D);
+pub trait PointCenter: Send + Sync {
+    fn ingest(&self, dev_id: &str, points: Vec<DataPoint>);
+
+    async fn dispatch(&self, dev_id: &str, points: Vec<DataPoint>) -> Result<(), DataCenterError>;
+
+    fn read(&self, dev_id: &str, point_id: PointId) -> Option<DataPoint>;
+
+    fn read_many(&self, dev_id: &str, point_ids: &[PointId]) -> Vec<DataPoint>;
+
+    fn read_all(&self, dev_id: &str) -> Arc<[DataPoint]>;
+
+    fn dev_ids(&self) -> Vec<String>;
+
+    fn attach_downlink(&self, dev_id: &str, tx: DownlinkSender) -> Result<(), DataCenterError>;
+
+    fn detach_downlink(&self, dev_id: &str);
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -51,14 +38,8 @@ pub enum DataCenterError {
     DevHasRegister(String),
 }
 
-impl<T> From<tokio::sync::mpsc::error::SendError<Vec<T>>> for DataCenterError {
-    fn from(value: tokio::sync::mpsc::error::SendError<Vec<T>>) -> Self {
+impl From<tokio::sync::mpsc::error::SendError<Vec<DataPoint>>> for DataCenterError {
+    fn from(value: tokio::sync::mpsc::error::SendError<Vec<DataPoint>>) -> Self {
         DataCenterError::SendError(value.to_string())
     }
-}
-
-static CENTER: OnceLock<DataCenter<DataPoint>> = OnceLock::new();
-
-pub fn global_center() -> &'static DataCenter<DataPoint> {
-    CENTER.get_or_init(|| DataCenter::new(32))
 }

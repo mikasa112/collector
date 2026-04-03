@@ -6,13 +6,13 @@ use tokio::sync::{mpsc, watch};
 use tokio::time;
 use tracing::{debug, info, warn};
 
-use crate::center::{Center, global_center};
+use crate::center::SharedPointCenter;
 use crate::config::can_conf::{
     ByteOrder, CanConfig, CanDataType, CanSignal, CanSignalConfig, CanSignalExtConfig, IdType,
 };
 use crate::core::point::{DataPoint, DataPoints, Val};
 use crate::dev::can_dev::CanDevError;
-use crate::dev::{Identifiable, LifecycleState, dev_config::CanDeviceConfig, state::SharedState};
+use crate::dev::{LifecycleState, dev_config::CanDeviceConfig, state::SharedState};
 
 use super::backoff::Backoff;
 use super::downlink::{FrameBinding, WritePlan, build_frame_map, build_point_map};
@@ -24,6 +24,7 @@ pub(super) struct CanRunner {
     pub(super) state: SharedState,
     pub(super) stop_rx: watch::Receiver<bool>,
     pub(super) rx: mpsc::Receiver<Vec<DataPoint>>,
+    pub(super) center: SharedPointCenter,
 }
 
 #[derive(Default)]
@@ -31,16 +32,10 @@ struct ExtSignalCache {
     values: HashMap<u32, Vec<Option<Val>>>,
 }
 
-impl Identifiable for CanRunner {
-    fn id(&self) -> &str {
-        &self.id
-    }
-}
-
 impl CanRunner {
     fn report_comm_status(&self, v: u8) {
-        global_center().ingest(
-            self,
+        self.center.ingest(
+            &self.id,
             vec![DataPoint {
                 id: 0xFFFF,
                 name: "communication_status",
@@ -169,7 +164,8 @@ impl CanRunner {
                     };
                     let points = DataPoints(entries.clone());
                     info!("[{}] ↓: {}", self.id, points);
-                    let plan = WritePlan::build(entries, point_map, frame_map, self);
+                    let plan =
+                        WritePlan::build(entries, point_map, frame_map, self.center.as_ref(), &self.id);
                     if plan.is_empty() {
                         continue;
                     }
@@ -181,7 +177,7 @@ impl CanRunner {
                     let points = Self::decode_frame(&frame, frame_states, &mut ext_cache);
                     if !points.is_empty() {
                         // info!("[{}] ↑: {}", self.id, DataPoints(points.clone()));
-                        global_center().ingest(self, points);
+                        self.center.ingest(&self.id, points);
                     } else {
                         debug!("[{}] 忽略未配置CAN报文: 0x{:X}", self.id, frame.raw_id());
                     }
