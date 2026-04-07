@@ -373,7 +373,7 @@ fn to_val_numeric(v: f64) -> Val {
             Val::I32(v as i32)
         }
     } else {
-        Val::F32(v as f32)
+        Val::F64((v * 1000.0).floor() / 1000.0)
     }
 }
 
@@ -399,6 +399,7 @@ mod tests {
             byte_order: None,
             scale: 1.0,
             offset: 0.0,
+            enable: true,
         }
     }
 

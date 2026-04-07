@@ -253,7 +253,7 @@ fn json_to_val(value: serde_json::Value) -> Option<Val> {
             } else if let Some(n) = v.as_i64() {
                 Some(i64_to_val(n))
             } else {
-                v.as_f64().map(|n| Val::F32(n as f32))
+                v.as_f64().map(|n| Val::F64(n))
             }
         }
         serde_json::Value::Array(items) => items
@@ -262,7 +262,7 @@ fn json_to_val(value: serde_json::Value) -> Option<Val> {
             .collect::<Option<Vec<_>>>()
             .map(Val::List),
         serde_json::Value::Null => None,
-        serde_json::Value::String(v) => v.parse::<f32>().ok().map(Val::F32),
+        serde_json::Value::String(v) => v.parse::<f64>().ok().map(Val::F64),
         serde_json::Value::Object(_) => None,
     }
 }
@@ -275,7 +275,7 @@ fn u64_to_val(value: u64) -> Val {
     } else if let Ok(v) = u32::try_from(value) {
         Val::U32(v)
     } else {
-        Val::F32(value as f32)
+        Val::F64(value as f64)
     }
 }
 
@@ -287,7 +287,7 @@ fn i64_to_val(value: i64) -> Val {
     } else if let Ok(v) = i32::try_from(value) {
         Val::I32(v)
     } else {
-        Val::F32(value as f32)
+        Val::F64(value as f64)
     }
 }
 

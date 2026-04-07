@@ -428,13 +428,13 @@ fn extract_motorola(data: &[u8], start_bit: u8, bit_len: u8) -> Option<u32> {
     Some(raw)
 }
 
-fn decode_value(raw: u32, bit_len: u8, data_type: CanDataType, scale: f32, offset: f32) -> Val {
-    let needs_scale = (scale - 1.0).abs() > f32::EPSILON || offset.abs() > f32::EPSILON;
+fn decode_value(raw: u32, bit_len: u8, data_type: CanDataType, scale: f64, offset: f64) -> Val {
+    let needs_scale = (scale - 1.0).abs() > f64::EPSILON || offset.abs() > f64::EPSILON;
     match data_type {
         CanDataType::U8 => {
             let value = raw as u8;
             if needs_scale {
-                Val::F32(f32::from(value) * scale + offset)
+                Val::F64(f64::from(value) * scale + offset)
             } else {
                 Val::U8(value)
             }
@@ -442,14 +442,14 @@ fn decode_value(raw: u32, bit_len: u8, data_type: CanDataType, scale: f32, offse
         CanDataType::U16 => {
             let value = raw as u16;
             if needs_scale {
-                Val::F32(f32::from(value) * scale + offset)
+                Val::F64(f64::from(value) * scale + offset)
             } else {
                 Val::U16(value)
             }
         }
         CanDataType::U32 => {
             if needs_scale {
-                Val::F32(raw as f32 * scale + offset)
+                Val::F64(raw as f64 * scale + offset)
             } else {
                 Val::U32(raw)
             }
@@ -457,7 +457,7 @@ fn decode_value(raw: u32, bit_len: u8, data_type: CanDataType, scale: f32, offse
         CanDataType::I16 => {
             let value = sign_extend(raw, bit_len) as i16;
             if needs_scale {
-                Val::F32(f32::from(value) * scale + offset)
+                Val::F64(f64::from(value) * scale + offset)
             } else {
                 Val::I16(value)
             }
@@ -465,7 +465,7 @@ fn decode_value(raw: u32, bit_len: u8, data_type: CanDataType, scale: f32, offse
         CanDataType::I32 => {
             let value = sign_extend(raw, bit_len);
             if needs_scale {
-                Val::F32(value as f32 * scale + offset)
+                Val::F64(value as f64 * scale + offset)
             } else {
                 Val::I32(value)
             }

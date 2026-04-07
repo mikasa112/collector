@@ -54,7 +54,10 @@ impl ModbusDev {
             config::ProtocolConfigs::None => {
                 return Err(DeviceError::NotFoundConfigs(id));
             }
-        };
+        }
+        .into_iter()
+        .filter(|cfg| cfg.enable)
+        .collect();
         let protocol = match com_type {
             config::ComType::ModbusTCP => {
                 let tcp_config = ModbusTcpConfig::try_from(dev.config)?;

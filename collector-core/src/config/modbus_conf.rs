@@ -178,11 +178,12 @@ pub struct ModbusConfig {
     pub byte_order: Option<ByteOrder>,
     pub scale: f64,
     pub offset: f64,
+    pub enable: bool,
 }
 
 impl ModbusConfig {
     fn build(row: &[Data]) -> Result<Self, anyhow::Error> {
-        if row.len() != 11 {
+        if row.len() != 12 {
             return Err(anyhow::Error::msg("行数据长度不正确"));
         }
         let id = required_f64(row, 0, "序号")?;
@@ -214,6 +215,7 @@ impl ModbusConfig {
         let byte_order = ByteOrder::try_from(row[8].get_string()).ok();
         let scale = required_f64(row, 9, "缩放")?;
         let offset = required_f64(row, 10, "偏移量")?;
+        let enable = row[11].get_float().unwrap_or(1f64) != 0f64;
         Ok(ModbusConfig {
             id,
             name,
@@ -226,6 +228,7 @@ impl ModbusConfig {
             byte_order,
             scale,
             offset,
+            enable,
         })
     }
 }

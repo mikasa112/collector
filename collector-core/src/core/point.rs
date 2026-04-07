@@ -18,7 +18,7 @@ pub enum Val {
     I32(i32),
     U16(u16),
     U32(u32),
-    F32(f32),
+    F64(f64),
     List(Vec<Val>),
 }
 
@@ -30,7 +30,7 @@ fn val_as_bool(value: &Val) -> Result<bool, ValError> {
         Val::I32(v) => Ok(*v != 0),
         Val::U16(v) => Ok(*v != 0),
         Val::U32(v) => Ok(*v != 0),
-        Val::F32(v) => Ok(v.abs() > f32::EPSILON),
+        Val::F64(v) => Ok(v.abs() > f64::EPSILON),
         Val::List(_) => Err(ValError::InvalidValue),
     }
 }
@@ -43,7 +43,7 @@ fn val_as_f64(value: &Val) -> Result<f64, ValError> {
         Val::I32(v) => Ok(*v as f64),
         Val::U16(v) => Ok(*v as f64),
         Val::U32(v) => Ok(*v as f64),
-        Val::F32(v) => Ok(*v as f64),
+        Val::F64(v) => Ok(*v as f64),
         Val::List(_) => Err(ValError::InvalidValue),
     }
 }
@@ -92,7 +92,7 @@ impl Serialize for Val {
             Val::I32(v) => serializer.serialize_i32(*v),
             Val::U16(v) => serializer.serialize_u16(*v),
             Val::U32(v) => serializer.serialize_u32(*v),
-            Val::F32(v) => serializer.serialize_f32(*v),
+            Val::F64(v) => serializer.serialize_f64(*v),
             Val::List(items) => {
                 let mut seq = serializer.serialize_seq(Some(items.len()))?;
                 for item in items {
@@ -113,7 +113,7 @@ impl Display for Val {
             Val::I32(v) => write!(f, "{}", *v),
             Val::U16(v) => write!(f, "{}", *v),
             Val::U32(v) => write!(f, "{}", *v),
-            Val::F32(v) => write!(f, "{}", *v),
+            Val::F64(v) => write!(f, "{}", *v),
             Val::List(vals) => {
                 write!(f, "[")?;
                 for (i, val) in vals.iter().enumerate() {

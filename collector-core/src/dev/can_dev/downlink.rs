@@ -220,8 +220,8 @@ fn encode_value(
     value: &Val,
     bit_len: u8,
     data_type: CanDataType,
-    scale: f32,
-    offset: f32,
+    scale: f64,
+    offset: f64,
     signal_name: &str,
     dev_id: &str,
 ) -> Option<u32> {

@@ -234,8 +234,8 @@ pub struct CanSignalConfig {
     pub bit_len: u8,
     pub byte_order: ByteOrder,
     pub data_type: CanDataType,
-    pub scale: f32,
-    pub offset: f32,
+    pub scale: f64,
+    pub offset: f64,
     pub unit: &'static str,
     pub invalid_val: Option<u32>,
     pub enum_values: &'static str,
@@ -272,11 +272,9 @@ impl CanSignalConfig {
                 .map_err(|err| CanConfParseError::invalid_field(ENTITY, "数据类型", err))?,
         )?;
         let scale = required_f64(row, 8, "缩放")
-            .map_err(|err| CanConfParseError::invalid_field(ENTITY, "缩放", err))?
-            as f32;
+            .map_err(|err| CanConfParseError::invalid_field(ENTITY, "缩放", err))?;
         let offset = required_f64(row, 9, "偏移")
-            .map_err(|err| CanConfParseError::invalid_field(ENTITY, "偏移", err))?
-            as f32;
+            .map_err(|err| CanConfParseError::invalid_field(ENTITY, "偏移", err))?;
         let unit = required_static_str(row, 10, "单位").unwrap_or_default();
         // .map_err(|err| CanConfParseError::invalid_field(ENTITY, "单位", err))?;
         let invalid_val = required_hex(row, 11, "无效值").unwrap_or_default();
@@ -315,8 +313,8 @@ pub struct CanSignalExtConfig {
     pub single_ele_bit_len: u8,
     pub byte_order: ByteOrder,
     pub data_type: CanDataType,
-    pub scale: f32,
-    pub offset: f32,
+    pub scale: f64,
+    pub offset: f64,
     pub unit: &'static str,
     pub invalid_val: Option<u32>,
 }
@@ -364,11 +362,9 @@ impl CanSignalExtConfig {
                 .map_err(|err| CanConfParseError::invalid_field(ENTITY, "数据类型", err))?,
         )?;
         let scale = required_f64(row, 12, "缩放")
-            .map_err(|err| CanConfParseError::invalid_field(ENTITY, "缩放", err))?
-            as f32;
+            .map_err(|err| CanConfParseError::invalid_field(ENTITY, "缩放", err))?;
         let offset = required_f64(row, 13, "偏移")
-            .map_err(|err| CanConfParseError::invalid_field(ENTITY, "偏移", err))?
-            as f32;
+            .map_err(|err| CanConfParseError::invalid_field(ENTITY, "偏移", err))?;
         let unit = required_static_str(row, 14, "单位")
             .map_err(|err| CanConfParseError::invalid_field(ENTITY, "单位", err))?;
         let invalid_val = required_hex(row, 15, "无效值").unwrap_or_default();
