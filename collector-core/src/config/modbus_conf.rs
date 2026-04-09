@@ -126,7 +126,7 @@ pub type ModbusConfigs = Vec<ModbusConfig>;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ModbusConfigsError {
-    #[error("Failed to open workbook")]
+    #[error("Failed to open workbook: {0}")]
     OpenWorkbookError(#[from] calamine::XlsxError),
     #[error("存在重复点位ID: {0}")]
     DuplicatePointId(u16),
