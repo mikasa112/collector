@@ -226,8 +226,6 @@ fn encode_value(
     dev_id: &str,
 ) -> Option<u32> {
     let numeric: f64 = value.try_into().ok()?;
-    let scale = f64::from(scale);
-    let offset = f64::from(offset);
     let raw = if scale.abs() < f64::EPSILON {
         numeric
     } else {

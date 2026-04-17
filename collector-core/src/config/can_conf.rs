@@ -178,8 +178,7 @@ impl CanFrameConfig {
         let name = required_static_str(row, 1, "报文名称")
             .map_err(|err| CanConfParseError::invalid_field(ENTITY, "报文名称", err))?;
         let frame_id = required_hex(row, 2, "FrameID")
-            .map_err(|err| CanConfParseError::invalid_field(ENTITY, "FrameID", err))?
-            as u32;
+            .map_err(|err| CanConfParseError::invalid_field(ENTITY, "FrameID", err))?;
         let id_type = IdType::try_from(
             required_str(row, 3, "ID类型")
                 .map_err(|err| CanConfParseError::invalid_field(ENTITY, "ID类型", err))?,
@@ -253,8 +252,7 @@ impl CanSignalConfig {
         let name = required_static_str(row, 1, "点位名称")
             .map_err(|err| CanConfParseError::invalid_field(ENTITY, "点位名称", err))?;
         let frame_id = required_hex(row, 2, "FrameID")
-            .map_err(|err| CanConfParseError::invalid_field(ENTITY, "FrameID", err))?
-            as u32;
+            .map_err(|err| CanConfParseError::invalid_field(ENTITY, "FrameID", err))?;
         let signal_name = required_static_str(row, 3, "信号名称").unwrap_or_default();
         // .map_err(|err| CanConfParseError::invalid_field(ENTITY, "信号名称", err))?;
         let start_bit = required_usize_integerish(row, 4, "起始位")
@@ -333,8 +331,7 @@ impl CanSignalExtConfig {
         let poly_name = required_static_str(row, 2, "聚合键")
             .map_err(|err| CanConfParseError::invalid_field(ENTITY, "聚合键", err))?;
         let frame_id = required_hex(row, 3, "FrameID")
-            .map_err(|err| CanConfParseError::invalid_field(ENTITY, "FrameID", err))?
-            as u32;
+            .map_err(|err| CanConfParseError::invalid_field(ENTITY, "FrameID", err))?;
         let frame_num = required_usize_integerish(row, 4, "Frame数量")
             .map_err(|err| CanConfParseError::invalid_field(ENTITY, "Frame数量", err))?
             as u16;

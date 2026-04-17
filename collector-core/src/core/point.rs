@@ -43,7 +43,7 @@ fn val_as_f64(value: &Val) -> Result<f64, ValError> {
         Val::I32(v) => Ok(*v as f64),
         Val::U16(v) => Ok(*v as f64),
         Val::U32(v) => Ok(*v as f64),
-        Val::F64(v) => Ok(*v as f64),
+        Val::F64(v) => Ok(*v),
         Val::List(_) => Err(ValError::InvalidValue),
     }
 }
