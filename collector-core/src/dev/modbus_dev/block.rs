@@ -400,6 +400,10 @@ mod tests {
             scale: 1.0,
             offset: 0.0,
             enable: true,
+            key: None,
+            trans: None,
+            status_word: None,
+            warn_bits: None,
         }
     }
 

@@ -179,6 +179,10 @@ pub struct ModbusConfig {
     pub scale: f64,
     pub offset: f64,
     pub enable: bool,
+    pub key: Option<&'static str>,
+    pub trans: Option<&'static str>,
+    pub status_word: Option<&'static str>,
+    pub warn_bits: Option<&'static str>,
 }
 
 impl ModbusConfig {
@@ -216,6 +220,10 @@ impl ModbusConfig {
         let scale = required_f64(row, 9, "缩放")?;
         let offset = required_f64(row, 10, "偏移量")?;
         let enable = row[11].get_float().unwrap_or(1f64) != 0f64;
+        let key = optional_static_str(row, 12);
+        let trans = optional_static_str(row, 13);
+        let status_word = optional_static_str(row, 14);
+        let warn_bits = optional_static_str(row, 15);
         Ok(ModbusConfig {
             id,
             name,
@@ -229,6 +237,10 @@ impl ModbusConfig {
             scale,
             offset,
             enable,
+            key,
+            trans,
+            status_word,
+            warn_bits,
         })
     }
 }
