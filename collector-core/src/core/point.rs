@@ -1,6 +1,11 @@
-use std::fmt::{Debug, Display};
+use std::{
+    collections::HashMap,
+    fmt::{Debug, Display},
+    hint::cold_path,
+};
 
 use serde::{Serialize, ser::SerializeSeq};
+use serde_json::Value;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ValError {
@@ -128,31 +133,15 @@ impl Display for Val {
     }
 }
 
-pub trait Point: Send + Sync + Clone {
-    fn id(&self) -> PointId;
-    fn name(&self) -> &'static str;
-    fn value(&self) -> &Val;
-}
-
-#[derive(Debug, Serialize, Clone)]
+#[derive(Debug, Clone)]
 pub struct DataPoint {
     pub id: PointId,
+    pub key: &'static str,
     pub name: &'static str,
     pub value: Val,
-}
-
-impl Point for DataPoint {
-    fn id(&self) -> PointId {
-        self.id
-    }
-
-    fn name(&self) -> &'static str {
-        self.name
-    }
-
-    fn value(&self) -> &Val {
-        &self.value
-    }
+    pub translator: Option<&'static Translator>,
+    pub warn_bits: Option<&'static WarnBits>,
+    pub status_word: Option<&'static StatusWords>,
 }
 
 impl Display for DataPoint {
@@ -174,5 +163,230 @@ impl Display for DataPoints {
             write!(f, "{}", point)?;
         }
         write!(f, "]")
+    }
+}
+
+#[derive(Debug, Copy, Clone)]
+pub struct Translator {
+    pub en: &'static str,
+}
+
+impl TryFrom<&str> for Translator {
+    type Error = anyhow::Error;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        let v: Value = serde_json::from_str(value)?;
+        let en_str: &'static str = match v["en"].as_str() {
+            Some(v) => String::leak(String::from(v)),
+            None => return Err(anyhow::anyhow!("en field is missing")),
+        };
+        Ok(Self { en: en_str })
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct WarnBits {
+    pub bits: [WarnBit; 16],
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum WarnLevel {
+    None = 0,
+    Normal = 1,
+    High = 2,
+    Critical = 3,
+}
+
+impl From<u8> for WarnLevel {
+    fn from(value: u8) -> Self {
+        match value {
+            0 => Self::None,
+            1 => Self::Normal,
+            2 => Self::High,
+            3 => Self::Critical,
+            _ => Self::None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct WarnBit {
+    pub zh: &'static str,
+    pub en: &'static str,
+    pub level: WarnLevel,
+}
+
+impl Default for WarnBit {
+    fn default() -> Self {
+        Self {
+            zh: Default::default(),
+            en: Default::default(),
+            level: WarnLevel::None,
+        }
+    }
+}
+
+impl TryFrom<&str> for WarnBit {
+    type Error = anyhow::Error;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        let values = value.split("|").collect::<Vec<_>>();
+        let zh = values
+            .get(0)
+            .ok_or(anyhow::anyhow!("zh field is missing"))?
+            .to_string();
+        let en = values
+            .get(1)
+            .ok_or(anyhow::anyhow!("en field is missing"))?
+            .to_string();
+        let level = match values.get(2) {
+            Some(s) => WarnLevel::from(s.parse::<u8>()?),
+            None => WarnLevel::None,
+        };
+        Ok(Self {
+            zh: String::leak(zh),
+            en: String::leak(en),
+            level,
+        })
+    }
+}
+
+impl TryFrom<&str> for WarnBits {
+    type Error = anyhow::Error;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        let values: Vec<&str> = value.trim().lines().map(|it| it.trim()).collect();
+        if values.len() != 16 {
+            return Err(anyhow::anyhow!("expected 16 values, got {}", values.len()));
+        }
+        let mut bits = [WarnBit::default(); 16];
+        for (i, s) in values.iter().enumerate() {
+            bits[i] = WarnBit::try_from(*s)?;
+        }
+        return Ok(WarnBits { bits });
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct StatusWords {
+    pub words: HashMap<u16, StatusWord>,
+}
+
+impl TryFrom<&str> for StatusWords {
+    type Error = anyhow::Error;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        let values: Vec<&str> = value.trim().lines().map(|s| s.trim()).collect();
+        let mut map = HashMap::with_capacity(value.len());
+        for value in values.into_iter() {
+            let col_strs: Vec<&str> = value.split(' ').collect();
+            let word = col_strs
+                .get(0)
+                .ok_or(anyhow::anyhow!("`word` field is missing"))?
+                .parse::<u16>()?;
+            let status = *col_strs
+                .get(1)
+                .ok_or(anyhow::anyhow!("`status` field is missing"))?;
+            let status_word = StatusWord::try_from(status)?;
+            map.insert(word, status_word);
+        }
+        Ok(Self { words: map })
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct StatusWord {
+    pub zh: &'static str,
+    pub en: &'static str,
+}
+
+impl TryFrom<&str> for StatusWord {
+    type Error = anyhow::Error;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        let values = value.split("|").collect::<Vec<_>>();
+        let zh = values
+            .get(0)
+            .ok_or(anyhow::anyhow!("zh field is missing"))?
+            .to_string();
+        let en = values
+            .get(1)
+            .ok_or(anyhow::anyhow!("en field is missing"))?
+            .to_string();
+        Ok(Self {
+            zh: String::leak(zh),
+            en: String::leak(en),
+        })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_translator() {
+        let translator = Translator::try_from(r#"{"en": "Hello, World!"}"#).unwrap();
+        assert_eq!(translator.en, "Hello, World!");
+    }
+
+    #[test]
+    fn test_parse_status_word() {
+        let status_word = StatusWord::try_from("zh|en").unwrap();
+        assert_eq!(status_word.zh, "zh");
+        assert_eq!(status_word.en, "en");
+    }
+
+    #[test]
+    fn test_parse_status_words() {
+        let status_words = StatusWords::try_from("0 zh|en\r\n1 zh|en").unwrap();
+        assert_eq!(status_words.words.len(), 2);
+        assert_eq!(status_words.words[&0].zh, "zh");
+        assert_eq!(status_words.words[&0].en, "en");
+        assert_eq!(status_words.words[&1].zh, "zh");
+        assert_eq!(status_words.words[&1].en, "en");
+    }
+
+    #[test]
+    fn test_parse_warn_bit() {
+        let warn_bit = WarnBit::try_from("zh|en|1").unwrap();
+        assert_eq!(warn_bit.zh, "zh");
+        assert_eq!(warn_bit.en, "en");
+        assert_eq!(warn_bit.level, WarnLevel::Normal);
+    }
+
+    #[test]
+    fn test_parse_warn_bits() {
+        let warn_bits = WarnBits::try_from(
+            r#"硬件故障-A 相硬件过流|Hardware failure - Phase A hardware overcurrent
+        硬件故障-B 相硬件过流|Hardware failure - B-phase hardware overcurrent
+        硬件故障-C 相硬件过流|Hardware failure - C-phase hardware overcurrent
+        硬件故障-N 相硬件过流|Hardware failure - N-phase hardware overcurrent
+        硬件故障-交流直流功率不匹配|Hardware malfunction - AC/DC power mismatch
+        硬件故障-辅助源掉电|Hardware malfunction - Auxiliary source power failure
+        硬件故障-温度过低或传感器故障|Hardware malfunction - low temperature or sensor failure
+        硬件故障-保留|Hardware Failure - Reserved
+        硬件故障-绝缘故障|Hardware Failure - Insulation Failure
+        硬件故障-总驱动故障|Hardware Failure - Total Driver Failure
+        硬件故障-A 相驱动故障|Hardware failure - A-phase drive failure
+        硬件故障-B 相驱动故障|Hardware failure - B-phase drive failure
+        硬件故障-C 相驱动故障|Hardware failure - C-phase drive failure
+        硬件故障-N 相驱动故障|Hardware failure - N-phase drive failure
+        硬件故障-散热器过温故障|Hardware malfunction - heatsink overheating fault
+        硬件故障-环境过温故障|Hardware malfunction - environmental overheating fault"#,
+        )
+        .unwrap();
+        assert_eq!(warn_bits.bits[0].zh, "硬件故障-A 相硬件过流");
+        assert_eq!(
+            warn_bits.bits[0].en,
+            "Hardware failure - Phase A hardware overcurrent"
+        );
+        assert_eq!(warn_bits.bits[0].level, WarnLevel::None);
+        assert_eq!(warn_bits.bits[1].zh, "硬件故障-B 相硬件过流");
+        assert_eq!(
+            warn_bits.bits[1].en,
+            "Hardware failure - B-phase hardware overcurrent"
+        );
+        assert_eq!(warn_bits.bits[1].level, WarnLevel::None);
     }
 }

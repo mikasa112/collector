@@ -3,8 +3,12 @@ use std::collections::HashSet;
 use calamine::{Data, DataType, HeaderRow, Range, Reader, Xlsx, open_workbook};
 use tracing::error;
 
-use crate::config::{
-    optional_static_str, required_f64, required_static_str, required_str, required_usize_integerish,
+use crate::{
+    config::{
+        optional_static_str, required_f64, required_static_str, required_str,
+        required_usize_integerish,
+    },
+    core::point::{StatusWords, Translator, WarnBits},
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -179,17 +183,14 @@ pub struct ModbusConfig {
     pub scale: f64,
     pub offset: f64,
     pub enable: bool,
-    pub key: Option<&'static str>,
-    pub trans: Option<&'static str>,
-    pub status_word: Option<&'static str>,
-    pub warn_bits: Option<&'static str>,
+    pub key: &'static str,
+    pub trans: Option<&'static Translator>,
+    pub status_words: Option<&'static StatusWords>,
+    pub warn_bits: Option<&'static WarnBits>,
 }
 
 impl ModbusConfig {
     fn build(row: &[Data]) -> Result<Self, anyhow::Error> {
-        if row.len() != 12 {
-            return Err(anyhow::Error::msg("行数据长度不正确"));
-        }
         let id = required_f64(row, 0, "序号")?;
         if !(0.0..=(u16::MAX as f64)).contains(&id) {
             return Err(anyhow::Error::msg("序号(id)超出允许范围(0..2^16-1)"));
@@ -220,10 +221,28 @@ impl ModbusConfig {
         let scale = required_f64(row, 9, "缩放")?;
         let offset = required_f64(row, 10, "偏移量")?;
         let enable = row[11].get_float().unwrap_or(1f64) != 0f64;
-        let key = optional_static_str(row, 12);
-        let trans = optional_static_str(row, 13);
-        let status_word = optional_static_str(row, 14);
-        let warn_bits = optional_static_str(row, 15);
+        let key = required_static_str(row, 12, "键")?;
+        let trans = row[13]
+            .get_string()
+            .and_then(|str| Translator::try_from(str).ok());
+        let trans: Option<&'static Translator> = match trans {
+            Some(t) => Some(Box::leak(Box::new(t))),
+            None => None,
+        };
+        let status_words = row[14]
+            .get_string()
+            .and_then(|str| StatusWords::try_from(str).ok());
+        let status_words: Option<&'static StatusWords> = match status_words {
+            Some(t) => Some(Box::leak(Box::new(t))),
+            None => None,
+        };
+        let warn_bits = row[15]
+            .get_string()
+            .and_then(|str| WarnBits::try_from(str).ok());
+        let warn_bits: Option<&'static WarnBits> = match warn_bits {
+            Some(t) => Some(Box::leak(Box::new(t))),
+            None => None,
+        };
         Ok(ModbusConfig {
             id,
             name,
@@ -239,7 +258,7 @@ impl ModbusConfig {
             enable,
             key,
             trans,
-            status_word,
+            status_words,
             warn_bits,
         })
     }

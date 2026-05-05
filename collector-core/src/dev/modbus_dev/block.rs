@@ -222,6 +222,10 @@ impl Blocks {
                 id: region.cfg.id as u32,
                 name: region.cfg.name,
                 value,
+                key: region.cfg.key,
+                translator: region.cfg.trans,
+                warn_bits: region.cfg.warn_bits,
+                status_word: region.cfg.status_words,
             });
         }
         out
@@ -400,9 +404,9 @@ mod tests {
             scale: 1.0,
             offset: 0.0,
             enable: true,
-            key: None,
+            key: "",
             trans: None,
-            status_word: None,
+            status_words: None,
             warn_bits: None,
         }
     }

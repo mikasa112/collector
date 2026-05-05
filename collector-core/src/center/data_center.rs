@@ -8,7 +8,7 @@ use tracing::warn;
 
 use crate::{
     center::{DataCenterError, DownlinkSender, PointCenter},
-    core::point::{DataPoint, Point, PointId},
+    core::point::{DataPoint, PointId},
 };
 
 pub struct DataCenter {
@@ -89,11 +89,11 @@ impl PointCenter for DataCenter {
         let mut changed = false;
 
         for point in points {
-            let point_id = point.id();
-            let new_value = point.value().clone();
+            let point_id = point.id;
+            let new_value = point.value.clone();
 
             match cache.latest_by_id.get(&point_id) {
-                Some(old) if old.value() == &new_value => {}
+                Some(old) if old.value == new_value => {}
                 _ => {
                     cache.latest_by_id.insert(point_id, point);
                     changed = true;
@@ -197,6 +197,10 @@ mod tests {
             id,
             name: "p",
             value: Val::U8(value),
+            key: "p",
+            translator: None,
+            warn_bits: None,
+            status_word: None,
         }
     }
 

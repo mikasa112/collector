@@ -39,8 +39,12 @@ impl ModbusRunner {
             &self.id,
             vec![DataPoint {
                 id: 0xFFFF,
-                name: "communication_status",
+                name: "通讯状态位",
                 value: Val::U8(v),
+                key: "communication_status",
+                translator: None,
+                warn_bits: None,
+                status_word: None,
             }],
         );
     }

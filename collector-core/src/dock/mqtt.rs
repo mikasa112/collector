@@ -14,7 +14,7 @@ use tracing::{error, info};
 use crate::{
     center::SharedPointCenter,
     config::{MqttRoute, Project},
-    core::point::{DataPoint, Point, Val},
+    core::point::{DataPoint, Val},
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -237,6 +237,10 @@ fn insert_points_from_map(
                 id,
                 name: "",
                 value,
+                key: "",
+                translator: None,
+                warn_bits: None,
+                status_word: None,
             },
         );
     }
@@ -302,7 +306,7 @@ async fn publish_routes_task(
             let mut map = serde_json::Map::with_capacity(points.len());
             for point in points {
                 if let Ok(value) = serde_json::to_value(&point.value) {
-                    map.insert(point.id().to_string(), value);
+                    map.insert(point.id.to_string(), value);
                 }
             }
             let json = if map.is_empty() {
