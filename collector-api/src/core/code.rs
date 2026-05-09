@@ -10,6 +10,7 @@ use collector_core::utils::database::DatabaseError;
 pub enum Code {
     /// 自定义错误码和消息
     #[error("{1}: {0}")]
+    #[allow(dead_code)]
     New(i32, String),
 
     /// 参数解析错误

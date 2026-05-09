@@ -14,6 +14,7 @@ pub struct JwtClaims {
 }
 
 #[inline]
+#[allow(dead_code)]
 pub fn auth_handler() -> JwtAuth<JwtClaims, ConstDecoder> {
     JwtAuth::new(ConstDecoder::from_secret(JWT_SECRET))
         .finders(vec![Box::new(HeaderFinder::new())])

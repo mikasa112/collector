@@ -110,7 +110,8 @@ pub async fn cmd() {
                     .ip
                     .clone()
                     .unwrap_or_else(|| "0.0.0.0".to_string()),
-                p.project.port.unwrap_or(8083),
+                p.project.port.unwrap_or(9091),
+                center.clone(),
             );
             tokio::spawn(api_server.start(shutdown.clone()));
 

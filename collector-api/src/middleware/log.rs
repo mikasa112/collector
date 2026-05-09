@@ -4,10 +4,11 @@ use std::time::Instant;
 use tracing::info;
 
 #[derive(Default)]
+#[allow(dead_code)]
 pub struct LogMiddleware;
 
+#[allow(dead_code)]
 impl LogMiddleware {
-    #[inline]
     pub fn new() -> Self {
         LogMiddleware {}
     }

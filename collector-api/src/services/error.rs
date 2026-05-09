@@ -4,6 +4,7 @@ use thiserror::Error;
 
 /// Service 层错误类型（纯业务错误，不包含 HTTP 概念）
 #[derive(Debug, Error)]
+#[allow(dead_code)]
 pub enum ServiceError {
     /// DAO 层错误
     #[error("数据访问错误: {0}")]
@@ -45,6 +46,7 @@ pub enum ServiceError {
 /// Service 层结果类型
 pub type ServiceResult<T> = Result<T, ServiceError>;
 
+#[allow(dead_code)]
 impl ServiceError {
     /// 创建业务逻辑错误
     pub fn business_logic(msg: impl Into<String>) -> Self {

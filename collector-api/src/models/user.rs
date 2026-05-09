@@ -33,6 +33,7 @@ impl Role {
 }
 
 #[derive(FromRow, Debug)]
+#[allow(dead_code)]
 pub struct User {
     pub id: u32,
     pub name: Option<String>,

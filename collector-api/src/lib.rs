@@ -1,4 +1,5 @@
 use collector_core::{
+    center::SharedPointCenter,
     shutdown::ShutdownManager,
     utils::database::{DatabaseConfig, close_database, init_database},
 };
@@ -18,20 +19,12 @@ pub(crate) mod services;
 pub struct ApiApp {
     ip: String,
     port: u16,
-}
-
-impl Default for ApiApp {
-    fn default() -> Self {
-        Self {
-            ip: String::from("0.0.0.0"),
-            port: 9091,
-        }
-    }
+    center: SharedPointCenter,
 }
 
 impl ApiApp {
-    pub fn new(ip: String, port: u16) -> Self {
-        Self { ip, port }
+    pub fn new(ip: String, port: u16, center: SharedPointCenter) -> Self {
+        Self { ip, port, center }
     }
 
     pub async fn start(self, shutdown: ShutdownManager) {
@@ -52,7 +45,7 @@ impl ApiApp {
             close_database().await;
         });
 
-        server.serve(root_router()).await;
+        server.serve(root_router(self.center)).await;
         info!("API 服务器已关闭");
     }
 }

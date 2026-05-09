@@ -24,6 +24,7 @@ impl<T: Serialize> ObjResponse<T> {
 }
 
 #[derive(Debug, Serialize)]
+#[allow(dead_code)]
 pub struct ListResponse<T>
 where
     T: Serialize,

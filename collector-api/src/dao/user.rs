@@ -7,6 +7,7 @@ use sqlx::SqlitePool;
 /// 用户数据访问对象
 pub struct UserDao;
 
+#[allow(dead_code)]
 impl UserDao {
     /// 创建用户
     pub async fn create(

@@ -3,6 +3,7 @@ use thiserror::Error;
 
 /// DAO 层错误类型
 #[derive(Debug, Error)]
+#[allow(dead_code)]
 pub enum DaoError {
     #[error("数据库连接池错误: {0}")]
     DbPoolError(#[from] DatabaseError),
