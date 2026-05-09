@@ -14,6 +14,7 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 tracing = { workspace = true }
 bytes = { workspace = true }
+sqlx = { workspace = true }
 zstd = "0.13.3"
 rumqttc = "0.25.1"
 dashmap = "6.1.0"

@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use clap::Parser;
+use collector_api::ApiApp;
 use collector_core::center::DataCenter;
 use collector_core::center::SharedPointCenter;
 use collector_core::config;
@@ -15,31 +16,65 @@ use tracing_subscriber::fmt::format::FmtSpan;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::{EnvFilter, Layer, Registry, fmt};
 
-pub fn init_tracing() -> tracing_appender::non_blocking::WorkerGuard {
+#[inline]
+pub fn init_tracing() -> Vec<tracing_appender::non_blocking::WorkerGuard> {
     let _ = LogTracer::builder().init();
-    let file_appender = tracing_appender::rolling::daily("logs", "collector");
-    let (non_blocking, guard) = tracing_appender::non_blocking(file_appender);
+
+    let mut guards = Vec::new();
+
+    //API 模块日志
+    let api_appender = tracing_appender::rolling::daily("logs", "api");
+    let (non_blocking_api, guard_api) = tracing_appender::non_blocking(api_appender);
+    guards.push(guard_api);
+
+    let engine_appender = tracing_appender::rolling::daily("logs", "engine");
+    let (non_blocking_engine, guard_engine) = tracing_appender::non_blocking(engine_appender);
+    guards.push(guard_engine);
+
+    let collector_appender = tracing_appender::rolling::daily("logs", "collector");
+    let (non_blocking_collector, guard_collector) =
+        tracing_appender::non_blocking(collector_appender);
+    guards.push(guard_collector);
+
+    // 控制台输出层
     let fmt_layer = tracing_subscriber::fmt::layer()
         .with_span_events(FmtSpan::CLOSE)
         .with_timer(fmt::time::ChronoLocal::rfc_3339())
         .with_level(true)
         .with_writer(std::io::stdout)
         .with_filter(LevelFilter::INFO);
-    let file_layer = tracing_subscriber::fmt::layer()
+
+    // API 模块文件层 - 只记录 collector_api 模块的日志
+    let api_layer = fmt::layer()
         .with_span_events(FmtSpan::CLOSE)
-        // 移除输出内容中的 颜色或其它格式相关转义字符
         .with_ansi(false)
-        .with_writer(non_blocking)
-        // 日志等级过滤
-        .with_filter(LevelFilter::INFO);
+        .with_writer(non_blocking_api)
+        .with_filter(EnvFilter::new("collector_api=debug"));
+
+    // 收集器模块文件层 - 只记录 collector_core 模块的日志
+    let collector_layer = fmt::layer()
+        .with_span_events(FmtSpan::CLOSE)
+        .with_ansi(false)
+        .with_writer(non_blocking_collector)
+        .with_filter(EnvFilter::new("collector_core=debug"));
+
+    // 引擎模块文件层 - 只记录 collector_engine 模块的日志
+    let engine_layer = fmt::layer()
+        .with_span_events(FmtSpan::CLOSE)
+        .with_ansi(false)
+        .with_writer(non_blocking_engine)
+        .with_filter(EnvFilter::new("collector_engine=debug"));
+
     let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
     let collector = Registry::default()
         .with(ErrorLayer::default())
         .with(env_filter)
-        .with(file_layer)
+        .with(api_layer)
+        .with(collector_layer)
+        .with(engine_layer)
         .with(fmt_layer);
     tracing::subscriber::set_global_default(collector).expect("Tracing collect error");
-    guard
+    guards
 }
 
 #[derive(Parser, Debug)]
@@ -66,8 +101,18 @@ pub async fn cmd() {
                     None
                 }
             };
-            let mut manager = DevManager::new(p.project.devices, center);
+            let mut manager = DevManager::new(p.project.devices, center.clone());
             manager.start_all().await;
+
+            // 启动 API 服务器
+            let api_server = ApiApp::new(
+                p.project
+                    .ip
+                    .clone()
+                    .unwrap_or_else(|| "0.0.0.0".to_string()),
+                p.project.port.unwrap_or(8083),
+            );
+            tokio::spawn(api_server.start(shutdown.clone()));
 
             // 在后台监听关闭信号
             tokio::spawn(shutdown.clone().listen_shutdown_signal());

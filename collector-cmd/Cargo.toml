@@ -5,6 +5,8 @@ edition = "2024"
 
 [dependencies]
 collector-core = { path = "../collector-core" }
+collector-api = { path = "../collector-api" }
+collector-engine = { path = "../collector-engine" }
 # 命令行框架
 clap = { version = "4.5.28", features = ["derive"] }
 mimalloc = { workspace = true }

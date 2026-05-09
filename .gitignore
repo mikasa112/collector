@@ -25,3 +25,5 @@ logs
 __pycache__/
 
 .claude
+
+data.db
