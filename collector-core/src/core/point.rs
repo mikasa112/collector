@@ -1,7 +1,6 @@
 use std::{
     collections::HashMap,
     fmt::{Debug, Display},
-    hint::cold_path,
 };
 
 use serde::{Serialize, ser::SerializeSeq};
@@ -232,7 +231,7 @@ impl TryFrom<&str> for WarnBit {
     fn try_from(value: &str) -> Result<Self, Self::Error> {
         let values = value.split("|").collect::<Vec<_>>();
         let zh = values
-            .get(0)
+            .first()
             .ok_or(anyhow::anyhow!("zh field is missing"))?
             .to_string();
         let en = values
@@ -263,7 +262,7 @@ impl TryFrom<&str> for WarnBits {
         for (i, s) in values.iter().enumerate() {
             bits[i] = WarnBit::try_from(*s)?;
         }
-        return Ok(WarnBits { bits });
+        Ok(WarnBits { bits })
     }
 }
 
@@ -281,7 +280,7 @@ impl TryFrom<&str> for StatusWords {
         for value in values.into_iter() {
             let col_strs: Vec<&str> = value.split(' ').collect();
             let word = col_strs
-                .get(0)
+                .first()
                 .ok_or(anyhow::anyhow!("`word` field is missing"))?
                 .parse::<u16>()?;
             let status = *col_strs
@@ -306,7 +305,7 @@ impl TryFrom<&str> for StatusWord {
     fn try_from(value: &str) -> Result<Self, Self::Error> {
         let values = value.split("|").collect::<Vec<_>>();
         let zh = values
-            .get(0)
+            .first()
             .ok_or(anyhow::anyhow!("zh field is missing"))?
             .to_string();
         let en = values

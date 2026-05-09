@@ -39,7 +39,7 @@
       "config": {
         "type": "PCS",
         "com_type": "ModbusTCP",
-        "register_file": "./config/PCS_125_英博_trans.xlsx",
+        "register_file": "./config/PCS_125_英博.xlsx",
         "interval": 1000,
         "timeout": 500,
         "ip": "127.0.0.1",

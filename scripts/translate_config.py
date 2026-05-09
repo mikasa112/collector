@@ -92,10 +92,13 @@ def translate_xlsx(input_file, output_file):
                 str(row.iloc[1]) if pd.notnull(row.iloc[1]) else ""
                 for _, row in df.iterrows()
             ]
-            alarm_texts = [
-                str(value) if pd.notnull(value) else ""
-                for value in df.get("告警位", pd.Series([""] * len(df), index=df.index))
-            ]
+            if "告警位" in df.columns:
+                alarm_texts = [
+                    str(value) if pd.notnull(value) else ""
+                    for value in df["告警位"]
+                ]
+            else:
+                alarm_texts = [""] * len(df)
             with ThreadPoolExecutor(max_workers=2) as executor:
                 translated_texts = list(
                     executor.map(translate_row, enumerate(source_texts))

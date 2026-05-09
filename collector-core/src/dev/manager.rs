@@ -2,6 +2,7 @@ use std::{collections::HashMap, sync::Arc};
 
 use tokio::sync::Mutex;
 use tokio::task::JoinSet;
+use tokio_util::sync::CancellationToken;
 use tracing::error;
 
 use crate::center::SharedPointCenter;
@@ -18,6 +19,7 @@ use crate::dev::can_dev::CanDev;
 pub struct DevManager {
     devices: Vec<Arc<Mutex<Box<dyn Executable>>>>,
     tasks: JoinSet<()>,
+    cancel_token: Option<CancellationToken>,
 }
 
 impl DevManager {
@@ -40,7 +42,12 @@ impl DevManager {
         DevManager {
             devices,
             tasks: JoinSet::new(),
+            cancel_token: None,
         }
+    }
+
+    pub fn set_cancel_token(&mut self, token: CancellationToken) {
+        self.cancel_token = Some(token);
     }
 
     pub fn add_device(&mut self, device: Arc<Mutex<Box<dyn Executable>>>) {

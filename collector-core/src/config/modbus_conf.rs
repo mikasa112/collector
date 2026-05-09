@@ -229,16 +229,17 @@ impl ModbusConfig {
             Some(t) => Some(Box::leak(Box::new(t))),
             None => None,
         };
-        let status_words = row[14]
-            .get_string()
-            .and_then(|str| StatusWords::try_from(str).ok());
+        let status_words = row.get(14).and_then(|it| {
+            it.get_string()
+                .and_then(|str| StatusWords::try_from(str).ok())
+        });
         let status_words: Option<&'static StatusWords> = match status_words {
             Some(t) => Some(Box::leak(Box::new(t))),
             None => None,
         };
-        let warn_bits = row[15]
-            .get_string()
-            .and_then(|str| WarnBits::try_from(str).ok());
+        let warn_bits = row
+            .get(15)
+            .and_then(|it| it.get_string().and_then(|str| WarnBits::try_from(str).ok()));
         let warn_bits: Option<&'static WarnBits> = match warn_bits {
             Some(t) => Some(Box::leak(Box::new(t))),
             None => None,

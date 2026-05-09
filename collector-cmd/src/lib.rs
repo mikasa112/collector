@@ -6,6 +6,7 @@ use collector_core::center::SharedPointCenter;
 use collector_core::config;
 use collector_core::dev::manager::DevManager;
 use collector_core::dock::mqtt::MqttClient;
+use collector_core::shutdown::ShutdownManager;
 use tracing::error;
 use tracing::level_filters::LevelFilter;
 use tracing_error::ErrorLayer;
@@ -53,6 +54,10 @@ pub async fn cmd() {
     match config::Configuration::new(args.config).await {
         Ok(mut p) => {
             p.load_device_configs().await;
+
+            // 创建统一的关闭管理器
+            let shutdown = ShutdownManager::new();
+
             let center: SharedPointCenter = Arc::new(DataCenter::new(32));
             let mqtt_client = match MqttClient::from_project(&mut p.project, center.clone()) {
                 Ok(client) => client,
@@ -63,9 +68,14 @@ pub async fn cmd() {
             };
             let mut manager = DevManager::new(p.project.devices, center);
             manager.start_all().await;
-            if let Err(err) = tokio::signal::ctrl_c().await {
-                error!("failed to listen for shutdown signal: {}", err);
-            }
+
+            // 在后台监听关闭信号
+            tokio::spawn(shutdown.clone().listen_shutdown_signal());
+
+            // 等待关闭信号
+            shutdown.wait_for_shutdown().await;
+
+            // 优雅关闭所有组件
             manager.stop_all().await;
             if let Some(client) = mqtt_client.as_ref()
                 && let Err(err) = client.stop().await
