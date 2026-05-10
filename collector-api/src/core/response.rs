@@ -7,7 +7,7 @@ where
     T: Serialize,
 {
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub err_msg: Option<String>,
+    pub msg: Option<String>,
     pub status: i32,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub data: Option<T>,
@@ -16,7 +16,7 @@ where
 impl<T: Serialize> ObjResponse<T> {
     pub fn ok(data: T) -> Self {
         Self {
-            err_msg: None,
+            msg: Some("OK".to_string()),
             status: 200,
             data: Some(data),
         }

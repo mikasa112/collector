@@ -4,7 +4,7 @@ use salvo::{
 };
 use serde::{Deserialize, Serialize};
 
-pub const JWT_SECRET: &[u8] = b"YUANXIXI008853";
+pub const JWT_SECRET: &[u8] = b"YUANAN008853";
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct JwtClaims {

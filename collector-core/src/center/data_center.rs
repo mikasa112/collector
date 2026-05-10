@@ -1,9 +1,43 @@
+//! # DataCenter - 数据中心模块
+//!
+//! 这是一个高性能的数据采集中心，用于管理多个设备的数据点（DataPoint）。
+//!
+//! ## 核心功能
+//!
+//! 1. **数据摄入（Ingest）**：接收并缓存来自各个设备的数据点
+//! 2. **数据查询（Read）**：支持单点查询、批量查询和全量查询
+//! 3. **数据下发（Dispatch）**：将控制指令下发到设备
+//! 4. **数据订阅（Subscribe）**：实时推送数据变化通知
+//!
+//! ## 架构设计
+//!
+//! ```text
+//! DataCenter
+//! ├── devices: DashMap<DeviceId, DeviceCache>  // 设备缓存映射
+//! │   └── DeviceCache
+//! │       ├── latest_by_id: HashMap           // 最新数据点索引
+//! │       ├── snapshot: Arc<[DataPoint]>      // 排序后的快照（零拷贝）
+//! │       ├── version: u64                    // 数据版本号
+//! │       ├── snapshot_version: u64           // 快照版本号
+//! │       └── update_tx: watch::Sender        // 数据更新通知发送器
+//! └── downlinks: DashMap<DeviceId, Sender>    // 下行通道映射
+//! ```
+//!
+//! ## 性能优化
+//!
+//! - **并发安全**：使用 DashMap 实现无锁并发访问
+//! - **读写分离**：使用 RwLock 优化读多写少场景
+//! - **快照缓存**：避免重复排序和克隆
+//! - **零拷贝**：使用 Arc 共享数据
+//! - **变化检测**：只在数据实际变化时更新版本号和推送通知
+
 use std::{
     collections::HashMap,
     sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard},
 };
 
 use dashmap::DashMap;
+use tokio::sync::watch;
 use tracing::warn;
 
 use crate::{
@@ -11,12 +45,24 @@ use crate::{
     core::point::{DataPoint, PointId},
 };
 
+/// 数据中心主结构
+///
+/// 负责管理多个设备的数据点缓存和下行通道
 pub struct DataCenter {
+    /// 下行通道映射：设备ID -> 下行数据发送器
+    /// 用于将控制指令下发到设备
     downlinks: DashMap<String, DownlinkSender>,
+
+    /// 设备缓存映射：设备ID -> 设备缓存
+    /// 使用 Arc<RwLock> 实现多线程安全的读写访问
     devices: DashMap<String, Arc<RwLock<DeviceCache>>>,
 }
 
 impl DataCenter {
+    /// 创建新的数据中心实例
+    ///
+    /// # 参数
+    /// * `dev_len` - 预期的设备数量，用于预分配容量
     pub fn new(dev_len: usize) -> Self {
         Self {
             downlinks: DashMap::with_capacity(dev_len),
@@ -24,6 +70,9 @@ impl DataCenter {
         }
     }
 
+    /// 获取或创建设备缓存
+    ///
+    /// 如果设备不存在，会自动创建一个新的缓存
     fn get_or_create_device(&self, dev_id: &str) -> Arc<RwLock<DeviceCache>> {
         self.devices
             .entry(dev_id.to_owned())
@@ -31,10 +80,14 @@ impl DataCenter {
             .clone()
     }
 
+    /// 获取所有设备ID列表
     pub fn dev_ids(&self) -> Vec<String> {
         self.devices.iter().map(|it| it.key().to_owned()).collect()
     }
 
+    /// 获取设备缓存的读锁
+    ///
+    /// 如果锁被污染（poisoned），会自动恢复并记录警告
     fn read_cache<'a>(
         device: &'a Arc<RwLock<DeviceCache>>,
         dev_id: &str,
@@ -48,6 +101,9 @@ impl DataCenter {
         }
     }
 
+    /// 获取设备缓存的写锁
+    ///
+    /// 如果锁被污染（poisoned），会自动恢复并记录警告
     fn write_cache<'a>(
         device: &'a Arc<RwLock<DeviceCache>>,
         dev_id: &str,
@@ -62,11 +118,29 @@ impl DataCenter {
     }
 }
 
+/// 设备缓存结构
+///
+/// 存储单个设备的所有数据点，使用双层缓存策略优化性能
 struct DeviceCache {
+    /// 数据点索引：PointId -> DataPoint
+    /// 用于快速查询单个或多个数据点
     latest_by_id: HashMap<PointId, DataPoint>,
+
+    /// 排序后的数据点快照（按 PointId 排序）
+    /// 使用 Arc 实现零拷贝共享
     snapshot: Arc<[DataPoint]>,
+
+    /// 数据版本号
+    /// 每次数据变化时递增，用于检测数据是否更新
     version: u64,
+
+    /// 快照版本号
+    /// 记录快照对应的数据版本，用于判断快照是否需要重建
     snapshot_version: u64,
+
+    /// 数据更新通知发送器
+    /// 用于向订阅者推送数据变化通知
+    update_tx: Option<watch::Sender<Arc<[DataPoint]>>>,
 }
 
 impl Default for DeviceCache {
@@ -76,24 +150,36 @@ impl Default for DeviceCache {
             snapshot: Arc::from([]),
             version: 0,
             snapshot_version: 0,
+            update_tx: None,
         }
     }
 }
 
 #[async_trait::async_trait]
 impl PointCenter for DataCenter {
+    /// 摄入数据点
+    ///
+    /// 接收来自设备的数据点，更新缓存并通知订阅者
+    ///
+    /// # 性能优化
+    /// - 只在数据实际变化时更新版本号
+    /// - 只在有订阅者时才构建快照
+    /// - 使用值比较避免无效更新
     fn ingest(&self, dev_id: &str, points: Vec<DataPoint>) {
         let device = self.get_or_create_device(dev_id);
         let mut cache = Self::write_cache(&device, dev_id);
 
         let mut changed = false;
 
+        // 遍历所有数据点，只更新值发生变化的点
         for point in points {
             let point_id = point.id;
             let new_value = point.value.clone();
 
             match cache.latest_by_id.get(&point_id) {
+                // 如果值相同，跳过更新
                 Some(old) if old.value == new_value => {}
+                // 如果值不同或点不存在，更新缓存
                 _ => {
                     cache.latest_by_id.insert(point_id, point);
                     changed = true;
@@ -102,10 +188,30 @@ impl PointCenter for DataCenter {
         }
 
         if changed {
+            // 递增版本号（使用 wrapping_add 避免溢出）
             cache.version = cache.version.wrapping_add(1);
+
+            // 如果有订阅者，构建新快照并发送更新
+            if cache.update_tx.is_some() {
+                let mut points: Vec<DataPoint> = cache.latest_by_id.values().cloned().collect();
+                points.sort_by_key(|point| point.id);
+                let snapshot: Arc<[DataPoint]> = Arc::from(points.into_boxed_slice());
+
+                // 更新缓存的快照
+                cache.snapshot = snapshot.clone();
+                cache.snapshot_version = cache.version;
+
+                // 发送更新（忽略发送失败，说明没有活跃的订阅者）
+                if let Some(tx) = &cache.update_tx {
+                    let _ = tx.send(snapshot);
+                }
+            }
         }
     }
 
+    /// 下发数据点到设备
+    ///
+    /// 将控制指令通过下行通道发送到设备
     async fn dispatch(&self, dev_id: &str, points: Vec<DataPoint>) -> Result<(), DataCenterError> {
         let sender = {
             let sender = self
@@ -118,12 +224,21 @@ impl PointCenter for DataCenter {
         sender.send(points).await.map_err(Into::into)
     }
 
+    /// 读取单个数据点
+    ///
+    /// # 返回
+    /// - `Some(DataPoint)` - 如果数据点存在
+    /// - `None` - 如果设备或数据点不存在
     fn read(&self, dev_id: &str, point_id: PointId) -> Option<DataPoint> {
         let device = self.devices.get(dev_id)?;
         let cache = Self::read_cache(&device, dev_id);
         cache.latest_by_id.get(&point_id).cloned()
     }
 
+    /// 批量读取多个数据点
+    ///
+    /// # 返回
+    /// 存在的数据点列表（不存在的点会被过滤掉）
     fn read_many(&self, dev_id: &str, point_ids: &[PointId]) -> Vec<DataPoint> {
         let Some(device) = self.devices.get(dev_id) else {
             return Vec::new();
@@ -137,11 +252,21 @@ impl PointCenter for DataCenter {
             .collect()
     }
 
+    /// 读取设备的所有数据点
+    ///
+    /// # 性能优化
+    /// - 使用快照缓存避免重复排序
+    /// - 先尝试读锁，只在需要时才升级为写锁
+    /// - 返回 Arc 实现零拷贝共享
+    ///
+    /// # 返回
+    /// 按 PointId 排序的数据点快照
     fn read_all(&self, dev_id: &str) -> Arc<[DataPoint]> {
         let Some(device) = self.devices.get(dev_id) else {
             return Arc::from([]);
         };
 
+        // 先尝试使用读锁获取快照
         {
             let cache = Self::read_cache(&device, dev_id);
             if cache.snapshot_version == cache.version {
@@ -149,22 +274,30 @@ impl PointCenter for DataCenter {
             }
         }
 
+        // 快照过期，需要重建
         let mut cache = Self::write_cache(&device, dev_id);
 
         if cache.snapshot_version != cache.version {
             let mut points: Vec<DataPoint> = cache.latest_by_id.values().cloned().collect();
             points.sort_by_key(|point| point.id);
-            cache.snapshot = Arc::from(points);
+            cache.snapshot = Arc::from(points.into_boxed_slice());
             cache.snapshot_version = cache.version;
         }
 
         cache.snapshot.clone()
     }
 
+    /// 获取所有设备ID列表
     fn dev_ids(&self) -> Vec<String> {
         self.devices.iter().map(|it| it.key().to_owned()).collect()
     }
 
+    /// 附加下行通道
+    ///
+    /// 为设备注册一个下行数据发送器，用于接收控制指令
+    ///
+    /// # 错误
+    /// - `DevHasRegister` - 如果设备已经注册了下行通道
     fn attach_downlink(&self, dev_id: &str, tx: DownlinkSender) -> Result<(), DataCenterError> {
         use dashmap::mapref::entry::Entry as DashEntry;
 
@@ -177,8 +310,54 @@ impl PointCenter for DataCenter {
         }
     }
 
+    /// 分离下行通道
+    ///
+    /// 移除设备的下行数据发送器
     fn detach_downlink(&self, dev_id: &str) {
         self.downlinks.remove(dev_id);
+    }
+
+    /// 订阅指定设备的数据更新
+    ///
+    /// 返回一个 watch::Receiver，当设备数据有更新时会收到新的快照。
+    /// 只在数据实际变化时才会推送，避免重复通知。
+    ///
+    /// # 参数
+    /// * `dev_id` - 设备ID
+    ///
+    /// # 返回
+    /// - `Some(Receiver)` - 订阅成功，返回接收器
+    /// - `None` - 设备不存在
+    ///
+    /// # 使用示例
+    /// ```rust,ignore
+    /// let mut rx = center.subscribe("device-1").expect("设备不存在");
+    ///
+    /// // 监听数据更新
+    /// while rx.changed().await.is_ok() {
+    ///     let snapshot = rx.borrow_and_update();
+    ///     // 处理更新的数据
+    /// }
+    /// ```
+    fn subscribe(&self, dev_id: &str) -> Option<watch::Receiver<Arc<[DataPoint]>>> {
+        let device = self.devices.get(dev_id)?;
+        let mut cache = Self::write_cache(&device, dev_id);
+
+        // 如果还没有 sender，创建一个
+        if cache.update_tx.is_none() {
+            // 确保 snapshot 是最新的
+            if cache.snapshot_version != cache.version {
+                let mut points: Vec<DataPoint> = cache.latest_by_id.values().cloned().collect();
+                points.sort_by_key(|point| point.id);
+                cache.snapshot = Arc::from(points.into_boxed_slice());
+                cache.snapshot_version = cache.version;
+            }
+
+            let (tx, _rx) = watch::channel(cache.snapshot.clone());
+            cache.update_tx = Some(tx);
+        }
+
+        Some(cache.update_tx.as_ref().unwrap().subscribe())
     }
 }
 

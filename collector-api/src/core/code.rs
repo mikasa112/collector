@@ -140,7 +140,7 @@ impl salvo::Writer for Code {
 
         res.status_code(http_status);
         res.render(Json(ObjResponse::<()> {
-            err_msg: Some(msg),
+            msg: Some(msg),
             status: code,
             data: None,
         }));

@@ -5,6 +5,7 @@ use crate::core::point::{DataPoint, PointId};
 pub mod data_center;
 
 pub use data_center::DataCenter;
+use tokio::sync::watch;
 
 pub type DownlinkSender = tokio::sync::mpsc::Sender<Vec<DataPoint>>;
 pub type SharedPointCenter = Arc<dyn PointCenter>;
@@ -26,6 +27,8 @@ pub trait PointCenter: Send + Sync {
     fn attach_downlink(&self, dev_id: &str, tx: DownlinkSender) -> Result<(), DataCenterError>;
 
     fn detach_downlink(&self, dev_id: &str);
+
+    fn subscribe(&self, dev_id: &str) -> Option<watch::Receiver<Arc<[DataPoint]>>>;
 }
 
 #[derive(Debug, thiserror::Error)]
