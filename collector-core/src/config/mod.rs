@@ -77,7 +77,7 @@ async fn load_protocol_configs(dev: &Device) -> ProtocolConfigs {
         }
         ComType::IEC104 => unimplemented!(),
         ComType::IEC61850 => unimplemented!(),
-        #[cfg(target_arch = "aarch64")]
+        #[cfg(target_os = "linux")]
         ComType::GPIO => {
             load_configs(
                 file,
@@ -87,7 +87,7 @@ async fn load_protocol_configs(dev: &Device) -> ProtocolConfigs {
             )
             .await
         }
-        #[cfg(not(target_arch = "aarch64"))]
+        #[cfg(not(target_os = "linux"))]
         ComType::GPIO => {
             error!(
                 "Failed to build {:?} configs: GPIO is only supported on Linux",

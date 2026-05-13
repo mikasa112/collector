@@ -8,16 +8,14 @@ use tracing::error;
 use crate::center::SharedPointCenter;
 use crate::config::{ComType, Device};
 
+#[cfg(target_os = "linux")]
+use crate::dev::can_dev::CanDev;
+#[cfg(target_os = "linux")]
+use crate::dev::gpio::GpioDev;
 use crate::{
     config,
     dev::{DeviceError, Executable, modbus_dev::ModbusDev},
 };
-
-#[cfg(target_os = "linux")]
-use crate::dev::can_dev::CanDev;
-
-#[cfg(target_arch = "aarch64")]
-use crate::dev::gpio::GpioDev;
 
 pub struct DevManager {
     devices: Vec<Arc<Mutex<Box<dyn Executable>>>>,
@@ -109,9 +107,9 @@ fn init_device(
         config::ComType::CAN => return Err(DeviceError::UnSupportedComType),
         config::ComType::IEC104 => todo!(),
         config::ComType::IEC61850 => todo!(),
-        #[cfg(target_arch = "aarch64")]
+        #[cfg(target_os = "linux")]
         config::ComType::GPIO => Box::new(GpioDev::new(dev, center)?),
-        #[cfg(not(target_arch = "aarch64"))]
+        #[cfg(not(target_os = "linux"))]
         config::ComType::GPIO => return Err(DeviceError::UnSupportedComType),
     };
     my_dev.init()?;

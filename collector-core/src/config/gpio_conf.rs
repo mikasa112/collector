@@ -61,6 +61,7 @@ impl GpioConfig {
     }
 }
 
+#[cfg(target_os = "linux")]
 pub(crate) fn build_configs(path: String) -> Result<GpioConfigs, GpioConfigsError> {
     let mut workbook: Xlsx<_> = open_workbook(path)?;
     let mut configs = Vec::new();
