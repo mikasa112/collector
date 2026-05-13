@@ -94,8 +94,7 @@ def translate_xlsx(input_file, output_file):
             ]
             if "告警位" in df.columns:
                 alarm_texts = [
-                    str(value) if pd.notnull(value) else ""
-                    for value in df["告警位"]
+                    str(value) if pd.notnull(value) else "" for value in df["告警位"]
                 ]
             else:
                 alarm_texts = [""] * len(df)

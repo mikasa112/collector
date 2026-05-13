@@ -32,6 +32,7 @@ tokio-util = "0.7"
 # 数据库支持
 sqlx = { version = "0.8.6", features = ["runtime-tokio-rustls", "sqlite", "chrono"] }
 chrono = { version = "0.4.44", features = ["serde"] }
+futures = "0.3"
 
 [profile.release]
 # 去除调试信息

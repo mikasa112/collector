@@ -15,12 +15,14 @@ serde_json = { workspace = true }
 tracing = { workspace = true }
 bytes = { workspace = true }
 sqlx = { workspace = true }
+futures = { workspace = true }
 zstd = "0.13.3"
 rumqttc = "0.25.1"
 dashmap = "6.1.0"
 tokio-modbus = { version = "0.16.1", features = ["rtu", "tcp"] }
 tokio-serial = "5.4.5"
 calamine = "0.32.0"
+gpio-cdev = { version = "0.6.0", features = ["async-tokio"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 socketcan = { version = "3.5.0", features = ["tokio"] }

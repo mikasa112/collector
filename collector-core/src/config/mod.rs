@@ -7,6 +7,7 @@ use tracing::error;
 use crate::core::point::PointId;
 
 pub mod can_conf;
+pub mod gpio_conf;
 pub mod modbus_conf;
 
 #[derive(Debug, thiserror::Error)]
@@ -76,6 +77,24 @@ async fn load_protocol_configs(dev: &Device) -> ProtocolConfigs {
         }
         ComType::IEC104 => unimplemented!(),
         ComType::IEC61850 => unimplemented!(),
+        #[cfg(target_arch = "aarch64")]
+        ComType::GPIO => {
+            load_configs(
+                file,
+                dev_id,
+                gpio_conf::build_configs,
+                ProtocolConfigs::GPIO,
+            )
+            .await
+        }
+        #[cfg(not(target_arch = "aarch64"))]
+        ComType::GPIO => {
+            error!(
+                "Failed to build {:?} configs: GPIO is only supported on Linux",
+                dev_id
+            );
+            ProtocolConfigs::None
+        }
     }
 }
 
@@ -142,6 +161,8 @@ pub enum ComType {
     IEC104,
     #[serde(rename = "IEC61850")]
     IEC61850,
+    #[serde(rename = "GPIO")]
+    GPIO,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -169,6 +190,8 @@ pub enum ProtocolConfigs {
     Modbus(modbus_conf::ModbusConfigs),
     #[cfg(target_os = "linux")]
     CAN(can_conf::CanConfigs),
+    #[cfg(target_os = "linux")]
+    GPIO(gpio_conf::GpioConfigs),
     None,
 }
 

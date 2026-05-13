@@ -6,10 +6,12 @@ use crate::{
 };
 
 #[cfg(target_os = "linux")]
-pub mod can_dev;
+pub(crate) mod can_dev;
 pub(crate) mod dev_config;
+// #[cfg(target_arch = "aarch64")]
+pub(crate) mod gpio;
 pub mod manager;
-pub mod modbus_dev;
+pub(crate) mod modbus_dev;
 pub(crate) mod state;
 
 #[derive(Debug, thiserror::Error)]
@@ -30,6 +32,8 @@ pub enum DeviceError {
     NotFoundConfigs(String),
     #[error("数据中心错误")]
     DCenterError(#[from] DataCenterError),
+    #[error("设备发生错误")]
+    DevRuntimeError(#[from] Box<dyn std::error::Error>),
 }
 
 pub trait Identifiable: Sync + Send {
