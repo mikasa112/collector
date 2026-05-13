@@ -258,7 +258,7 @@ fn create_gpio_devs(configs: GpioConfigs) -> Result<Vec<GpioConfDev>, gpio_cdev:
             let line = chip.get_line(it.line as u32)?;
             gpio_devs.push(GpioConfDev {
                 config: it,
-                line: line,
+                line,
             });
         }
     }
