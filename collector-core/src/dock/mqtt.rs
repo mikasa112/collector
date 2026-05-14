@@ -14,7 +14,7 @@ use tracing::{error, info};
 use crate::{
     center::SharedPointCenter,
     config::{MqttRoute, Project},
-    core::point::{DataPoint, Val},
+    core::point::{DataPoint, DownDataPoint, Val},
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -197,7 +197,12 @@ async fn handle_incoming_publish(
     if points.is_empty() {
         return Ok(());
     }
-    if let Err(e) = center.dispatch(device_id, points).await {
+    // 将 DataPoint 转换为 DispatchPoint（使用 Key 匹配）
+    let dispatch_points: Vec<DownDataPoint> = points
+        .into_iter()
+        .map(|p| DownDataPoint::by_key(p.key, p.value))
+        .collect();
+    if let Err(e) = center.dispatch(device_id, dispatch_points).await {
         error!("mqtt dispatch error on topic {}: {}", topic, e);
     }
     Ok(())

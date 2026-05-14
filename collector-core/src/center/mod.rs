@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use crate::core::point::{DataPoint, PointId};
+use crate::core::point::{DataPoint, DownDataPoint, PointId};
 
 pub mod data_center;
 
@@ -14,7 +14,11 @@ pub type SharedPointCenter = Arc<dyn PointCenter>;
 pub trait PointCenter: Send + Sync {
     fn ingest(&self, dev_id: &str, points: Vec<DataPoint>);
 
-    async fn dispatch(&self, dev_id: &str, points: Vec<DataPoint>) -> Result<(), DataCenterError>;
+    async fn dispatch(
+        &self,
+        dev_id: &str,
+        points: Vec<DownDataPoint>,
+    ) -> Result<(), DataCenterError>;
 
     fn read(&self, dev_id: &str, point_id: PointId) -> Option<DataPoint>;
 

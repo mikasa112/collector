@@ -42,7 +42,7 @@ use tracing::warn;
 
 use crate::{
     center::{DataCenterError, DownlinkSender, PointCenter},
-    core::point::{DataPoint, PointId},
+    core::point::{DataPoint, DownDataPoint, PointId, PointRef},
 };
 
 /// 数据中心主结构
@@ -126,6 +126,14 @@ struct DeviceCache {
     /// 用于快速查询单个或多个数据点
     latest_by_id: HashMap<PointId, DataPoint>,
 
+    /// Key 到 PointId 的索引
+    /// 用于通过 key 快速查找数据点
+    by_key: HashMap<&'static str, PointId>,
+
+    /// Name 到 PointId 的索引
+    /// 用于通过 name 快速查找数据点
+    by_name: HashMap<&'static str, PointId>,
+
     /// 排序后的数据点快照（按 PointId 排序）
     /// 使用 Arc 实现零拷贝共享
     snapshot: Arc<[DataPoint]>,
@@ -147,10 +155,29 @@ impl Default for DeviceCache {
     fn default() -> Self {
         Self {
             latest_by_id: HashMap::new(),
+            by_key: HashMap::new(),
+            by_name: HashMap::new(),
             snapshot: Arc::from([]),
             version: 0,
             snapshot_version: 0,
             update_tx: None,
+        }
+    }
+}
+
+impl DeviceCache {
+    /// 根据 PointRef 解析出 PointId
+    fn resolve(&self, point: &PointRef) -> Option<PointId> {
+        match point {
+            PointRef::Id(id) => {
+                if self.latest_by_id.contains_key(id) {
+                    Some(*id)
+                } else {
+                    None
+                }
+            }
+            PointRef::Key(key) => self.by_key.get(key).copied(),
+            PointRef::Name(name) => self.by_name.get(name).copied(),
         }
     }
 }
@@ -181,6 +208,9 @@ impl PointCenter for DataCenter {
                 Some(old) if old.value == new_value => {}
                 // 如果值不同或点不存在，更新缓存
                 _ => {
+                    // 更新索引
+                    cache.by_key.insert(point.key, point_id);
+                    cache.by_name.insert(point.name, point_id);
                     cache.latest_by_id.insert(point_id, point);
                     changed = true;
                 }
@@ -211,17 +241,53 @@ impl PointCenter for DataCenter {
 
     /// 下发数据点到设备
     ///
-    /// 将控制指令通过下行通道发送到设备
-    async fn dispatch(&self, dev_id: &str, points: Vec<DataPoint>) -> Result<(), DataCenterError> {
+    /// 将控制指令通过下行通道发送到设备。
+    /// 支持通过 PointId、Key 或 Name 三种方式匹配目标数据点。
+    /// 未匹配到的点会被记录为 warn 日志并跳过，不会中断整批下发。
+    async fn dispatch(
+        &self,
+        dev_id: &str,
+        points: Vec<DownDataPoint>,
+    ) -> Result<(), DataCenterError> {
+        // 解析所有 PointRef 为完整的 DataPoint
+        let resolved: Vec<DataPoint> = {
+            let device = self
+                .devices
+                .get(dev_id)
+                .ok_or_else(|| DataCenterError::NotFoundDevError(dev_id.to_owned()))?;
+            let cache = Self::read_cache(&device, dev_id);
+
+            points
+                .into_iter()
+                .filter_map(|dp| {
+                    // 根据 PointRef 解析出 PointId
+                    let point_id = cache.resolve(&dp.point)?;
+
+                    // 从缓存中获取完整的 DataPoint
+                    let mut data_point = cache.latest_by_id.get(&point_id)?.clone();
+
+                    // 更新值为下发的值
+                    data_point.value = dp.value;
+
+                    Some(data_point)
+                })
+                .collect()
+        };
+
+        if resolved.is_empty() {
+            warn!("[{}] dispatch 所有数据点均未匹配，跳过下发", dev_id);
+            return Ok(());
+        }
+
         let sender = {
             let sender = self
                 .downlinks
                 .get(dev_id)
-                .ok_or(DataCenterError::NotFoundDevError(dev_id.to_owned()))?;
+                .ok_or_else(|| DataCenterError::NotFoundDevError(dev_id.to_owned()))?;
             sender.clone()
         };
 
-        sender.send(points).await.map_err(Into::into)
+        sender.send(resolved).await.map_err(Into::into)
     }
 
     /// 读取单个数据点

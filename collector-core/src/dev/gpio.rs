@@ -256,10 +256,7 @@ fn create_gpio_devs(configs: GpioConfigs) -> Result<Vec<GpioConfDev>, gpio_cdev:
         let mut chip = Chip::new(c)?;
         for it in confs {
             let line = chip.get_line(it.line as u32)?;
-            gpio_devs.push(GpioConfDev {
-                config: it,
-                line,
-            });
+            gpio_devs.push(GpioConfDev { config: it, line });
         }
     }
     Ok(gpio_devs)

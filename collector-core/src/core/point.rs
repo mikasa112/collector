@@ -14,6 +14,56 @@ pub enum ValError {
 
 pub type PointId = u32;
 
+/// 数据点引用方式
+///
+/// 用于在下发控制命令时指定目标数据点
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum PointRef {
+    /// 通过数据点 ID 匹配（最快，O(1) 查找）
+    Id(PointId),
+    /// 通过数据点 Key 匹配（业务友好的字符串标识）
+    Key(&'static str),
+    /// 通过数据点 Name 匹配（通常是中文描述）
+    Name(&'static str),
+}
+
+/// 下发数据点
+///
+/// 用于 dispatch 方法，只包含必要的信息：目标点 + 值
+#[derive(Debug, Clone)]
+pub struct DownDataPoint {
+    /// 目标数据点的引用方式
+    pub point: PointRef,
+    /// 要设置的值
+    pub value: Val,
+}
+
+impl DownDataPoint {
+    /// 通过 ID 创建下发点
+    pub fn by_id(id: PointId, value: Val) -> Self {
+        Self {
+            point: PointRef::Id(id),
+            value,
+        }
+    }
+
+    /// 通过 Key 创建下发点
+    pub fn by_key(key: &'static str, value: Val) -> Self {
+        Self {
+            point: PointRef::Key(key),
+            value,
+        }
+    }
+
+    /// 通过 Name 创建下发点
+    pub fn by_name(name: &'static str, value: Val) -> Self {
+        Self {
+            point: PointRef::Name(name),
+            value,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum Val {
     U8(u8),
