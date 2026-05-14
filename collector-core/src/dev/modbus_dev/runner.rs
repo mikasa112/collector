@@ -11,10 +11,10 @@ use tracing::{info, warn};
 
 use crate::center::SharedPointCenter;
 use crate::config::modbus_conf::{ModbusConfig, ModbusConfigs};
-use crate::core::point::{DataPoint, DataPoints, PointId, Val};
+use crate::core::point::{DataPoint, DownDataPoint, PointId, PointRef, Val};
 use crate::dev::modbus_dev::Protocol;
 use crate::dev::modbus_dev::block::Blocks;
-use crate::dev::modbus_dev::downlink::{WritePlan, build_cfg_map};
+use crate::dev::modbus_dev::downlink::{WritePlan, build_cfg_map, build_key_map};
 use crate::dev::{LifecycleState, state::SharedState};
 
 use super::backoff::Backoff;
@@ -26,7 +26,7 @@ pub(super) struct ModbusRunner {
     pub(super) configs: ModbusConfigs,
     pub(super) state: SharedState,
     pub(super) stop_rx: watch::Receiver<bool>,
-    pub(super) rx: mpsc::Receiver<Vec<DataPoint>>,
+    pub(super) rx: mpsc::Receiver<Vec<DownDataPoint>>,
     pub(super) center: SharedPointCenter,
 }
 
@@ -129,6 +129,7 @@ impl ModbusRunner {
         stop_rx: &mut watch::Receiver<bool>,
         blocks: &Blocks,
         cfg_map: &HashMap<PointId, ModbusConfig>,
+        key_map: &HashMap<&'static str, PointId>,
     ) {
         self.state.store(&self.id, LifecycleState::Running);
         self.report_comm_status(1);
@@ -161,21 +162,15 @@ impl ModbusRunner {
                 }
                 //下发
                 msg = rx.recv() => {
-                    let Some(mut entries) = msg else {
+                    let Some(entries) = msg else {
                         self.report_comm_status(0);
                         self.state.store(&self.id, LifecycleState::Stopped);
                         return;
                     };
 
-                    for entry in &mut entries {
-                        if entry.name.is_empty() && let Some(cfg) = cfg_map.get(&entry.id) {
-                            entry.name = cfg.name;
-                        }
-                    }
-
-                    let points  = DataPoints(entries);
-                    info!("[{}] ↓: {}", self.id, points);
-                    let plan = WritePlan::build(points.0, cfg_map, &self.id);
+                    let items: Vec<String> = entries.iter().map(|e| format!("{}: {}", resolve_modbus_name(&e.point, cfg_map), e.value)).collect();
+                    info!("[{}] ↓: {}", self.id, items.join(", "));
+                    let plan = WritePlan::build(entries, cfg_map, key_map, &self.id);
                     if let Err(err) = plan.apply(ctx).await {
                         warn!("[{}] 下发失败, 准备重连: {}", self.id, err);
                         self.report_comm_status(0);
@@ -189,6 +184,7 @@ impl ModbusRunner {
     /// 启动MODBUS设备
     pub(super) async fn run(mut self) {
         let cfg_map = build_cfg_map(&self.configs);
+        let key_map = build_key_map(&self.configs);
         //构建连续地址的寄存器块
         let blocks = match Blocks::try_from(self.configs.clone()) {
             Ok(blocks) => blocks,
@@ -215,7 +211,7 @@ impl ModbusRunner {
                     self.state.store(&self.id, LifecycleState::Connected);
                     self.report_comm_status(1);
                     backoff.reset();
-                    self.run_connected(&mut ctx, &mut stop_rx, &blocks, &cfg_map)
+                    self.run_connected(&mut ctx, &mut stop_rx, &blocks, &cfg_map, &key_map)
                         .await;
                 }
                 Err(err) => {
@@ -250,5 +246,15 @@ impl ModbusRunner {
         let reads = blocks.request(ctx).await?;
         let parsed = blocks.parse(&reads);
         Ok(parsed)
+    }
+}
+
+fn resolve_modbus_name<'a>(
+    point: &'a PointRef,
+    cfg_map: &'a HashMap<PointId, ModbusConfig>,
+) -> &'a str {
+    match point {
+        PointRef::Key(k) | PointRef::Name(k) => k,
+        PointRef::Id(id) => cfg_map.get(id).map(|cfg| cfg.name).unwrap_or("unknown"),
     }
 }

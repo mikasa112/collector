@@ -8,7 +8,7 @@ use tracing::{info, warn};
 use crate::center::{DataCenterError, SharedPointCenter};
 use crate::config::modbus_conf::ModbusConfigs;
 use crate::config::{self, Device};
-use crate::core::point::DataPoint;
+use crate::core::point::DownDataPoint;
 use crate::dev::modbus_dev::Protocol;
 use crate::dev::{
     DeviceError, Executable, Identifiable, Lifecycle, LifecycleState,
@@ -135,7 +135,7 @@ impl Lifecycle for ModbusDev {
         if !ok {
             return Ok(());
         }
-        let (tx, rx) = tokio::sync::mpsc::channel::<Vec<DataPoint>>(16);
+        let (tx, rx) = tokio::sync::mpsc::channel::<Vec<DownDataPoint>>(16);
         //将设备注册到消息中心
         match self.center.attach_downlink(&self.id, tx.clone()) {
             Ok(()) => {}

@@ -9,7 +9,7 @@ use crate::center::SharedPointCenter;
 use crate::{
     center::DataCenterError,
     config::{self, Device, can_conf::CanConfigs},
-    core::point::DataPoint,
+    core::point::DownDataPoint,
     dev::{
         DeviceError, Executable, Identifiable, Lifecycle, LifecycleState,
         dev_config::CanDeviceConfig, state::SharedState,
@@ -98,7 +98,7 @@ impl Lifecycle for CanDev {
             return Ok(());
         }
 
-        let (tx, rx) = tokio::sync::mpsc::channel::<Vec<DataPoint>>(16);
+        let (tx, rx) = tokio::sync::mpsc::channel::<Vec<DownDataPoint>>(16);
         match self.center.attach_downlink(&self.id, tx.clone()) {
             Ok(()) => {}
             Err(DataCenterError::DevHasRegister(_)) => {

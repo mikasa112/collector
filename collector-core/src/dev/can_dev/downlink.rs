@@ -7,7 +7,7 @@ use crate::center::PointCenter;
 use crate::config::can_conf::{
     ByteOrder, CanConfig, CanDataType, CanFrameConfig, CanSignal, IdType,
 };
-use crate::core::point::{DataPoint, PointId, Val};
+use crate::core::point::{DownDataPoint, PointId, PointRef, Val};
 use crate::dev::can_dev::CanDevError;
 
 pub(super) struct WritePlan {
@@ -16,8 +16,9 @@ pub(super) struct WritePlan {
 
 impl WritePlan {
     pub(super) fn build(
-        entries: Vec<DataPoint>,
+        entries: Vec<DownDataPoint>,
         point_map: &HashMap<PointId, CanPointConfig>,
+        name_map: &HashMap<&'static str, PointId>,
         frame_map: &HashMap<u32, FrameBinding>,
         center: &dyn PointCenter,
         dev_id: &str,
@@ -25,13 +26,20 @@ impl WritePlan {
         let mut payloads: BTreeMap<u32, FramePayload> = BTreeMap::new();
         let mut initialized_bindings: HashSet<u32> = HashSet::new();
 
+        // 先预加载所有涉及帧的当前值
         for entry in &entries {
-            let Some(point_cfg) = point_map.get(&entry.id) else {
-                warn!("[{}] 未找到点位配置, 忽略CAN下发: {}", dev_id, entry.id);
+            let Some(id) = resolve_id(&entry.point, name_map) else {
+                warn!(
+                    "[{}] 未找到点位配置, 忽略CAN下发: {:?}",
+                    dev_id, entry.point
+                );
                 continue;
             };
-            let Some(binding) = frame_map.get(&point_cfg.binding_frame_id) else {
-                warn!("[{}] 未找到报文配置, 忽略CAN下发: {}", dev_id, entry.id);
+            let Some(binding) = point_map
+                .get(&id)
+                .and_then(|cfg| frame_map.get(&cfg.binding_frame_id))
+            else {
+                warn!("[{}] 未找到报文配置, 忽略CAN下发: {}", dev_id, id);
                 continue;
             };
             if initialized_bindings.insert(binding.frame.frame_id) {
@@ -40,7 +48,10 @@ impl WritePlan {
         }
 
         for entry in entries {
-            let Some(point_cfg) = point_map.get(&entry.id) else {
+            let Some(id) = resolve_id(&entry.point, name_map) else {
+                continue;
+            };
+            let Some(point_cfg) = point_map.get(&id) else {
                 continue;
             };
             encode_entry(&mut payloads, point_cfg, &entry.value, dev_id);
@@ -76,7 +87,7 @@ impl WritePlan {
 pub(super) struct CanPointConfig {
     binding_frame_id: u32,
     frame: CanFrameConfig,
-    signal: CanSignal,
+    pub(super) signal: CanSignal,
 }
 
 #[derive(Clone)]
@@ -113,6 +124,27 @@ impl FramePayload {
             );
             None
         })
+    }
+}
+
+pub(super) fn build_name_map(configs: &[CanConfig]) -> HashMap<&'static str, PointId> {
+    let mut map = HashMap::new();
+    for cfg in configs.iter().filter(|cfg| cfg.frame.enable) {
+        for signal in &cfg.signals {
+            let (id, name) = match signal {
+                CanSignal::Normal(s) => (s.id, s.name),
+                CanSignal::Ext(s) => (s.id, s.name),
+            };
+            map.insert(name, id);
+        }
+    }
+    map
+}
+
+fn resolve_id(point: &PointRef, name_map: &HashMap<&'static str, PointId>) -> Option<PointId> {
+    match point {
+        PointRef::Id(id) => Some(*id),
+        PointRef::Key(key) | PointRef::Name(key) => name_map.get(key).copied(),
     }
 }
 
@@ -232,7 +264,6 @@ fn encode_value(
         (numeric - offset) / scale
     };
     let rounded = raw.round();
-
     match data_type {
         CanDataType::U8 | CanDataType::U16 | CanDataType::U32 => {
             let max = if bit_len >= 32 {

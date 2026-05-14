@@ -36,6 +36,8 @@ impl SharedState {
     pub(crate) fn store(&self, id: &str, to: LifecycleState) {
         let from = self.load();
         self.0.store(to as u8, Ordering::Release);
-        info!("[{}]{} -> {}", id, from, to);
+        if from != to {
+            info!("[{}]{} -> {}", id, from, to);
+        }
     }
 }

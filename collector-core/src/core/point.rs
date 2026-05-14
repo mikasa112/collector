@@ -64,6 +64,27 @@ impl DownDataPoint {
     }
 }
 
+/// 快速创建 [`DownDataPoint`] 的宏
+///
+/// # 用法
+/// ```
+/// down!(id: 2001, Val::U16(0x55))
+/// down!(key: "voltage", Val::F64(220.0))
+/// down!(name: "电压", Val::F64(220.0))
+/// ```
+#[macro_export]
+macro_rules! down {
+    (id: $id:expr, $value:expr) => {
+        $crate::core::point::DownDataPoint::by_id($id, $value)
+    };
+    (key: $key:expr, $value:expr) => {
+        $crate::core::point::DownDataPoint::by_key($key, $value)
+    };
+    (name: $name:expr, $value:expr) => {
+        $crate::core::point::DownDataPoint::by_name($name, $value)
+    };
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum Val {
     U8(u8),

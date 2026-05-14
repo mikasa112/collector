@@ -7,7 +7,7 @@ pub mod data_center;
 pub use data_center::DataCenter;
 use tokio::sync::watch;
 
-pub type DownlinkSender = tokio::sync::mpsc::Sender<Vec<DataPoint>>;
+pub type DownlinkSender = tokio::sync::mpsc::Sender<Vec<DownDataPoint>>;
 pub type SharedPointCenter = Arc<dyn PointCenter>;
 
 #[async_trait::async_trait]
@@ -45,8 +45,8 @@ pub enum DataCenterError {
     DevHasRegister(String),
 }
 
-impl From<tokio::sync::mpsc::error::SendError<Vec<DataPoint>>> for DataCenterError {
-    fn from(value: tokio::sync::mpsc::error::SendError<Vec<DataPoint>>) -> Self {
+impl From<tokio::sync::mpsc::error::SendError<Vec<DownDataPoint>>> for DataCenterError {
+    fn from(value: tokio::sync::mpsc::error::SendError<Vec<DownDataPoint>>) -> Self {
         DataCenterError::SendError(value.to_string())
     }
 }

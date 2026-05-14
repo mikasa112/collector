@@ -8,7 +8,7 @@ use tracing::warn;
 use crate::config::modbus_conf::{
     ByteOrder, ModbusConfig, ModbusConfigs, ModbusDataType, RegisterType,
 };
-use crate::core::point::{DataPoint, PointId, Val, ValError};
+use crate::core::point::{DownDataPoint, PointId, PointRef, Val, ValError};
 
 use super::error::ModbusDevError;
 
@@ -19,16 +19,21 @@ pub(super) struct WritePlan {
 
 impl WritePlan {
     pub(super) fn build(
-        entries: Vec<DataPoint>,
+        entries: Vec<DownDataPoint>,
         cfg_map: &HashMap<PointId, ModbusConfig>,
+        key_map: &HashMap<&'static str, PointId>,
         dev_id: &str,
     ) -> Self {
         let mut coils: BTreeMap<u16, bool> = BTreeMap::new();
         let mut holding: BTreeMap<u16, u16> = BTreeMap::new();
 
         for entry in entries {
-            let Some(cfg) = cfg_map.get(&entry.id) else {
-                warn!("[{}] 未找到点位配置, 忽略下发: {}", dev_id, entry.id);
+            let Some(id) = resolve_id(&entry.point, key_map) else {
+                warn!("[{}] 未找到点位配置, 忽略下发: {:?}", dev_id, entry.point);
+                continue;
+            };
+            let Some(cfg) = cfg_map.get(&id) else {
+                warn!("[{}] 未找到点位配置, 忽略下发: {}", dev_id, id);
                 continue;
             };
             match cfg.register_type {
@@ -77,6 +82,22 @@ impl WritePlan {
             }
         }
         Ok(())
+    }
+}
+
+pub(super) fn build_key_map(configs: &ModbusConfigs) -> HashMap<&'static str, PointId> {
+    let mut map = HashMap::new();
+    for cfg in configs {
+        map.insert(cfg.key, cfg.id as PointId);
+        map.insert(cfg.name, cfg.id as PointId);
+    }
+    map
+}
+
+fn resolve_id(point: &PointRef, key_map: &HashMap<&'static str, PointId>) -> Option<PointId> {
+    match point {
+        PointRef::Id(id) => Some(*id),
+        PointRef::Key(key) | PointRef::Name(key) => key_map.get(key).copied(),
     }
 }
 

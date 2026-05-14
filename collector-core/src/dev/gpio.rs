@@ -13,7 +13,7 @@ use crate::{
         self, Device,
         gpio_conf::{Direction, GpioConfig, GpioConfigs},
     },
-    core::point::{DataPoint, Val},
+    core::point::{DownDataPoint, PointRef, Val},
     dev::{DeviceError, Executable, Identifiable, Lifecycle, LifecycleState, state::SharedState},
 };
 
@@ -115,7 +115,7 @@ impl Lifecycle for GpioDev {
         if !ok {
             return Ok(());
         }
-        let (tx, rx) = tokio::sync::mpsc::channel::<Vec<DataPoint>>(8);
+        let (tx, rx) = tokio::sync::mpsc::channel::<Vec<DownDataPoint>>(8);
         //将设备注册到消息中心
         match self.center.attach_downlink(&self.id, tx.clone()) {
             Ok(()) => {}
@@ -340,7 +340,7 @@ async fn handle_di(
 async fn handle_do(
     id: String,
     vec: Vec<GpioConfDev>,
-    mut rx: tokio::sync::mpsc::Receiver<Vec<DataPoint>>,
+    mut rx: tokio::sync::mpsc::Receiver<Vec<DownDataPoint>>,
     mut stop_rx: watch::Receiver<bool>,
 ) -> Result<(), gpio_cdev::Error> {
     use std::collections::HashMap;
@@ -393,10 +393,16 @@ async fn handle_do(
             points = rx.recv() => {
                 match points {
                     Some(points) => {
-                        for point in points {
-                            if let Some(handle) = output_handles.get_mut(point.key) {
-                                // 将数据点的值转换为 u8
-                                let value = match point.value {
+                        for dp in points {
+                            let key = match &dp.point {
+                                PointRef::Key(key) | PointRef::Name(key) => *key,
+                                PointRef::Id(_) => {
+                                    tracing::warn!("[{}] GPIO不支持ID方式下发", id);
+                                    continue;
+                                }
+                            };
+                            if let Some(handle) = output_handles.get_mut(key) {
+                                let value = match dp.value {
                                     Val::U8(v) => v,
                                     Val::I8(v) => {
                                         if v != 0 {
@@ -441,19 +447,19 @@ async fn handle_do(
                                         }
                                     }
                                     Val::List(_) => {
-                                        tracing::warn!("[{}] GPIO[{}] 不支持List类型", id, point.key);
+                                        tracing::warn!("[{}] GPIO[{}] 不支持List类型", id, key);
                                         continue;
                                     }
                                 };
 
                                 // 设置 GPIO 输出
                                 if let Err(e) = handle.set_value(value) {
-                                    tracing::error!("[{}] 设置GPIO[{}]输出失败: {}", id, point.key, e);
+                                    tracing::error!("[{}] 设置GPIO[{}]输出失败: {}", id, key, e);
                                 } else {
-                                    tracing::debug!("[{}] 设置GPIO[{}]输出: {}", id, point.key, value);
+                                    tracing::debug!("[{}] 设置GPIO[{}]输出: {}", id, key, value);
                                 }
                             } else {
-                                tracing::warn!("[{}] 未找到GPIO配置: {}", id, point.key);
+                                tracing::warn!("[{}] 未找到GPIO配置: {}", id, key);
                             }
                         }
                     }

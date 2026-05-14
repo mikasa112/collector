@@ -10,12 +10,12 @@ use crate::center::SharedPointCenter;
 use crate::config::can_conf::{
     ByteOrder, CanConfig, CanDataType, CanSignal, CanSignalConfig, CanSignalExtConfig, IdType,
 };
-use crate::core::point::{DataPoint, DataPoints, Val};
+use crate::core::point::{DataPoint, DownDataPoint, PointId, PointRef, Val};
 use crate::dev::can_dev::CanDevError;
 use crate::dev::{LifecycleState, dev_config::CanDeviceConfig, state::SharedState};
 
 use super::backoff::Backoff;
-use super::downlink::{FrameBinding, WritePlan, build_frame_map, build_point_map};
+use super::downlink::{FrameBinding, WritePlan, build_frame_map, build_name_map, build_point_map};
 
 pub(super) struct CanRunner {
     pub(super) id: String,
@@ -23,7 +23,7 @@ pub(super) struct CanRunner {
     pub(super) configs: Vec<CanConfig>,
     pub(super) state: SharedState,
     pub(super) stop_rx: watch::Receiver<bool>,
-    pub(super) rx: mpsc::Receiver<Vec<DataPoint>>,
+    pub(super) rx: mpsc::Receiver<Vec<DownDataPoint>>,
     pub(super) center: SharedPointCenter,
 }
 
@@ -146,6 +146,7 @@ impl CanRunner {
         stop_rx: &mut watch::Receiver<bool>,
         frame_states: &mut HashMap<u32, FrameState>,
         point_map: &HashMap<u32, super::downlink::CanPointConfig>,
+        name_map: &HashMap<&'static str, PointId>,
         frame_map: &HashMap<u32, FrameBinding>,
     ) -> Result<(), CanDevError> {
         self.state.store(&self.id, LifecycleState::Running);
@@ -174,10 +175,10 @@ impl CanRunner {
                         self.report_comm_status(0);
                         return Ok(());
                     };
-                    let points = DataPoints(entries.clone());
-                    info!("[{}] ↓: {}", self.id, points);
+                    let items: Vec<String> = entries.iter().map(|e| format!("{}: {}", resolve_signal_name(&e.point, point_map), e.value)).collect();
+                    info!("[{}] ↓: {}", self.id, items.join(", "));
                     let plan =
-                        WritePlan::build(entries, point_map, frame_map, self.center.as_ref(), &self.id);
+                        WritePlan::build(entries, point_map, name_map, frame_map, self.center.as_ref(), &self.id);
                     if plan.is_empty() {
                         continue;
                     }
@@ -204,6 +205,7 @@ impl CanRunner {
         let mut stop_rx = self.stop_rx.clone();
         let point_map = build_point_map(&self.configs);
         let frame_map = build_frame_map(&self.configs);
+        let name_map = build_name_map(&self.configs);
 
         loop {
             if Self::stop_requested(&stop_rx) {
@@ -227,6 +229,7 @@ impl CanRunner {
                             &mut stop_rx,
                             &mut frame_states,
                             &point_map,
+                            &name_map,
                             &frame_map,
                         )
                         .await
@@ -491,6 +494,22 @@ fn sign_extend(raw: u32, bit_len: u8) -> i32 {
     }
     let shift = 32 - u32::from(bit_len);
     ((raw << shift) as i32) >> shift
+}
+
+fn resolve_signal_name<'a>(
+    point: &'a PointRef,
+    point_map: &'a HashMap<PointId, super::downlink::CanPointConfig>,
+) -> &'a str {
+    match point {
+        PointRef::Key(k) | PointRef::Name(k) => k,
+        PointRef::Id(id) => point_map
+            .get(id)
+            .map(|cfg| match cfg.signal {
+                CanSignal::Normal(s) => s.name,
+                CanSignal::Ext(s) => s.name,
+            })
+            .unwrap_or("unknown"),
+    }
 }
 
 #[cfg(test)]
