@@ -16,6 +16,7 @@ tracing = { workspace = true }
 bytes = { workspace = true }
 sqlx = { workspace = true }
 futures = { workspace = true }
+ahash = { workspace = true }
 zstd = "0.13.3"
 rumqttc = "0.25.1"
 dashmap = "6.1.0"

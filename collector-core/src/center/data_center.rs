@@ -31,10 +31,9 @@
 //! - **零拷贝**：使用 Arc 共享数据
 //! - **变化检测**：只在数据实际变化时更新版本号和推送通知
 
-use std::{
-    collections::HashMap,
-    sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard},
-};
+use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
+
+use ahash::AHashMap;
 
 use dashmap::DashMap;
 use tokio::sync::watch;
@@ -124,15 +123,15 @@ impl DataCenter {
 struct DeviceCache {
     /// 数据点索引：PointId -> DataPoint
     /// 用于快速查询单个或多个数据点
-    latest_by_id: HashMap<PointId, DataPoint>,
+    latest_by_id: AHashMap<PointId, DataPoint>,
 
     /// Key 到 PointId 的索引
     /// 用于通过 key 快速查找数据点
-    by_key: HashMap<&'static str, PointId>,
+    by_key: AHashMap<&'static str, PointId>,
 
     /// Name 到 PointId 的索引
     /// 用于通过 name 快速查找数据点
-    by_name: HashMap<&'static str, PointId>,
+    by_name: AHashMap<&'static str, PointId>,
 
     /// 排序后的数据点快照（按 PointId 排序）
     /// 使用 Arc 实现零拷贝共享
@@ -154,9 +153,9 @@ struct DeviceCache {
 impl Default for DeviceCache {
     fn default() -> Self {
         Self {
-            latest_by_id: HashMap::new(),
-            by_key: HashMap::new(),
-            by_name: HashMap::new(),
+            latest_by_id: AHashMap::new(),
+            by_key: AHashMap::new(),
+            by_name: AHashMap::new(),
             snapshot: Arc::from([]),
             version: 0,
             snapshot_version: 0,

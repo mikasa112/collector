@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
+use futures::StreamExt;
 use socketcan::{CanFrame, EmbeddedFrame, Frame, tokio::CanSocket};
 use tokio::sync::{mpsc, watch};
 use tokio::time;
@@ -142,7 +143,7 @@ impl CanRunner {
 
     async fn run_connected(
         &mut self,
-        socket: &CanSocket,
+        socket: &mut CanSocket,
         stop_rx: &mut watch::Receiver<bool>,
         frame_states: &mut HashMap<u32, FrameState>,
         point_map: &HashMap<u32, super::downlink::CanPointConfig>,
@@ -184,8 +185,10 @@ impl CanRunner {
                     }
                     plan.apply(socket).await?;
                 }
-                result = socket.read_frame() => {
-                    let frame = result.map_err(CanDevError::ReadFrame)?;
+                result = socket.next() => {
+                    let frame = result
+                        .expect("CAN socket stream ended unexpectedly")
+                        .map_err(|e| CanDevError::ReadFrame(std::io::Error::other(e)))?;
                     let now = Instant::now();
                     last_rx_at = now;
                     let points = Self::decode_frame(&frame, frame_states, &mut ext_cache, now);
@@ -218,14 +221,14 @@ impl CanRunner {
             self.report_comm_status(0);
 
             match self.connect() {
-                Ok(socket) => {
+                Ok(mut socket) => {
                     self.state.store(&self.id, LifecycleState::Connected);
                     backoff.reset();
 
                     let mut frame_states = self.build_runtime_frame_map();
                     if let Err(err) = self
                         .run_connected(
-                            &socket,
+                            &mut socket,
                             &mut stop_rx,
                             &mut frame_states,
                             &point_map,

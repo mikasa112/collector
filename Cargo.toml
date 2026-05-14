@@ -33,15 +33,20 @@ tokio-util = "0.7"
 sqlx = { version = "0.8.6", features = ["runtime-tokio-rustls", "sqlite", "chrono"] }
 chrono = { version = "0.4.44", features = ["serde"] }
 futures = "0.3"
+ahash = "0.8"
 
+# [profile.release]
+# # 去除调试信息
+# strip = true
+# # 启用链接时优化
+# lto = true
+# # 最大运行时优化
+# opt-level = 3
+# # 发生panic终止程序, 可减少程序体积
+# panic = "abort"
+# # 限制代码生成单元为1, 可提高运行效率并减少程序体积
+# codegen-units = 1
 [profile.release]
-# 去除调试信息
-strip = true
-# 启用链接时优化
-lto = true
-# 最大运行时优化
-opt-level = 3
-# 发生panic终止程序, 可减少程序体积
-panic = "abort"
-# 限制代码生成单元为1, 可提高运行效率并减少程序体积
-codegen-units = 1
+opt-level=3
+debug=true
+lto=true
