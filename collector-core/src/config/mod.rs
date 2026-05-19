@@ -9,6 +9,7 @@ use crate::core::point::PointId;
 pub mod can_conf;
 pub mod gpio_conf;
 pub mod modbus_conf;
+pub mod north_modbus_conf;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ConfigurationError {
@@ -127,14 +128,17 @@ where
 pub struct Project {
     pub product_type: Option<String>,
     pub project: Option<String>,
-    pub ip: Option<String>,
-    pub port: Option<u16>,
+    pub http_ip: Option<String>,
+    pub http_port: Option<u16>,
     pub mqtt_host: Option<String>,
     pub mqtt_port: Option<u16>,
     pub mqtt_username: Option<String>,
     pub mqtt_password: Option<String>,
     pub mqtt_yt: Option<String>,
     pub mqtt_yk: Option<String>,
+    pub north_modbus_host: Option<String>,
+    pub north_modbus_port: Option<String>,
+    pub north_modbus_conf: Option<String>,
     pub devices: HashMap<String, Device>,
     pub mqtt_routes: Option<Vec<MqttRoute>>,
 }

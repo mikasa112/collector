@@ -44,9 +44,9 @@ impl CanRunner {
             &self.id,
             vec![DataPoint {
                 id: 0xFFFF,
-                name: "communication_status",
+                name: "通讯状态",
                 value: Val::U8(v),
-                key: "communication_status",
+                key: "communicationStatus",
                 translator: None,
                 warn_bits: None,
                 status_word: None,

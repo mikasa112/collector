@@ -107,10 +107,10 @@ pub async fn cmd() {
             // 启动 API 服务器
             let api_server = ApiApp::new(
                 p.project
-                    .ip
+                    .http_ip
                     .clone()
                     .unwrap_or_else(|| "0.0.0.0".to_string()),
-                p.project.port.unwrap_or(9091),
+                p.project.http_port.unwrap_or(9091),
                 center.clone(),
             );
             tokio::spawn(api_server.start(shutdown.clone()));

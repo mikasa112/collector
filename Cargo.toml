@@ -31,9 +31,13 @@ bytes = "1.11.1"
 tokio-util = "0.7"
 # 数据库支持
 sqlx = { version = "0.8.6", features = ["runtime-tokio-rustls", "sqlite", "chrono"] }
+# 时间
 chrono = { version = "0.4.44", features = ["serde"] }
 futures = "0.3"
+# 某些情况下更优的hash
 ahash = "0.8"
+# 更优的锁
+parking_lot = "0.12.5"
 
 [profile.release]
 # 去除调试信息
