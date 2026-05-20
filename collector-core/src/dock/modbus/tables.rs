@@ -43,6 +43,13 @@ impl RegisterTable {
         }
     }
 
+    pub fn write_u16_pair(&mut self, reg_type: RegisterType, addr: u16, vals: [u16; 2]) {
+        self.write_u16(reg_type, addr, vals[0]);
+        if let Some(next) = addr.checked_add(1) {
+            self.write_u16(reg_type, next, vals[1]);
+        }
+    }
+
     pub fn read_coils(&self, addr: u16, cnt: u16) -> Vec<bool> {
         (addr..addr.saturating_add(cnt))
             .map(|a| self.coils.get(&a).copied().unwrap_or(false))

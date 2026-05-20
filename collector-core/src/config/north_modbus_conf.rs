@@ -1,22 +1,27 @@
 use std::path::Path;
 
-use calamine::{Data, HeaderRow, Reader, Xlsx, open_workbook};
+use calamine::{Data, DataType, HeaderRow, Reader, Xlsx, open_workbook};
 
 use crate::{
     config::{
-        modbus_conf::{ModbusDataType, RegisterType},
+        modbus_conf::{ByteOrder, ModbusDataType, RegisterType},
         required_f64, required_str,
     },
     core::point::Val,
 };
 
+pub(crate) enum RegValue {
+    Bool(bool),
+    Word(u16),
+    DWord([u16; 2]),
+}
+
 pub(crate) struct PointSource {
     pub(crate) source: String,
     pub(crate) point_id: u32,
+    #[allow(dead_code)]
     pub(crate) point_key: String,
 }
-
-impl PointSource {}
 
 pub(crate) struct NorthboundConfig {
     pub(crate) register_address: u16,
@@ -24,6 +29,7 @@ pub(crate) struct NorthboundConfig {
     pub(crate) data_type: ModbusDataType,
     pub(crate) scale: f64,
     pub(crate) offset: f64,
+    pub(crate) byte_order: Option<ByteOrder>,
     pub(crate) point_source: PointSource,
 }
 
@@ -32,11 +38,12 @@ impl NorthboundConfig {
         let register_address = required_f64(row, 0, "寄存器地址")? as u16;
         let register_type = RegisterType::try_from(required_str(row, 1, "寄存器")?)?;
         let data_type = ModbusDataType::try_from(required_str(row, 2, "数据类型")?)?;
-        let scale = required_f64(row, 3, "系数")?;
-        let offset = required_f64(row, 4, "偏移量")?;
-        let source_str = required_str(row, 5, "来源")?;
-        let point_id = required_f64(row, 6, "点位")? as u32;
-        let point_key = required_str(row, 7, "键")?;
+        let byte_order = ByteOrder::try_from(row.get(3).and_then(|d| d.get_string())).ok();
+        let scale = required_f64(row, 4, "系数")?;
+        let offset = required_f64(row, 5, "偏移量")?;
+        let source_str = required_str(row, 6, "来源")?;
+        let point_id = required_f64(row, 7, "点位")? as u32;
+        let point_key = required_str(row, 8, "键")?;
         let point_source = PointSource {
             source: source_str.to_string(),
             point_id,
@@ -48,10 +55,12 @@ impl NorthboundConfig {
             data_type,
             scale,
             offset,
+            byte_order,
             point_source,
         })
     }
 
+    /// 将寄存器原始值还原为工程值（北向写入时使用）
     pub fn restore_val(&self, value: u16) -> Val {
         let raw = (value as f64 - self.offset) / self.scale;
         if raw.is_finite() && (raw.fract().abs() < f64::EPSILON) {
@@ -64,6 +73,34 @@ impl NorthboundConfig {
             Val::F64(raw)
         }
     }
+
+    /// 将工程值编码为寄存器值（DataCenter → 北向表格）
+    pub fn encode_val(&self, val: &Val) -> Option<RegValue> {
+        match self.data_type {
+            ModbusDataType::Bool => {
+                let b = bool::try_from(val).ok()?;
+                Some(RegValue::Bool(b))
+            }
+            ModbusDataType::U16 | ModbusDataType::I16 => {
+                let raw = f64::try_from(val).ok()?;
+                let scaled = (raw * self.scale + self.offset) as u16;
+                let word = self.byte_order.map_or(scaled, |bo| bo.assemble_u16(scaled));
+                Some(RegValue::Word(word))
+            }
+            ModbusDataType::U32 => {
+                let raw = f64::try_from(val).ok()?;
+                let scaled = (raw * self.scale + self.offset) as u32;
+                let bo = self.byte_order.unwrap_or(ByteOrder::ABCD);
+                Some(RegValue::DWord(bo.assemble_u32(scaled)))
+            }
+            ModbusDataType::I32 => {
+                let raw = f64::try_from(val).ok()?;
+                let scaled = (raw * self.scale + self.offset) as i32 as u32;
+                let bo = self.byte_order.unwrap_or(ByteOrder::ABCD);
+                Some(RegValue::DWord(bo.assemble_u32(scaled)))
+            }
+        }
+    }
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -72,9 +109,11 @@ pub enum NorthboundConfigsError {
     OpenWorkbookError(#[from] calamine::XlsxError),
 }
 
-pub type NorthboundConfigs = Vec<NorthboundConfig>;
+pub(crate) type NorthboundConfigs = Vec<NorthboundConfig>;
 
-pub fn build_configs<P: AsRef<Path>>(path: P) -> Result<NorthboundConfigs, NorthboundConfigsError> {
+pub(crate) fn build_configs<P: AsRef<Path>>(
+    path: P,
+) -> Result<NorthboundConfigs, NorthboundConfigsError> {
     let mut workbook: Xlsx<_> = open_workbook(path)?;
     let sheet = workbook
         .with_header_row(HeaderRow::Row(1))
