@@ -2,8 +2,10 @@ use std::{
     collections::HashMap,
     net::SocketAddr,
     path::Path,
-    sync::{Arc, RwLock},
+    sync::Arc,
 };
+
+use parking_lot::RwLock;
 
 use futures::future;
 use tokio::sync::mpsc;
@@ -31,7 +33,7 @@ enum WriteRequest {
 }
 
 struct ServiceState {
-    table: RwLock<RegisterTable>,
+    table: RwLock<Arc<RegisterTable>>,
     write_tx: mpsc::Sender<WriteRequest>,
 }
 
@@ -52,32 +54,25 @@ impl tokio_modbus::server::Service for ModbusService {
 }
 
 impl ModbusService {
+    /// 读锁只持有 Arc clone 的瞬间，随后无锁访问表数据
+    fn table(&self) -> Arc<RegisterTable> {
+        self.0.table.read().clone()
+    }
+
     fn handle(&self, req: tokio_modbus::Request<'static>) -> Result<Response, ExceptionCode> {
         match req {
-            tokio_modbus::Request::ReadCoils(addr, cnt) => match self.0.table.try_read() {
-                Ok(tbl) => Ok(Response::ReadCoils(tbl.read_coils(addr, cnt))),
-                Err(_) => Err(ExceptionCode::ServerDeviceBusy),
-            },
-            tokio_modbus::Request::ReadDiscreteInputs(addr, cnt) => match self.0.table.try_read() {
-                Ok(tbl) => Ok(Response::ReadDiscreteInputs(
-                    tbl.read_discrete_inputs(addr, cnt),
-                )),
-                Err(_) => Err(ExceptionCode::ServerDeviceBusy),
-            },
-            tokio_modbus::Request::ReadInputRegisters(addr, cnt) => match self.0.table.try_read() {
-                Ok(tbl) => Ok(Response::ReadInputRegisters(
-                    tbl.read_input_registers(addr, cnt),
-                )),
-                Err(_) => Err(ExceptionCode::ServerDeviceBusy),
-            },
-            tokio_modbus::Request::ReadHoldingRegisters(addr, cnt) => {
-                match self.0.table.try_read() {
-                    Ok(tbl) => Ok(Response::ReadHoldingRegisters(
-                        tbl.read_holding_registers(addr, cnt),
-                    )),
-                    Err(_) => Err(ExceptionCode::ServerDeviceBusy),
-                }
+            tokio_modbus::Request::ReadCoils(addr, cnt) => {
+                Ok(Response::ReadCoils(self.table().read_coils(addr, cnt)))
             }
+            tokio_modbus::Request::ReadDiscreteInputs(addr, cnt) => Ok(
+                Response::ReadDiscreteInputs(self.table().read_discrete_inputs(addr, cnt)),
+            ),
+            tokio_modbus::Request::ReadInputRegisters(addr, cnt) => Ok(
+                Response::ReadInputRegisters(self.table().read_input_registers(addr, cnt)),
+            ),
+            tokio_modbus::Request::ReadHoldingRegisters(addr, cnt) => Ok(
+                Response::ReadHoldingRegisters(self.table().read_holding_registers(addr, cnt)),
+            ),
             tokio_modbus::Request::WriteSingleCoil(addr, value) => {
                 let _ = self
                     .0
@@ -143,7 +138,7 @@ impl ModbusServer {
         let (write_tx, write_rx) = mpsc::channel::<WriteRequest>(32);
 
         let state = Arc::new(ServiceState {
-            table: RwLock::new(RegisterTable::new()),
+            table: RwLock::new(Arc::new(RegisterTable::new())),
             write_tx,
         });
 
@@ -191,20 +186,23 @@ impl ModbusServer {
                         changed = rx.changed() => {
                             if changed.is_err() { break; }
                             let snapshot = rx.borrow_and_update().clone();
-                            let Ok(mut tbl) = state.table.write() else { continue; };
+                            // 在锁外构建新表，写锁只持有 Arc 交换的瞬间
+                            let current = state.table.read().clone();
+                            let mut new_tbl = (*current).clone();
                             for point in snapshot.iter() {
                                 let Some(cfg_indices) = point_index.get(&point.id) else { continue; };
                                 for &ci in cfg_indices {
                                     let cfg = &configs[ci];
                                     if let Some(reg_val) = cfg.encode_val(&point.value) {
                                         match reg_val {
-                                            RegValue::Bool(b) => tbl.write_bool(cfg.register_type, cfg.register_address, b),
-                                            RegValue::Word(w) => tbl.write_u16(cfg.register_type, cfg.register_address, w),
-                                            RegValue::DWord(dw) => tbl.write_u16_pair(cfg.register_type, cfg.register_address, dw),
+                                            RegValue::Bool(b) => new_tbl.write_bool(cfg.register_type, cfg.register_address, b),
+                                            RegValue::Word(w) => new_tbl.write_u16(cfg.register_type, cfg.register_address, w),
+                                            RegValue::DWord(dw) => new_tbl.write_u16_pair(cfg.register_type, cfg.register_address, dw),
                                         }
                                     }
                                 }
                             }
+                            *state.table.write() = Arc::new(new_tbl);
                         }
                     }
                 }

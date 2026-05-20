@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 use crate::config::modbus_conf::RegisterType;
 
+#[derive(Clone)]
 pub struct RegisterTable {
     coils: HashMap<u16, bool>,
     discrete_inputs: HashMap<u16, bool>,
