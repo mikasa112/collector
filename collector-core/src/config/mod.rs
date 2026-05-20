@@ -137,7 +137,7 @@ pub struct Project {
     pub mqtt_yt: Option<String>,
     pub mqtt_yk: Option<String>,
     pub north_modbus_host: Option<String>,
-    pub north_modbus_port: Option<String>,
+    pub north_modbus_port: Option<u16>,
     pub north_modbus_conf: Option<String>,
     pub devices: HashMap<String, Device>,
     pub mqtt_routes: Option<Vec<MqttRoute>>,

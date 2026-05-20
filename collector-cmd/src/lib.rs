@@ -6,6 +6,7 @@ use collector_core::center::DataCenter;
 use collector_core::center::SharedPointCenter;
 use collector_core::config;
 use collector_core::dev::manager::DevManager;
+use collector_core::dock::modbus::ModbusServer;
 use collector_core::dock::mqtt::MqttClient;
 use collector_core::shutdown::ShutdownManager;
 use tracing::error;
@@ -104,6 +105,24 @@ pub async fn cmd() {
             let mut manager = DevManager::new(p.project.devices, center.clone());
             manager.start_all().await;
 
+            // 启动北向 Modbus TCP 服务器
+            if let (Some(host), Some(port), Some(conf)) = (
+                p.project.north_modbus_host.as_deref(),
+                p.project.north_modbus_port,
+                p.project.north_modbus_conf.as_deref(),
+            ) {
+                let addr = format!("{}:{}", host, port);
+                match addr.parse() {
+                    Ok(addr) => match ModbusServer::new(conf, addr, center.clone()) {
+                        Ok(server) => {
+                            tokio::spawn(server.start(shutdown.clone()));
+                        }
+                        Err(e) => error!("北向Modbus配置加载失败: {}", e),
+                    },
+                    Err(e) => error!("北向Modbus地址解析失败 {}: {}", addr, e),
+                }
+            }
+
             // 启动 API 服务器
             let api_server = ApiApp::new(
                 p.project
@@ -113,6 +132,7 @@ pub async fn cmd() {
                 p.project.http_port.unwrap_or(9091),
                 center.clone(),
             );
+
             tokio::spawn(api_server.start(shutdown.clone()));
 
             // 在后台监听关闭信号

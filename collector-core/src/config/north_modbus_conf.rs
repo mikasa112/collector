@@ -25,6 +25,7 @@ pub(crate) struct PointSource {
 
 pub(crate) struct NorthboundConfig {
     pub(crate) register_address: u16,
+    pub(crate) name: String,
     pub(crate) register_type: RegisterType,
     pub(crate) data_type: ModbusDataType,
     pub(crate) scale: f64,
@@ -36,14 +37,15 @@ pub(crate) struct NorthboundConfig {
 impl NorthboundConfig {
     pub fn new(row: &[Data]) -> Result<Self, anyhow::Error> {
         let register_address = required_f64(row, 0, "寄存器地址")? as u16;
-        let register_type = RegisterType::try_from(required_str(row, 1, "寄存器")?)?;
-        let data_type = ModbusDataType::try_from(required_str(row, 2, "数据类型")?)?;
-        let byte_order = ByteOrder::try_from(row.get(3).and_then(|d| d.get_string())).ok();
-        let scale = required_f64(row, 4, "系数")?;
-        let offset = required_f64(row, 5, "偏移量")?;
-        let source_str = required_str(row, 6, "来源")?;
-        let point_id = required_f64(row, 7, "点位")? as u32;
-        let point_key = required_str(row, 8, "键")?;
+        let name = required_str(row, 1, "名称")?.to_string();
+        let register_type = RegisterType::try_from(required_str(row, 2, "寄存器")?)?;
+        let data_type = ModbusDataType::try_from(required_str(row, 3, "数据类型")?)?;
+        let byte_order = ByteOrder::try_from(row.get(4).and_then(|d| d.get_string())).ok();
+        let scale = required_f64(row, 5, "系数")?;
+        let offset = required_f64(row, 6, "偏移量")?;
+        let source_str = required_str(row, 7, "来源")?;
+        let point_id = required_f64(row, 8, "点位")? as u32;
+        let point_key = required_str(row, 9, "键")?;
         let point_source = PointSource {
             source: source_str.to_string(),
             point_id,
@@ -51,6 +53,7 @@ impl NorthboundConfig {
         };
         Ok(NorthboundConfig {
             register_address,
+            name,
             register_type,
             data_type,
             scale,

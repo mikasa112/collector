@@ -200,21 +200,39 @@ impl PointCenter for DataCenter {
         }
 
         if changed {
-            // 递增版本号（使用 wrapping_add 避免溢出）
+            // 递增版本号
             cache.version = cache.version.wrapping_add(1);
+            // 通过借用快速拿到 tx 并克隆，随后立即释放对 cache 的不可变借用
+            let active_tx = cache.update_tx.as_ref().and_then(|tx| {
+                if tx.receiver_count() == 0 {
+                    None // 没订阅者了
+                } else {
+                    Some(tx.clone()) // 还有订阅者，克隆一个通道发送端
+                }
+            });
+            // 根据 active_tx 的状态来分流
+            match active_tx {
+                None => {
+                    // 进到这里有两种可能：
+                    // a) 本来 update_tx 就是 None
+                    // b) receiver_count 为 0
+                    // 如果原本有 tx 但没订阅者了，顺手把它抹掉清理掉
+                    if cache.update_tx.is_some() {
+                        cache.update_tx = None;
+                    }
+                }
+                Some(tx) => {
+                    // 此时 tx 是一个独立的变量，与 cache 没有任何借用瓜葛了！
+                    // 我们可以安全地以可变借用访问 cache 里的所有字段
+                    let mut points: Vec<DataPoint> = cache.latest_by_id.values().cloned().collect();
+                    points.sort_by_key(|point| point.id);
+                    let snapshot: Arc<[DataPoint]> = Arc::from(points.into_boxed_slice());
 
-            // 如果有订阅者，构建新快照并发送更新
-            if cache.update_tx.is_some() {
-                let mut points: Vec<DataPoint> = cache.latest_by_id.values().cloned().collect();
-                points.sort_by_key(|point| point.id);
-                let snapshot: Arc<[DataPoint]> = Arc::from(points.into_boxed_slice());
+                    // 更新缓存快照（尽情修改，不会报错）
+                    cache.snapshot = snapshot.clone();
+                    cache.snapshot_version = cache.version;
 
-                // 更新缓存的快照
-                cache.snapshot = snapshot.clone();
-                cache.snapshot_version = cache.version;
-
-                // 发送更新（忽略发送失败，说明没有活跃的订阅者）
-                if let Some(tx) = &cache.update_tx {
+                    // 发送更新
                     let _ = tx.send(snapshot);
                 }
             }

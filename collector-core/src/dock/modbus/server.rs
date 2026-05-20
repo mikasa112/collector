@@ -272,7 +272,7 @@ async fn dispatch_write(
         WriteRequest::SingleRegister(addr, value) => {
             if let Some(&ci) = holding_index.get(&addr) {
                 let cfg = &configs[ci];
-                tracing::info!("[北向Modbus] 写寄存器: {}", cfg.point_source.point_key);
+                tracing::info!("[北向Modbus] ↓ {}", cfg.name);
                 let _ = center
                     .dispatch(
                         &cfg.point_source.source,
@@ -284,7 +284,7 @@ async fn dispatch_write(
         WriteRequest::SingleCoil(addr, value) => {
             if let Some(&ci) = coil_index.get(&addr) {
                 let cfg = &configs[ci];
-                tracing::info!("[北向Modbus] 写线圈: {}", cfg.point_source.point_key);
+                tracing::info!("[北向Modbus] ↓ {}", cfg.name);
                 let _ = center
                     .dispatch(
                         &cfg.point_source.source,
@@ -300,7 +300,7 @@ async fn dispatch_write(
                 let a = addr.saturating_add(offset as u16);
                 if let Some(&ci) = holding_index.get(&a) {
                     let cfg = &configs[ci];
-                    tracing::info!("[北向Modbus] 写多寄存器: {}", cfg.point_source.point_key);
+                    tracing::info!("[北向Modbus] ↓ {}", cfg.name);
                     let _ = center
                         .dispatch(
                             &cfg.point_source.source,
@@ -315,7 +315,7 @@ async fn dispatch_write(
                 let a = addr.saturating_add(offset as u16);
                 if let Some(&ci) = coil_index.get(&a) {
                     let cfg = &configs[ci];
-                    tracing::info!("[北向Modbus] 写多线圈: {}", cfg.point_source.point_key);
+                    tracing::info!("[北向Modbus] ↓ {}", cfg.name);
                     let _ = center
                         .dispatch(&cfg.point_source.source, vec![down!(id: cfg.point_source.point_id, cfg.restore_val(u16::from(value)))])
                         .await;
