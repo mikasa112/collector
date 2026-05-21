@@ -1,9 +1,4 @@
-use std::{
-    collections::HashMap,
-    net::SocketAddr,
-    path::Path,
-    sync::Arc,
-};
+use std::{collections::HashMap, net::SocketAddr, path::Path, sync::Arc};
 
 use parking_lot::RwLock;
 
@@ -172,21 +167,27 @@ impl ModbusServer {
 
         // 为每个设备启动订阅任务，监听 DataCenter 更新并写入寄存器表
         for (dev, point_index) in by_dev {
-            let Some(mut rx) = self.center.subscribe(&dev) else {
-                tracing::warn!("[北向Modbus] 订阅 {} 失败，设备尚未注册", dev);
-                continue;
-            };
             let state = state.clone();
             let configs = self.configs.clone();
             let shutdown = shutdown.clone();
+            let center = self.center.clone();
             tokio::spawn(async move {
+                // 等待设备注册到 DataCenter，期间每 500ms 重试一次
+                let mut rx = loop {
+                    if let Some(rx) = center.subscribe(&dev) {
+                        break rx;
+                    }
+                    tokio::select! {
+                        _ = shutdown.wait_for_shutdown() => return,
+                        _ = tokio::time::sleep(tokio::time::Duration::from_millis(1000)) => {}
+                    }
+                };
                 loop {
                     tokio::select! {
                         _ = shutdown.wait_for_shutdown() => break,
                         changed = rx.changed() => {
                             if changed.is_err() { break; }
                             let snapshot = rx.borrow_and_update().clone();
-                            // 在锁外构建新表，写锁只持有 Arc 交换的瞬间
                             let current = state.table.read().clone();
                             let mut new_tbl = (*current).clone();
                             for point in snapshot.iter() {
