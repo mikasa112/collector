@@ -170,6 +170,8 @@ impl Blocks {
                     reads.push(BlockRead::InputRegisters(data));
                 }
             }
+            // 设备需要处理时间，连续请求之间需要间隔
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
         }
         Ok(reads)
     }

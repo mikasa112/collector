@@ -24,7 +24,7 @@ dashmap = "6.1.0"
 tokio-modbus = { version = "0.16.1", features = ["rtu", "tcp", "server", "rtu-server", "tcp-server"] }
 tokio-serial = "5.4.5"
 calamine = "0.32.0"
-gpio-cdev = { version = "0.6.0", features = ["async-tokio"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 socketcan = { version = "3.5.0", features = ["tokio"] }
+gpio-cdev = { version = "0.6.0", features = ["async-tokio"] }

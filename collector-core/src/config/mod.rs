@@ -76,8 +76,8 @@ async fn load_protocol_configs(dev: &Device) -> ProtocolConfigs {
             );
             ProtocolConfigs::None
         }
-        ComType::IEC104 => unimplemented!(),
-        ComType::IEC61850 => unimplemented!(),
+        ComType::IEC104 => ProtocolConfigs::None,
+        ComType::IEC61850 => ProtocolConfigs::None,
         #[cfg(target_os = "linux")]
         ComType::GPIO => {
             load_configs(

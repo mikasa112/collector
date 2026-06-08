@@ -8,7 +8,7 @@ use crate::{
 #[cfg(target_os = "linux")]
 pub(crate) mod can_dev;
 pub(crate) mod dev_config;
-// #[cfg(target_arch = "aarch64")]
+#[cfg(target_os = "linux")]
 pub(crate) mod gpio;
 pub mod manager;
 pub(crate) mod modbus_dev;

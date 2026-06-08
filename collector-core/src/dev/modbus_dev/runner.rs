@@ -146,15 +146,20 @@ impl ModbusRunner {
                 }
                 //读取
                 _ = ticker.tick() => {
-                    match self.read_all(ctx, blocks).await {
-                        Ok(entries) => {
+                    match time::timeout(self.timeout(), self.read_all(ctx, blocks)).await {
+                        Ok(Ok(entries)) => {
                             if !entries.is_empty() {
                                 //上送数据
                                 self.center.ingest(&self.id, entries);
                             }
                         }
-                        Err(err) => {
+                        Ok(Err(err)) => {
                             warn!("[{}] 读取失败, 准备重连: {}", self.id, err);
+                            self.report_comm_status(0);
+                            return;
+                        }
+                        Err(_) => {
+                            warn!("[{}] 读取超时, 准备重连", self.id);
                             self.report_comm_status(0);
                             return;
                         }

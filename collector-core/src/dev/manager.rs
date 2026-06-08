@@ -105,8 +105,8 @@ fn init_device(
         config::ComType::CAN => Box::new(CanDev::new(dev, center)?),
         #[cfg(not(target_os = "linux"))]
         config::ComType::CAN => return Err(DeviceError::UnSupportedComType),
-        config::ComType::IEC104 => todo!(),
-        config::ComType::IEC61850 => todo!(),
+        config::ComType::IEC104 => return Err(DeviceError::UnSupportedComType),
+        config::ComType::IEC61850 => return Err(DeviceError::UnSupportedComType),
         #[cfg(target_os = "linux")]
         config::ComType::GPIO => Box::new(GpioDev::new(dev, center)?),
         #[cfg(not(target_os = "linux"))]

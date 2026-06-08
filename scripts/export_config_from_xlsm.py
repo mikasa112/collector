@@ -16,7 +16,9 @@ NS = {
 
 
 def main() -> int:
-    source = Path(sys.argv[1]) if len(sys.argv) > 1 else Path("config/配置_v2.0.xlsx")
+    source = (
+        Path(sys.argv[1]) if len(sys.argv) > 1 else Path("config/鸿合_配置_v2.0.xlsx")
+    )
     target = Path(sys.argv[2]) if len(sys.argv) > 2 else source.with_name("config.json")
 
     workbook = XlsmWorkbook(source)
