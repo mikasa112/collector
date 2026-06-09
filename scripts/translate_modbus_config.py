@@ -151,6 +151,6 @@ def translate_xlsx(input_file, output_file):
 
 
 if __name__ == "__main__":
-    input_xlsx = "./config/PCS_125_英博.xlsx"
-    output_xlsx = "./config/PCS_125_英博_trans.xlsx"
+    input_xlsx = "./config/BMS_鸿合国轩.xlsx"
+    output_xlsx = "./config/BMS_鸿合国轩_trans.xlsx"
     translate_xlsx(input_file=input_xlsx, output_file=output_xlsx)
