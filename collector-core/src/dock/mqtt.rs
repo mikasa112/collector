@@ -2,7 +2,6 @@ use std::time::Duration;
 
 use bytes::Bytes;
 use rumqttc::{AsyncClient, ClientError, Event, MqttOptions, Packet, QoS};
-use std::collections::BTreeMap;
 use tokio::{
     select,
     sync::{Mutex, watch},
@@ -14,7 +13,7 @@ use tracing::{error, info};
 use crate::{
     center::SharedPointCenter,
     config::{MqttRoute, Project},
-    core::point::{DataPoint, DownDataPoint, Val},
+    core::point::{DownDataPoint, Val},
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -31,8 +30,6 @@ enum MqttReceiveError {
     PayloadType,
     #[error("invalid mqtt topic: {0}")]
     Topic(String),
-    #[error("invalid point value for id {point_id}")]
-    PointValue { point_id: u32 },
 }
 
 pub struct MqttClient {
@@ -197,60 +194,41 @@ async fn handle_incoming_publish(
     if points.is_empty() {
         return Ok(());
     }
-    // 将 DataPoint 转换为 DispatchPoint（使用 Key 匹配）
-    let dispatch_points: Vec<DownDataPoint> = points
-        .into_iter()
-        .map(|p| DownDataPoint::by_key(p.key, p.value))
-        .collect();
-    if let Err(e) = center.dispatch(device_id, dispatch_points).await {
+    if let Err(e) = center.dispatch(&device_id, points).await {
         error!("mqtt dispatch error on topic {}: {}", topic, e);
     }
     Ok(())
 }
 
-fn parse_device_id_from_topic(topic: &str) -> Result<&str, MqttReceiveError> {
-    topic
-        .split('/')
-        .filter(|segment| !segment.is_empty())
-        .nth_back(2)
-        .ok_or_else(|| MqttReceiveError::Topic(topic.to_owned()))
+fn parse_device_id_from_topic(topic: &str) -> Result<String, MqttReceiveError> {
+    let segments: Vec<&str> = topic.split('/').filter(|s| !s.is_empty()).collect();
+    let len = segments.len();
+    if len < 3 {
+        return Err(MqttReceiveError::Topic(topic.to_owned()));
+    }
+    let prefix = segments[len - 3];
+    let index: u32 = segments[len - 2]
+        .parse()
+        .map_err(|_| MqttReceiveError::Topic(topic.to_owned()))?;
+    Ok(format!("{}{}", prefix, index + 1))
 }
 
-fn parse_downlink_payload(raw: serde_json::Value) -> Result<Vec<DataPoint>, MqttReceiveError> {
+fn parse_downlink_payload(raw: serde_json::Value) -> Result<Vec<DownDataPoint>, MqttReceiveError> {
     let raw_object = match raw {
         serde_json::Value::Object(map) => map,
         _ => return Err(MqttReceiveError::PayloadType),
     };
-    let mut points: BTreeMap<u32, DataPoint> = BTreeMap::new();
-    insert_points_from_map(&mut points, raw_object)?;
-
-    Ok(points.into_values().collect())
-}
-
-fn insert_points_from_map(
-    points: &mut BTreeMap<u32, DataPoint>,
-    map: serde_json::Map<String, serde_json::Value>,
-) -> Result<(), MqttReceiveError> {
-    for (id, value) in map {
-        let Ok(id) = id.parse::<u32>() else {
-            continue;
+    let mut points = Vec::with_capacity(raw_object.len());
+    for (k, v) in raw_object {
+        let value = json_to_val(v).ok_or(MqttReceiveError::PayloadType)?;
+        let point = if let Ok(id) = k.parse::<u32>() {
+            DownDataPoint::by_id(id, value)
+        } else {
+            DownDataPoint::by_key(String::leak(k), value)
         };
-        let value = json_to_val(value).ok_or(MqttReceiveError::PointValue { point_id: id })?;
-        points.insert(
-            id,
-            DataPoint {
-                id,
-                name: "",
-                value,
-                key: "",
-                translator: None,
-                warn_bits: None,
-                status_word: None,
-            },
-        );
+        points.push(point);
     }
-
-    Ok(())
+    Ok(points)
 }
 
 fn json_to_val(value: serde_json::Value) -> Option<Val> {
@@ -337,12 +315,12 @@ mod tests {
 
     #[test]
     fn parses_device_id_from_three_segment_topic() {
-        assert_eq!(parse_device_id_from_topic("/pcs/0/yt").unwrap(), "pcs");
+        assert_eq!(parse_device_id_from_topic("/pcs/0/yt").unwrap(), "pcs1");
     }
 
     #[test]
     fn parses_device_id_from_four_segment_topic() {
-        assert_eq!(parse_device_id_from_topic("/asw/pcs/0/yt").unwrap(), "pcs");
+        assert_eq!(parse_device_id_from_topic("/asw/pcs/0/yt").unwrap(), "pcs1");
     }
 
     #[test]

@@ -2,6 +2,7 @@ use collector_core::shutdown::ShutdownManager;
 
 mod action;
 mod core;
+mod lua;
 
 pub struct Engine {}
 
