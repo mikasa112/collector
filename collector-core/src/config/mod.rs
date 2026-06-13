@@ -177,6 +177,8 @@ pub struct DeviceConfig {
     pub register_file: Option<String>,
     pub interval: Option<u64>,
     pub timeout: Option<u64>,
+    pub request_interval: Option<u64>,
+    pub max_gap: Option<u16>,
     pub ip: Option<String>,
     pub port: Option<u16>,
     pub slave: Option<u8>,

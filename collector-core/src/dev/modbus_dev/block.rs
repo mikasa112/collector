@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::time::Duration;
 
 use tokio_modbus::client::{Context, Reader};
 
@@ -31,19 +32,27 @@ impl TryFrom<Vec<ModbusConfig>> for Blocks {
     type Error = BuildBlocksError;
 
     fn try_from(value: Vec<ModbusConfig>) -> Result<Self, Self::Error> {
+        Blocks::build(value, 0)
+    }
+}
+
+impl Blocks {
+    pub(super) fn build(
+        configs: Vec<ModbusConfig>,
+        max_gap: u16,
+    ) -> Result<Self, BuildBlocksError> {
         // 1) 按 RegisterType 分组
         let mut groups: BTreeMap<RegisterType, Vec<ModbusConfig>> = BTreeMap::new();
-        for cfg in value {
+        for cfg in configs {
             groups.entry(cfg.register_type).or_default().push(cfg);
         }
 
         let mut blocks: Vec<Block> = Vec::new();
         let mut logical_regions: Vec<LogicalRegion> = Vec::new();
 
-        // 2) 每组：排序 + 连续合并 + 长度限制
+        // 2) 每组：排序 + 连续合并（允许 gap ≤ max_gap）+ 长度限制
         for (rt, mut pts) in groups {
             pts.sort_by_key(|it| it.register_address);
-            //不同的寄存器允许连续读取的长度不同
             let max_len: u16 = match rt {
                 RegisterType::Coils | RegisterType::DiscreteInputs => 2000,
                 RegisterType::HoldingRegisters | RegisterType::InputRegisters => 120,
@@ -85,9 +94,17 @@ impl TryFrom<Vec<ModbusConfig>> for Blocks {
                 while remaining > 0 {
                     let mut appendable = false;
                     if let Some(block) = current_block.as_ref() {
+                        let block_end = block.start.saturating_add(block.len);
+                        let gap = next_addr.saturating_sub(block_end);
                         appendable = block.register_type == rt
-                            && block.start.saturating_add(block.len) == next_addr
-                            && block.len < max_len;
+                            && next_addr >= block_end
+                            && gap <= max_gap
+                            && block.len.saturating_add(gap) < max_len;
+                        if appendable && gap > 0 {
+                            // 用 gap 填充 block 长度，读出的数据会被忽略（无对应 region）
+                            current_block.as_mut().unwrap().len =
+                                block.len.saturating_add(gap);
+                        }
                     }
 
                     if !appendable {
@@ -144,11 +161,26 @@ pub(super) enum BlockRead {
 }
 
 impl Blocks {
+    /// 返回所有 block 的摘要，用于日志排查
+    pub(super) fn describe(&self) -> String {
+        self.blocks
+            .iter()
+            .map(|b| {
+                format!(
+                    "{:?}[{:#06x}..+{}]",
+                    b.register_type, b.start, b.len
+                )
+            })
+            .collect::<Vec<_>>()
+            .join(", ")
+    }
+
     /// 读取四遥的值
     /// # 输入
     pub(super) async fn request(
         &self,
         ctx: &mut Context,
+        request_interval: Duration,
     ) -> Result<Vec<BlockRead>, ModbusDevError> {
         let mut reads = Vec::with_capacity(self.blocks.len());
         for block in &self.blocks {
@@ -170,8 +202,9 @@ impl Blocks {
                     reads.push(BlockRead::InputRegisters(data));
                 }
             }
-            // 设备需要处理时间，连续请求之间需要间隔
-            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+            if !request_interval.is_zero() {
+                tokio::time::sleep(request_interval).await;
+            }
         }
         Ok(reads)
     }

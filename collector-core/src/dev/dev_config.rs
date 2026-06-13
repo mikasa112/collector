@@ -18,6 +18,8 @@ pub struct ModbusTcpConfig {
     pub port: u16,
     pub interval: u64,
     pub timeout: u64,
+    pub request_interval: u64,
+    pub max_gap: u16,
 }
 
 impl TryFrom<DeviceConfig> for ModbusTcpConfig {
@@ -42,12 +44,16 @@ impl TryFrom<DeviceConfig> for ModbusTcpConfig {
         if ip.parse::<IpAddr>().is_err() {
             return Err(ModbusTcpConfError::InvalidIp(ip));
         }
+        let request_interval = value.request_interval.unwrap_or(0);
+        let max_gap = value.max_gap.unwrap_or(0);
         Ok(ModbusTcpConfig {
             slave,
             ip,
             port,
             interval,
             timeout,
+            request_interval,
+            max_gap,
         })
     }
 }
@@ -68,6 +74,8 @@ pub struct ModbusRtuConfig {
     pub stop_bits: u8,
     pub interval: u64,
     pub timeout: u64,
+    pub request_interval: u64,
+    pub max_gap: u16,
 }
 
 impl TryFrom<DeviceConfig> for ModbusRtuConfig {
@@ -98,6 +106,8 @@ impl TryFrom<DeviceConfig> for ModbusRtuConfig {
         let Some(timeout) = value.timeout else {
             return Err(ModbusRtuConfError::ValueNotNone(String::from("超时时间")));
         };
+        let request_interval = value.request_interval.unwrap_or(0);
+        let max_gap = value.max_gap.unwrap_or(0);
         Ok(ModbusRtuConfig {
             slave,
             serial_tty,
@@ -107,6 +117,8 @@ impl TryFrom<DeviceConfig> for ModbusRtuConfig {
             stop_bits,
             interval,
             timeout,
+            request_interval,
+            max_gap,
         })
     }
 }

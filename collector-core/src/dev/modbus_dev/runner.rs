@@ -73,6 +73,21 @@ impl ModbusRunner {
         }
     }
 
+    /// 获取每次 block 请求之间的间隔时间
+    fn request_interval(&self) -> Duration {
+        match &self.protocol {
+            Protocol::Tcp(cfg) => Duration::from_millis(cfg.request_interval),
+            Protocol::Rtu(cfg) => Duration::from_millis(cfg.request_interval),
+        }
+    }
+
+    fn max_gap(&self) -> u16 {
+        match &self.protocol {
+            Protocol::Tcp(cfg) => cfg.max_gap,
+            Protocol::Rtu(cfg) => cfg.max_gap,
+        }
+    }
+
     /// 获取MODBUS的连接
     /// # 输入
     /// - `self`: 当前的Modbus设备实例
@@ -159,7 +174,7 @@ impl ModbusRunner {
                             return;
                         }
                         Err(_) => {
-                            warn!("[{}] 读取超时, 准备重连", self.id);
+                            warn!("[{}] 读取超时, 块信息: {}, 准备重连", self.id, blocks.describe());
                             self.report_comm_status(0);
                             return;
                         }
@@ -191,7 +206,7 @@ impl ModbusRunner {
         let cfg_map = build_cfg_map(&self.configs);
         let key_map = build_key_map(&self.configs);
         //构建连续地址的寄存器块
-        let blocks = match Blocks::try_from(self.configs.clone()) {
+        let blocks = match Blocks::build(self.configs.clone(), self.max_gap()) {
             Ok(blocks) => blocks,
             Err(err) => {
                 warn!("[{}] 构建读取块失败: {}", self.id, err);
@@ -248,7 +263,7 @@ impl ModbusRunner {
         ctx: &mut Context,
         blocks: &Blocks,
     ) -> Result<Vec<DataPoint>, ModbusDevError> {
-        let reads = blocks.request(ctx).await?;
+        let reads = blocks.request(ctx, self.request_interval()).await?;
         let parsed = blocks.parse(&reads);
         Ok(parsed)
     }
