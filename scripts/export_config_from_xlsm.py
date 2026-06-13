@@ -182,6 +182,8 @@ def build_device_config(row: dict[str, str]) -> dict[str, Any]:
         "stopBits": "stop_bits",
         "interface": "interface",
         "desc": "desc",
+        "requestInterval": "request_interval",
+        "maxGap": "max_gap",
     }
     return {
         out_key: normalize_scalar(row.get(src_key, ""))

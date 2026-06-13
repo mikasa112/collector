@@ -32,7 +32,9 @@
         "parity": null,
         "stop_bits": null,
         "interface": null,
-        "desc": null
+        "desc": null,
+        "request_interval": 50,
+        "max_gap": null
       }
     },
     "pcs2": {
@@ -54,7 +56,9 @@
         "parity": null,
         "stop_bits": null,
         "interface": null,
-        "desc": null
+        "desc": null,
+        "request_interval": 50,
+        "max_gap": null
       }
     },
     "pcs3": {
@@ -76,7 +80,9 @@
         "parity": null,
         "stop_bits": null,
         "interface": null,
-        "desc": null
+        "desc": null,
+        "request_interval": 50,
+        "max_gap": null
       }
     },
     "pcs4": {
@@ -98,7 +104,9 @@
         "parity": null,
         "stop_bits": null,
         "interface": null,
-        "desc": null
+        "desc": null,
+        "request_interval": 50,
+        "max_gap": null
       }
     },
     "bcu1": {
@@ -109,9 +117,9 @@
         "type": "BCU",
         "com_type": "ModbusTCP",
         "register_file": "./config/BMS_鸿合国轩.xlsx",
-        "interval": 2000,
-        "timeout": 1000,
-        "ip": "192.168.1.104",
+        "interval": 1000,
+        "timeout": 5000,
+        "ip": "192.168.0.6",
         "port": 502,
         "slave": 1,
         "serial_tty": null,
@@ -120,7 +128,9 @@
         "parity": null,
         "stop_bits": null,
         "interface": null,
-        "desc": null
+        "desc": null,
+        "request_interval": null,
+        "max_gap": 5
       }
     },
     "bcu2": {
@@ -131,9 +141,9 @@
         "type": "BCU",
         "com_type": "ModbusTCP",
         "register_file": "./config/BMS_鸿合国轩.xlsx",
-        "interval": 2000,
-        "timeout": 1000,
-        "ip": "192.168.1.105",
+        "interval": 1000,
+        "timeout": 5000,
+        "ip": "192.168.0.7",
         "port": 502,
         "slave": 1,
         "serial_tty": null,
@@ -142,7 +152,9 @@
         "parity": null,
         "stop_bits": null,
         "interface": null,
-        "desc": null
+        "desc": null,
+        "request_interval": null,
+        "max_gap": 5
       }
     },
     "bcu3": {
@@ -153,9 +165,9 @@
         "type": "BCU",
         "com_type": "ModbusTCP",
         "register_file": "./config/BMS_鸿合国轩.xlsx",
-        "interval": 2000,
-        "timeout": 1000,
-        "ip": "192.168.1.106",
+        "interval": 1000,
+        "timeout": 5000,
+        "ip": "192.168.0.8",
         "port": 502,
         "slave": 1,
         "serial_tty": null,
@@ -164,7 +176,9 @@
         "parity": null,
         "stop_bits": null,
         "interface": null,
-        "desc": null
+        "desc": null,
+        "request_interval": null,
+        "max_gap": 5
       }
     },
     "bcu4": {
@@ -175,9 +189,9 @@
         "type": "BCU",
         "com_type": "ModbusTCP",
         "register_file": "./config/BMS_鸿合国轩.xlsx",
-        "interval": 2000,
-        "timeout": 1000,
-        "ip": "192.168.1.107",
+        "interval": 1000,
+        "timeout": 5000,
+        "ip": "192.168.0.9",
         "port": 502,
         "slave": 1,
         "serial_tty": null,
@@ -186,7 +200,9 @@
         "parity": null,
         "stop_bits": null,
         "interface": null,
-        "desc": null
+        "desc": null,
+        "request_interval": null,
+        "max_gap": 5
       }
     },
     "crd": {
@@ -199,8 +215,8 @@
         "register_file": "./config/测控柜_鸿合.xlsx",
         "interval": null,
         "timeout": null,
-        "ip": "192.168.1.108",
-        "port": 502,
+        "ip": "192.168.0.5",
+        "port": 2404,
         "slave": null,
         "serial_tty": null,
         "baud_rate": null,
@@ -208,7 +224,9 @@
         "parity": null,
         "stop_bits": null,
         "interface": null,
-        "desc": null
+        "desc": null,
+        "request_interval": null,
+        "max_gap": null
       }
     }
   },
@@ -1199,37 +1217,43 @@
         {
           "topic": "/pds/bank/0/cell/0/yc",
           "point_ids": [
-            500506
+            500,
+            506
           ]
         },
         {
           "topic": "/pds/bank/0/cell/1/yc",
           "point_ids": [
-            501507
+            501,
+            507
           ]
         },
         {
           "topic": "/pds/bank/0/cell/2/yc",
           "point_ids": [
-            502508
+            502,
+            508
           ]
         },
         {
           "topic": "/pds/bank/0/cell/3/yc",
           "point_ids": [
-            503509
+            503,
+            509
           ]
         },
         {
           "topic": "/pds/bank/0/cell/4/yc",
           "point_ids": [
-            504510
+            504,
+            510
           ]
         },
         {
           "topic": "/pds/bank/0/cell/5/yc",
           "point_ids": [
-            505511
+            505,
+            511
           ]
         },
         {
@@ -2468,37 +2492,43 @@
         {
           "topic": "/pds/bank/1/cell/0/yc",
           "point_ids": [
-            500506
+            500,
+            506
           ]
         },
         {
           "topic": "/pds/bank/1/cell/1/yc",
           "point_ids": [
-            501507
+            501,
+            507
           ]
         },
         {
           "topic": "/pds/bank/1/cell/2/yc",
           "point_ids": [
-            502508
+            502,
+            508
           ]
         },
         {
           "topic": "/pds/bank/1/cell/3/yc",
           "point_ids": [
-            503509
+            503,
+            509
           ]
         },
         {
           "topic": "/pds/bank/1/cell/4/yc",
           "point_ids": [
-            504510
+            504,
+            510
           ]
         },
         {
           "topic": "/pds/bank/1/cell/5/yc",
           "point_ids": [
-            505511
+            505,
+            511
           ]
         },
         {
@@ -3737,37 +3767,43 @@
         {
           "topic": "/pds/bank/2/cell/0/yc",
           "point_ids": [
-            500506
+            500,
+            506
           ]
         },
         {
           "topic": "/pds/bank/2/cell/1/yc",
           "point_ids": [
-            501507
+            501,
+            507
           ]
         },
         {
           "topic": "/pds/bank/2/cell/2/yc",
           "point_ids": [
-            502508
+            502,
+            508
           ]
         },
         {
           "topic": "/pds/bank/2/cell/3/yc",
           "point_ids": [
-            503509
+            503,
+            509
           ]
         },
         {
           "topic": "/pds/bank/2/cell/4/yc",
           "point_ids": [
-            504510
+            504,
+            510
           ]
         },
         {
           "topic": "/pds/bank/2/cell/5/yc",
           "point_ids": [
-            505511
+            505,
+            511
           ]
         },
         {
@@ -5006,37 +5042,43 @@
         {
           "topic": "/pds/bank/3/cell/0/yc",
           "point_ids": [
-            500506
+            500,
+            506
           ]
         },
         {
           "topic": "/pds/bank/3/cell/1/yc",
           "point_ids": [
-            501507
+            501,
+            507
           ]
         },
         {
           "topic": "/pds/bank/3/cell/2/yc",
           "point_ids": [
-            502508
+            502,
+            508
           ]
         },
         {
           "topic": "/pds/bank/3/cell/3/yc",
           "point_ids": [
-            503509
+            503,
+            509
           ]
         },
         {
           "topic": "/pds/bank/3/cell/4/yc",
           "point_ids": [
-            504510
+            504,
+            510
           ]
         },
         {
           "topic": "/pds/bank/3/cell/5/yc",
           "point_ids": [
-            505511
+            505,
+            511
           ]
         },
         {
