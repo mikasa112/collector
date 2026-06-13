@@ -102,8 +102,7 @@ impl Blocks {
                             && block.len.saturating_add(gap) < max_len;
                         if appendable && gap > 0 {
                             // 用 gap 填充 block 长度，读出的数据会被忽略（无对应 region）
-                            current_block.as_mut().unwrap().len =
-                                block.len.saturating_add(gap);
+                            current_block.as_mut().unwrap().len = block.len.saturating_add(gap);
                         }
                     }
 
@@ -165,12 +164,7 @@ impl Blocks {
     pub(super) fn describe(&self) -> String {
         self.blocks
             .iter()
-            .map(|b| {
-                format!(
-                    "{:?}[{:#06x}..+{}]",
-                    b.register_type, b.start, b.len
-                )
-            })
+            .map(|b| format!("{:?}[{:#06x}..+{}]", b.register_type, b.start, b.len))
             .collect::<Vec<_>>()
             .join(", ")
     }
