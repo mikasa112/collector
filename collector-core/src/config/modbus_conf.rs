@@ -210,13 +210,7 @@ impl ModbusConfig {
         if !quantity.is_multiple_of(item_width) {
             return Err(anyhow::Error::msg("数量与数据类型不匹配"));
         }
-        if matches!(
-            register_type,
-            RegisterType::Coils | RegisterType::HoldingRegisters
-        ) && quantity != item_width
-        {
-            return Err(anyhow::Error::msg("可写寄存器点位只能配置为标量"));
-        }
+
         let byte_order = ByteOrder::try_from(row[8].get_string()).ok();
         let scale = required_f64(row, 9, "缩放")?;
         let offset = required_f64(row, 10, "偏移量")?;
