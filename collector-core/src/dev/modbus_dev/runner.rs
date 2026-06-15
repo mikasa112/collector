@@ -148,10 +148,8 @@ impl ModbusRunner {
     ) {
         self.state.store(&self.id, LifecycleState::Running);
         self.report_comm_status(1);
-        //读取任务的定时器
         let mut ticker = time::interval(self.poll_interval());
         loop {
-            let rx = &mut self.rx;
             tokio::select! {
                 _ = stop_rx.changed() => {
                     if Self::stop_requested(stop_rx) {
@@ -159,44 +157,112 @@ impl ModbusRunner {
                         return;
                     }
                 }
-                //读取
                 _ = ticker.tick() => {
-                    match time::timeout(self.timeout(), self.read_all(ctx, blocks)).await {
-                        Ok(Ok(entries)) => {
-                            if !entries.is_empty() {
-                                //上送数据
-                                self.center.ingest(&self.id, entries);
-                            }
-                        }
-                        Ok(Err(err)) => {
-                            warn!("[{}] 读取失败, 准备重连: {}", self.id, err);
+                    if let Err(reconnect) = self.read_and_interleave_downlinks(ctx, blocks, cfg_map, key_map).await {
+                        if reconnect {
                             self.report_comm_status(0);
-                            return;
                         }
-                        Err(_) => {
-                            warn!("[{}] 读取超时, 块信息: {}, 准备重连", self.id, blocks.describe());
-                            self.report_comm_status(0);
-                            return;
-                        }
+                        return;
                     }
                 }
-                //下发
-                msg = rx.recv() => {
-                    let Some(entries) = msg else {
+            }
+        }
+    }
+
+    /// 逐 block 读取，每个 block 完成后排空下发队列，实现下发低延迟插入
+    /// 返回 Err(true) 表示需要重连，Err(false) 表示 channel 关闭需停止
+    async fn read_and_interleave_downlinks(
+        &mut self,
+        ctx: &mut Context,
+        blocks: &Blocks,
+        cfg_map: &HashMap<PointId, ModbusConfig>,
+        key_map: &HashMap<&'static str, PointId>,
+    ) -> Result<(), bool> {
+        let request_interval = self.request_interval();
+        let timeout = self.timeout();
+        let mut reads = Vec::with_capacity(blocks.block_count());
+
+        for i in 0..blocks.block_count() {
+            // 读取单个 block（带超时）
+            match time::timeout(timeout, blocks.request_one(ctx, i)).await {
+                Ok(Ok(read)) => reads.push(read),
+                Ok(Err(err)) => {
+                    warn!("[{}] 读取失败, 准备重连: {}", self.id, err);
+                    return Err(true);
+                }
+                Err(_) => {
+                    warn!("[{}] 读取超时, 块信息: {}, 准备重连", self.id, blocks.describe());
+                    return Err(true);
+                }
+            }
+
+            // block 间隙：排空下发队列，同时等待 request_interval
+            if let Err(reconnect) = self.drain_downlinks(ctx, cfg_map, key_map, request_interval).await {
+                return Err(reconnect);
+            }
+        }
+
+        let entries = blocks.parse(&reads);
+        if !entries.is_empty() {
+            self.center.ingest(&self.id, entries);
+        }
+        Ok(())
+    }
+
+    /// 在 request_interval 时间窗口内，尽量排空下发 channel
+    /// 返回 Err(true) 表示下发失败需重连，Err(false) 表示 channel 关闭需停止
+    async fn drain_downlinks(
+        &mut self,
+        ctx: &mut Context,
+        cfg_map: &HashMap<PointId, ModbusConfig>,
+        key_map: &HashMap<&'static str, PointId>,
+        interval: Duration,
+    ) -> Result<(), bool> {
+        let deadline = tokio::time::Instant::now() + interval;
+        loop {
+            // try_recv 先排空已有的，没有则等到 interval 结束
+            let msg = if interval.is_zero() {
+                match self.rx.try_recv() {
+                    Ok(entries) => Some(entries),
+                    Err(tokio::sync::mpsc::error::TryRecvError::Empty) => None,
+                    Err(tokio::sync::mpsc::error::TryRecvError::Disconnected) => {
                         self.report_comm_status(0);
                         self.state.store(&self.id, LifecycleState::Stopped);
-                        return;
-                    };
-
-                    let items: Vec<String> = entries.iter().map(|e| format!("{}: {}", resolve_modbus_name(&e.point, cfg_map), e.value)).collect();
-                    info!("[{}] ↓: {}", self.id, items.join(", "));
-                    let plan = WritePlan::build(entries, cfg_map, key_map, &self.id);
-                    if let Err(err) = plan.apply(ctx).await {
-                        warn!("[{}] 下发失败, 准备重连: {}", self.id, err);
-                        self.report_comm_status(0);
-                        return;
+                        return Err(false);
                     }
                 }
+            } else {
+                tokio::select! {
+                    msg = self.rx.recv() => {
+                        match msg {
+                            Some(entries) => Some(entries),
+                            None => {
+                                self.report_comm_status(0);
+                                self.state.store(&self.id, LifecycleState::Stopped);
+                                return Err(false);
+                            }
+                        }
+                    }
+                    _ = time::sleep_until(deadline) => None,
+                }
+            };
+
+            let Some(entries) = msg else {
+                return Ok(());
+            };
+
+            let items: Vec<String> = entries.iter().map(|e| format!("{}: {}", resolve_modbus_name(&e.point, cfg_map), e.value)).collect();
+            info!("[{}] ↓: {}", self.id, items.join(", "));
+            let plan = WritePlan::build(entries, cfg_map, key_map, &self.id);
+            if let Err(err) = plan.apply(ctx).await {
+                warn!("[{}] 下发失败, 准备重连: {}", self.id, err);
+                return Err(true);
+            }
+
+            // 下发完继续循环，用 try_recv 排空剩余积压
+            // 若 interval 已到就直接退出
+            if !interval.is_zero() && tokio::time::Instant::now() >= deadline {
+                return Ok(());
             }
         }
     }
@@ -258,15 +324,6 @@ impl ModbusRunner {
         }
     }
 
-    async fn read_all(
-        &self,
-        ctx: &mut Context,
-        blocks: &Blocks,
-    ) -> Result<Vec<DataPoint>, ModbusDevError> {
-        let reads = blocks.request(ctx, self.request_interval()).await?;
-        let parsed = blocks.parse(&reads);
-        Ok(parsed)
-    }
 }
 
 fn resolve_modbus_name<'a>(

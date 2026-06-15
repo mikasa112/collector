@@ -137,7 +137,7 @@ pub async fn cmd() {
             tokio::spawn(api_server.start(shutdown.clone()));
 
             // 启动 Lua 脚本引擎
-            let script_engine = ScriptEngine::new("lua_script", center.clone());
+            let script_engine = ScriptEngine::new("lua_scripts", center.clone());
             let script_token = shutdown.child_token();
             tokio::spawn(async move {
                 if let Err(err) = script_engine.run(script_token).await {

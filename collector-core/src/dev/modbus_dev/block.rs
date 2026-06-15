@@ -169,33 +169,49 @@ impl Blocks {
             .join(", ")
     }
 
+    /// 读取单个 block，不含 interval sleep
+    pub(super) async fn request_one(
+        &self,
+        ctx: &mut Context,
+        index: usize,
+    ) -> Result<BlockRead, ModbusDevError> {
+        let block = &self.blocks[index];
+        let read = match block.register_type {
+            RegisterType::Coils => {
+                let data = ctx.read_coils(block.start, block.len).await??;
+                BlockRead::Coils(data)
+            }
+            RegisterType::DiscreteInputs => {
+                let data = ctx.read_discrete_inputs(block.start, block.len).await??;
+                BlockRead::DiscreteInputs(data)
+            }
+            RegisterType::HoldingRegisters => {
+                let data = ctx.read_holding_registers(block.start, block.len).await??;
+                BlockRead::HoldingRegisters(data)
+            }
+            RegisterType::InputRegisters => {
+                let data = ctx.read_input_registers(block.start, block.len).await??;
+                BlockRead::InputRegisters(data)
+            }
+        };
+        Ok(read)
+    }
+
+    pub(super) fn block_count(&self) -> usize {
+        self.blocks.len()
+    }
+
     /// 读取四遥的值
     /// # 输入
+    #[allow(dead_code)]
     pub(super) async fn request(
         &self,
         ctx: &mut Context,
         request_interval: Duration,
     ) -> Result<Vec<BlockRead>, ModbusDevError> {
         let mut reads = Vec::with_capacity(self.blocks.len());
-        for block in &self.blocks {
-            match block.register_type {
-                RegisterType::Coils => {
-                    let data = ctx.read_coils(block.start, block.len).await??;
-                    reads.push(BlockRead::Coils(data));
-                }
-                RegisterType::DiscreteInputs => {
-                    let data = ctx.read_discrete_inputs(block.start, block.len).await??;
-                    reads.push(BlockRead::DiscreteInputs(data));
-                }
-                RegisterType::HoldingRegisters => {
-                    let data = ctx.read_holding_registers(block.start, block.len).await??;
-                    reads.push(BlockRead::HoldingRegisters(data));
-                }
-                RegisterType::InputRegisters => {
-                    let data = ctx.read_input_registers(block.start, block.len).await??;
-                    reads.push(BlockRead::InputRegisters(data));
-                }
-            }
+        for i in 0..self.blocks.len() {
+            reads.push(self.request_one(ctx, i).await?);
             if !request_interval.is_zero() {
                 tokio::time::sleep(request_interval).await;
             }
