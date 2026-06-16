@@ -266,6 +266,13 @@ impl PointCenter for DataCenter {
         cache.latest_by_id.get(&point_id).cloned()
     }
 
+    fn read_by_key(&self, dev_id: &str, key: &str) -> Option<DataPoint> {
+        let device = self.devices.get(dev_id)?;
+        let cache = Self::read_cache(&device, dev_id);
+        let point_id = cache.by_key.get(key).copied()?;
+        cache.latest_by_id.get(&point_id).cloned()
+    }
+
     /// 批量读取多个数据点
     ///
     /// # 返回

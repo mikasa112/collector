@@ -22,6 +22,8 @@ pub trait PointCenter: Send + Sync {
 
     fn read(&self, dev_id: &str, point_id: PointId) -> Option<DataPoint>;
 
+    fn read_by_key(&self, dev_id: &str, key: &str) -> Option<DataPoint>;
+
     fn read_many(&self, dev_id: &str, point_ids: &[PointId]) -> Vec<DataPoint>;
 
     fn read_all(&self, dev_id: &str) -> Arc<[DataPoint]>;

@@ -1,5 +1,4 @@
 use std::path::{Path, PathBuf};
-use std::time::Duration;
 
 use notify::{Config, Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use tokio::sync::mpsc;
@@ -49,7 +48,7 @@ pub fn watch_dir(
                 }
             }
         },
-        Config::default().with_poll_interval(Duration::from_millis(500)),
+        Config::default(),
     )?;
 
     watcher.watch(dir, RecursiveMode::NonRecursive)?;

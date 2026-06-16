@@ -14,7 +14,7 @@ use crate::config::modbus_conf::{ModbusConfig, ModbusConfigs};
 use crate::core::point::{DataPoint, DownDataPoint, PointId, PointRef, Val};
 use crate::dev::modbus_dev::Protocol;
 use crate::dev::modbus_dev::block::Blocks;
-use crate::dev::modbus_dev::downlink::{WritePlan, build_cfg_map, build_key_map};
+use crate::dev::modbus_dev::downlink::{WritePlan, build_cfg_map, build_key_map, build_name_map};
 use crate::dev::{LifecycleState, state::SharedState};
 
 use super::backoff::Backoff;
@@ -137,7 +137,6 @@ impl ModbusRunner {
     /// - `ctx`: 连接的上下文
     /// - `stop_rx`: 停止信号接收器
     /// - `blocks`: 块信息
-    /// - `cfg_map`: 配置映射
     async fn run_connected(
         &mut self,
         ctx: &mut Context,
@@ -145,6 +144,7 @@ impl ModbusRunner {
         blocks: &Blocks,
         cfg_map: &HashMap<PointId, ModbusConfig>,
         key_map: &HashMap<&'static str, PointId>,
+        name_map: &HashMap<&'static str, PointId>,
     ) {
         self.state.store(&self.id, LifecycleState::Running);
         self.report_comm_status(1);
@@ -158,7 +158,7 @@ impl ModbusRunner {
                     }
                 }
                 _ = ticker.tick() => {
-                    if let Err(reconnect) = self.read_and_interleave_downlinks(ctx, blocks, cfg_map, key_map).await {
+                    if let Err(reconnect) = self.read_and_interleave_downlinks(ctx, blocks, cfg_map, key_map, name_map).await {
                         if reconnect {
                             self.report_comm_status(0);
                         }
@@ -169,21 +169,19 @@ impl ModbusRunner {
         }
     }
 
-    /// 逐 block 读取，每个 block 完成后排空下发队列，实现下发低延迟插入
-    /// 返回 Err(true) 表示需要重连，Err(false) 表示 channel 关闭需停止
     async fn read_and_interleave_downlinks(
         &mut self,
         ctx: &mut Context,
         blocks: &Blocks,
         cfg_map: &HashMap<PointId, ModbusConfig>,
         key_map: &HashMap<&'static str, PointId>,
+        name_map: &HashMap<&'static str, PointId>,
     ) -> Result<(), bool> {
         let request_interval = self.request_interval();
         let timeout = self.timeout();
         let mut reads = Vec::with_capacity(blocks.block_count());
 
         for i in 0..blocks.block_count() {
-            // 读取单个 block（带超时）
             match time::timeout(timeout, blocks.request_one(ctx, i)).await {
                 Ok(Ok(read)) => reads.push(read),
                 Ok(Err(err)) => {
@@ -191,13 +189,19 @@ impl ModbusRunner {
                     return Err(true);
                 }
                 Err(_) => {
-                    warn!("[{}] 读取超时, 块信息: {}, 准备重连", self.id, blocks.describe());
+                    warn!(
+                        "[{}] 读取超时, 块信息: {}, 准备重连",
+                        self.id,
+                        blocks.describe()
+                    );
                     return Err(true);
                 }
             }
 
-            // block 间隙：排空下发队列，同时等待 request_interval
-            if let Err(reconnect) = self.drain_downlinks(ctx, cfg_map, key_map, request_interval).await {
+            if let Err(reconnect) = self
+                .drain_downlinks(ctx, cfg_map, key_map, name_map, request_interval)
+                .await
+            {
                 return Err(reconnect);
             }
         }
@@ -209,18 +213,16 @@ impl ModbusRunner {
         Ok(())
     }
 
-    /// 在 request_interval 时间窗口内，尽量排空下发 channel
-    /// 返回 Err(true) 表示下发失败需重连，Err(false) 表示 channel 关闭需停止
     async fn drain_downlinks(
         &mut self,
         ctx: &mut Context,
         cfg_map: &HashMap<PointId, ModbusConfig>,
         key_map: &HashMap<&'static str, PointId>,
+        name_map: &HashMap<&'static str, PointId>,
         interval: Duration,
     ) -> Result<(), bool> {
         let deadline = tokio::time::Instant::now() + interval;
         loop {
-            // try_recv 先排空已有的，没有则等到 interval 结束
             let msg = if interval.is_zero() {
                 match self.rx.try_recv() {
                     Ok(entries) => Some(entries),
@@ -251,27 +253,27 @@ impl ModbusRunner {
                 return Ok(());
             };
 
-            let items: Vec<String> = entries.iter().map(|e| format!("{}: {}", resolve_modbus_name(&e.point, cfg_map), e.value)).collect();
+            let items: Vec<String> = entries
+                .iter()
+                .map(|e| format!("{}: {}", resolve_modbus_name(&e.point, cfg_map), e.value))
+                .collect();
             info!("[{}] ↓: {}", self.id, items.join(", "));
-            let plan = WritePlan::build(entries, cfg_map, key_map, &self.id);
+            let plan = WritePlan::build(entries, cfg_map, key_map, name_map, &self.id);
             if let Err(err) = plan.apply(ctx).await {
                 warn!("[{}] 下发失败, 准备重连: {}", self.id, err);
                 return Err(true);
             }
 
-            // 下发完继续循环，用 try_recv 排空剩余积压
-            // 若 interval 已到就直接退出
             if !interval.is_zero() && tokio::time::Instant::now() >= deadline {
                 return Ok(());
             }
         }
     }
 
-    /// 启动MODBUS设备
     pub(super) async fn run(mut self) {
         let cfg_map = build_cfg_map(&self.configs);
         let key_map = build_key_map(&self.configs);
-        //构建连续地址的寄存器块
+        let name_map = build_name_map(&self.configs);
         let blocks = match Blocks::build(self.configs.clone(), self.max_gap()) {
             Ok(blocks) => blocks,
             Err(err) => {
@@ -282,7 +284,6 @@ impl ModbusRunner {
             }
         };
         let mut stop_rx = self.stop_rx.clone();
-        //退避重连
         let mut backoff = Backoff::new(Duration::from_millis(500), Duration::from_secs(10));
         loop {
             if Self::stop_requested(&stop_rx) {
@@ -297,7 +298,7 @@ impl ModbusRunner {
                     self.state.store(&self.id, LifecycleState::Connected);
                     self.report_comm_status(1);
                     backoff.reset();
-                    self.run_connected(&mut ctx, &mut stop_rx, &blocks, &cfg_map, &key_map)
+                    self.run_connected(&mut ctx, &mut stop_rx, &blocks, &cfg_map, &key_map, &name_map)
                         .await;
                 }
                 Err(err) => {
@@ -323,7 +324,6 @@ impl ModbusRunner {
             }
         }
     }
-
 }
 
 fn resolve_modbus_name<'a>(

@@ -22,13 +22,14 @@ impl WritePlan {
         entries: Vec<DownDataPoint>,
         cfg_map: &HashMap<PointId, ModbusConfig>,
         key_map: &HashMap<&'static str, PointId>,
+        name_map: &HashMap<&'static str, PointId>,
         dev_id: &str,
     ) -> Self {
         let mut coils: BTreeMap<u16, bool> = BTreeMap::new();
         let mut holding: BTreeMap<u16, u16> = BTreeMap::new();
 
         for entry in entries {
-            let Some(id) = resolve_id(&entry.point, key_map) else {
+            let Some(id) = resolve_id(&entry.point, key_map, name_map) else {
                 warn!("[{}] 未找到点位配置, 忽略下发: {:?}", dev_id, entry.point);
                 continue;
             };
@@ -86,18 +87,22 @@ impl WritePlan {
 }
 
 pub(super) fn build_key_map(configs: &ModbusConfigs) -> HashMap<&'static str, PointId> {
-    let mut map = HashMap::new();
-    for cfg in configs {
-        map.insert(cfg.key, cfg.id as PointId);
-        map.insert(cfg.name, cfg.id as PointId);
-    }
-    map
+    configs.iter().map(|cfg| (cfg.key, cfg.id as PointId)).collect()
 }
 
-fn resolve_id(point: &PointRef, key_map: &HashMap<&'static str, PointId>) -> Option<PointId> {
+pub(super) fn build_name_map(configs: &ModbusConfigs) -> HashMap<&'static str, PointId> {
+    configs.iter().map(|cfg| (cfg.name, cfg.id as PointId)).collect()
+}
+
+fn resolve_id(
+    point: &PointRef,
+    key_map: &HashMap<&'static str, PointId>,
+    name_map: &HashMap<&'static str, PointId>,
+) -> Option<PointId> {
     match point {
         PointRef::Id(id) => Some(*id),
-        PointRef::Key(key) | PointRef::Name(key) => key_map.get(key.as_str()).copied(),
+        PointRef::Key(key) => key_map.get(key.as_str()).copied(),
+        PointRef::Name(name) => name_map.get(name.as_str()).copied(),
     }
 }
 

@@ -9,7 +9,7 @@ use collector_core::dev::manager::DevManager;
 use collector_core::dock::modbus::ModbusServer;
 use collector_core::dock::mqtt::MqttClient;
 use collector_core::shutdown::ShutdownManager;
-use collector_engine::lua::ScriptEngine;
+use collector_engine::mod_engine::ScriptManager;
 use tracing::error;
 use tracing::level_filters::LevelFilter;
 use tracing_error::ErrorLayer;
@@ -136,12 +136,12 @@ pub async fn cmd() {
 
             tokio::spawn(api_server.start(shutdown.clone()));
 
-            // 启动 Lua 脚本引擎
-            let script_engine = ScriptEngine::new("lua_scripts", center.clone());
+            // 启动脚本模组引擎
+            let script_manager = ScriptManager::new(center.clone());
             let script_token = shutdown.child_token();
             tokio::spawn(async move {
-                if let Err(err) = script_engine.run(script_token).await {
-                    error!("Lua 脚本引擎异常: {}", err);
+                if let Err(err) = script_manager.run("lua_scripts", script_token).await {
+                    error!("脚本模组引擎异常: {}", err);
                 }
             });
 
