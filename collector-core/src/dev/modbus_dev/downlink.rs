@@ -87,11 +87,17 @@ impl WritePlan {
 }
 
 pub(super) fn build_key_map(configs: &ModbusConfigs) -> HashMap<&'static str, PointId> {
-    configs.iter().map(|cfg| (cfg.key, cfg.id as PointId)).collect()
+    configs
+        .iter()
+        .map(|cfg| (cfg.key, cfg.id as PointId))
+        .collect()
 }
 
 pub(super) fn build_name_map(configs: &ModbusConfigs) -> HashMap<&'static str, PointId> {
-    configs.iter().map(|cfg| (cfg.name, cfg.id as PointId)).collect()
+    configs
+        .iter()
+        .map(|cfg| (cfg.name, cfg.id as PointId))
+        .collect()
 }
 
 fn resolve_id(

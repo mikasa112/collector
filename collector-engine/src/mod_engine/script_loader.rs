@@ -84,14 +84,16 @@ fn parse_mod_meta(path: &Path, source: &str) -> Result<ScriptMeta, LoadError> {
 
     // 把全局环境的 __index 设为返回空函数的代理，
     // 让 task.spawn(fn) / event.on(...) 等调用变成无操作
-    lua.load(r#"
+    lua.load(
+        r#"
         local _noop = function() end
         local _proxy = setmetatable({}, {
             __index = function(_, _) return _proxy end,
             __call  = function(_, ...) return _proxy end,
         })
         setmetatable(_ENV, { __index = function(_, _) return _proxy end })
-    "#)
+    "#,
+    )
     .exec()
     .map_err(|e| LoadError::Lua(e.to_string()))?;
 

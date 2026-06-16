@@ -198,12 +198,9 @@ impl ModbusRunner {
                 }
             }
 
-            if let Err(reconnect) = self
+            self
                 .drain_downlinks(ctx, cfg_map, key_map, name_map, request_interval)
-                .await
-            {
-                return Err(reconnect);
-            }
+                .await?;
         }
 
         let entries = blocks.parse(&reads);
@@ -298,8 +295,15 @@ impl ModbusRunner {
                     self.state.store(&self.id, LifecycleState::Connected);
                     self.report_comm_status(1);
                     backoff.reset();
-                    self.run_connected(&mut ctx, &mut stop_rx, &blocks, &cfg_map, &key_map, &name_map)
-                        .await;
+                    self.run_connected(
+                        &mut ctx,
+                        &mut stop_rx,
+                        &blocks,
+                        &cfg_map,
+                        &key_map,
+                        &name_map,
+                    )
+                    .await;
                 }
                 Err(err) => {
                     self.state.store(&self.id, LifecycleState::Failed);

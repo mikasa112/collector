@@ -60,7 +60,10 @@ impl ModEngineHandle {
     pub async fn load_script(&self, source: impl Into<String>) -> mod_engine::Result<()> {
         let (result_tx, result_rx) = oneshot::channel();
         self.tx
-            .send(EngineCmd::LoadScript { source: source.into(), result_tx })
+            .send(EngineCmd::LoadScript {
+                source: source.into(),
+                result_tx,
+            })
             .map_err(|_| Error::EngineClosed)?;
         result_rx
             .await
@@ -200,8 +203,7 @@ impl ModEngine {
                         self.emit_inner(&name, value)?;
                     }
                     EngineCmd::LoadScript { source, result_tx } => {
-                        let result = self.lua.load(&source).exec()
-                            .map_err(|e| e.to_string());
+                        let result = self.lua.load(&source).exec().map_err(|e| e.to_string());
                         let _ = result_tx.send(result);
                     }
                     EngineCmd::Shutdown => return Ok(true),

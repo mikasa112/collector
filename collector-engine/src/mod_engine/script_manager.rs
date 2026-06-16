@@ -142,11 +142,10 @@ impl ScriptManager {
             FileEvent::Upsert(path) => {
                 // 去抖：同一路径 DEBOUNCE 时间内的重复事件忽略
                 let now = Instant::now();
-                if let Some(&last) = self.last_reload.get(&path) {
-                    if now.duration_since(last) < DEBOUNCE {
+                if let Some(&last) = self.last_reload.get(&path)
+                    && now.duration_since(last) < DEBOUNCE {
                         return;
                     }
-                }
                 self.last_reload.insert(path.clone(), now);
 
                 tracing::info!("[mod] 热更新: {}", path.display());
