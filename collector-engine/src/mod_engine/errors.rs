@@ -1,9 +1,9 @@
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("Lua错误: {0}")]
-    LuaError(#[from] mlua::Error),
+    Lua(#[from] mlua::Error),
     #[error("Scheduler错误: {0}")]
-    SchedulerError(#[from] SchedulerError),
+    Scheduler(#[from] SchedulerError),
     #[error("引擎已关闭，无法发送命令")]
     EngineClosed,
     #[error("脚本加载失败: {0}")]
