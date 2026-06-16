@@ -97,7 +97,7 @@ pub(super) fn build_key_map(configs: &ModbusConfigs) -> HashMap<&'static str, Po
 fn resolve_id(point: &PointRef, key_map: &HashMap<&'static str, PointId>) -> Option<PointId> {
     match point {
         PointRef::Id(id) => Some(*id),
-        PointRef::Key(key) | PointRef::Name(key) => key_map.get(key).copied(),
+        PointRef::Key(key) | PointRef::Name(key) => key_map.get(key.as_str()).copied(),
     }
 }
 

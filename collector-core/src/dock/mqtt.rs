@@ -224,7 +224,7 @@ fn parse_downlink_payload(raw: serde_json::Value) -> Result<Vec<DownDataPoint>, 
         let point = if let Ok(id) = k.parse::<u32>() {
             DownDataPoint::by_id(id, value)
         } else {
-            DownDataPoint::by_key(String::leak(k), value)
+            DownDataPoint::by_key(k, value)
         };
         points.push(point);
     }

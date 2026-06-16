@@ -144,7 +144,7 @@ pub(super) fn build_name_map(configs: &[CanConfig]) -> HashMap<&'static str, Poi
 fn resolve_id(point: &PointRef, name_map: &HashMap<&'static str, PointId>) -> Option<PointId> {
     match point {
         PointRef::Id(id) => Some(*id),
-        PointRef::Key(key) | PointRef::Name(key) => name_map.get(key).copied(),
+        PointRef::Key(key) | PointRef::Name(key) => name_map.get(key.as_str()).copied(),
     }
 }
 

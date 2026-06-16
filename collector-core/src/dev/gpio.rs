@@ -395,13 +395,13 @@ async fn handle_do(
                     Some(points) => {
                         for dp in points {
                             let key = match &dp.point {
-                                PointRef::Key(key) | PointRef::Name(key) => *key,
+                                PointRef::Key(key) | PointRef::Name(key) => key,
                                 PointRef::Id(_) => {
                                     tracing::warn!("[{}] GPIO不支持ID方式下发", id);
                                     continue;
                                 }
                             };
-                            if let Some(handle) = output_handles.get_mut(key) {
+                            if let Some(handle) = output_handles.get_mut(key.as_str()) {
                                 let value = match dp.value {
                                     Val::U8(v) => v,
                                     Val::I8(v) => {
