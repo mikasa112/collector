@@ -41,6 +41,7 @@ impl ScriptInstance {
         if let Err(e) = handle.load_script(&meta.source).await {
             tracing::error!("[mod:{}] {}", meta.name, e);
             handle.shutdown();
+            let _ = join.await;
             return None;
         }
 

@@ -98,7 +98,16 @@ impl Scheduler {
             match task.stream.next().await {
                 Some(Ok(vals)) => {
                     // 协程 yield 出一个 ms 数，重新入队等待
-                    let ms = vals.iter().next().and_then(|v| v.as_u32()).unwrap_or(0);
+                    // as_integer 仅匹配整数；浮点数需 as_f64 兜底，否则 wait(1000.0) 会导致 0ms 忙转
+                    let ms = vals
+                        .iter()
+                        .next()
+                        .and_then(|v| {
+                            v.as_integer()
+                                .map(|i| i.max(0) as u64)
+                                .or_else(|| v.as_f64().map(|f| f.max(0.0) as u64))
+                        })
+                        .unwrap_or(0);
                     task.wake_at = Instant::now() + Duration::from_millis(ms as u64);
                     self.coros.push(task);
                 }

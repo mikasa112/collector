@@ -86,26 +86,21 @@ pub struct ModEngine {
 impl ModEngine {
     pub fn create(center: SharedPointCenter) -> mod_engine::Result<(Self, ModEngineHandle)> {
         let (tx, rx) = mpsc::unbounded_channel();
-        let tx_arc = tx.clone();
         let engine = Self {
             lua: Lua::new(),
             events: Arc::new(std::sync::RwLock::new(EventBus::new())),
             scheduler: Scheduler::new(),
             rx,
         };
-        engine.register_api(center, tx_arc.clone())?;
+        engine.register_api(center)?;
         engine.register_event()?;
-        engine.register_timer(tx_arc.clone())?;
-        engine.register_task(tx_arc)?;
+        engine.register_timer(tx.clone())?;
+        engine.register_task(tx.clone())?;
         let handle = ModEngineHandle { tx };
         Ok((engine, handle))
     }
 
-    fn register_api(
-        &self,
-        center: SharedPointCenter,
-        _tx: mpsc::UnboundedSender<EngineCmd>,
-    ) -> mod_engine::Result<()> {
+    fn register_api(&self, center: SharedPointCenter) -> mod_engine::Result<()> {
         let globals = self.lua.globals();
         globals.set("log", create_log_table(&self.lua)?)?;
         globals.set("dc", create_dc_table(&self.lua, center)?)?;
@@ -199,38 +194,48 @@ impl ModEngine {
         Ok(())
     }
 
+    /// 处理单条命令，返回 true 表示应退出
+    async fn process_cmd(&mut self, cmd: EngineCmd) -> mod_engine::Result<bool> {
+        match cmd {
+            EngineCmd::Emit { name, value } => {
+                self.emit_inner(&name, value).await?;
+            }
+            EngineCmd::LoadScript { source, result_tx } => {
+                let result = self
+                    .lua
+                    .load(&source)
+                    .exec_async()
+                    .await
+                    .map_err(|e| e.to_string());
+                let _ = result_tx.send(result);
+            }
+            EngineCmd::AddTimer {
+                delay,
+                interval,
+                callback,
+            } => {
+                if let Some(interval) = interval {
+                    self.scheduler.add_every(interval, callback);
+                } else {
+                    self.scheduler.add_after(delay, callback);
+                }
+            }
+            EngineCmd::AddCoroutine { thread } => {
+                self.scheduler.add_coroutine(thread);
+            }
+            EngineCmd::Shutdown => return Ok(true),
+        }
+        Ok(false)
+    }
+
     async fn drain_commands(&mut self) -> mod_engine::Result<bool> {
         loop {
             match self.rx.try_recv() {
-                Ok(cmd) => match cmd {
-                    EngineCmd::Emit { name, value } => {
-                        self.emit_inner(&name, value).await?;
+                Ok(cmd) => {
+                    if self.process_cmd(cmd).await? {
+                        return Ok(true);
                     }
-                    EngineCmd::LoadScript { source, result_tx } => {
-                        let result = self
-                            .lua
-                            .load(&source)
-                            .exec_async()
-                            .await
-                            .map_err(|e| e.to_string());
-                        let _ = result_tx.send(result);
-                    }
-                    EngineCmd::AddTimer {
-                        delay,
-                        interval,
-                        callback,
-                    } => {
-                        if let Some(interval) = interval {
-                            self.scheduler.add_every(interval, callback);
-                        } else {
-                            self.scheduler.add_after(delay, callback);
-                        }
-                    }
-                    EngineCmd::AddCoroutine { thread } => {
-                        self.scheduler.add_coroutine(thread);
-                    }
-                    EngineCmd::Shutdown => return Ok(true),
-                },
+                }
                 Err(mpsc::error::TryRecvError::Empty) => return Ok(false),
                 Err(mpsc::error::TryRecvError::Disconnected) => return Ok(true),
             }
@@ -272,7 +277,20 @@ impl ModEngine {
                 })
                 .unwrap_or(Duration::from_millis(100));
 
-            tokio::time::sleep(sleep_dur).await;
+            // select! 让新命令（尤其是 Shutdown）能立即打断休眠
+            tokio::select! {
+                _ = tokio::time::sleep(sleep_dur) => {}
+                cmd = self.rx.recv() => {
+                    match cmd {
+                        None => break,
+                        Some(cmd) => {
+                            if self.process_cmd(cmd).await? {
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
         }
         tracing::info!("[mod] 引擎已关闭");
         Ok(())
