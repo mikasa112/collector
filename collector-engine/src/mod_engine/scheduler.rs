@@ -108,7 +108,7 @@ impl Scheduler {
                                 .or_else(|| v.as_f64().map(|f| f.max(0.0) as u64))
                         })
                         .unwrap_or(0);
-                    task.wake_at = Instant::now() + Duration::from_millis(ms as u64);
+                    task.wake_at = Instant::now() + Duration::from_millis(ms);
                     self.coros.push(task);
                 }
                 Some(Err(e)) => {

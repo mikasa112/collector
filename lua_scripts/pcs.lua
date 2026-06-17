@@ -10,9 +10,8 @@ MOD = {
 --     end
 -- end)
 
--- timer.every(1000, function()
---     local list = dc.read_all("pcs")
---     if list then
---         log.info(list[1].key)
---     end
--- end)
+timer.every(1000, function()
+    local list = dc.read_all("pcs")
+    if list then
+    end
+end)
