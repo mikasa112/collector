@@ -114,3 +114,19 @@ function timer.after(ms, fn) end
 ---@param ms integer 间隔毫秒数
 ---@param fn fun()   回调函数
 function timer.every(ms, fn) end
+
+-----------------------------------------------------------------------
+-- override - MQTT 覆盖推送 API（仅在 MQTT 已配置时可用）
+-----------------------------------------------------------------------
+
+---@class OverrideApi
+override = {}
+
+--- 覆盖指定 topic 的推送内容
+---@param topic string  MQTT topic
+---@param value any     要推送的值（table/number/string/boolean）
+function override.set(topic, value) end
+
+--- 取消覆盖，恢复原始采集值
+---@param topic string  MQTT topic
+function override.clear(topic) end

@@ -1,12 +1,15 @@
-use std::{sync::Arc, time::Duration};
+use std::{
+    sync::{Arc, Mutex},
+    time::Duration,
+};
 
-use collector_core::center::SharedPointCenter;
+use collector_core::{center::SharedPointCenter, dock::mqtt::MqttOverrideStore};
 use mlua::{Lua, LuaSerdeExt};
 use tokio::sync::{mpsc, oneshot};
 
 use crate::mod_engine::{
     self,
-    api::{dc::create_dc_table, log::create_log_table},
+    api::{dc::create_dc_table, log::create_log_table, mqtt::create_mqtt_table},
     errors::Error,
     eventbus::EventBus,
     scheduler::Scheduler,
@@ -84,7 +87,11 @@ pub struct ModEngine {
 }
 
 impl ModEngine {
-    pub fn create(center: SharedPointCenter) -> mod_engine::Result<(Self, ModEngineHandle)> {
+    pub fn create(
+        center: SharedPointCenter,
+        override_store: Option<MqttOverrideStore>,
+        owned_topics: Arc<Mutex<Vec<String>>>,
+    ) -> mod_engine::Result<(Self, ModEngineHandle)> {
         let (tx, rx) = mpsc::unbounded_channel();
         let engine = Self {
             lua: Lua::new(),
@@ -92,7 +99,7 @@ impl ModEngine {
             scheduler: Scheduler::new(),
             rx,
         };
-        engine.register_api(center)?;
+        engine.register_api(center, override_store, owned_topics)?;
         engine.register_event()?;
         engine.register_timer(tx.clone())?;
         engine.register_task(tx.clone())?;
@@ -100,10 +107,18 @@ impl ModEngine {
         Ok((engine, handle))
     }
 
-    fn register_api(&self, center: SharedPointCenter) -> mod_engine::Result<()> {
+    fn register_api(
+        &self,
+        center: SharedPointCenter,
+        override_store: Option<MqttOverrideStore>,
+        owned_topics: Arc<Mutex<Vec<String>>>,
+    ) -> mod_engine::Result<()> {
         let globals = self.lua.globals();
         globals.set("log", create_log_table(&self.lua)?)?;
         globals.set("dc", create_dc_table(&self.lua, center)?)?;
+        if let Some(store) = override_store {
+            globals.set("override", create_mqtt_table(&self.lua, store, owned_topics)?)?;
+        }
         Ok(())
     }
 

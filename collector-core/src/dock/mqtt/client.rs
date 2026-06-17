@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use bytes::Bytes;
-use rumqttc::{AsyncClient, ClientError, Event, MqttOptions, Packet, QoS};
+use rumqttc::{AsyncClient, ClientError, Event, EventLoop, MqttOptions, Packet, QoS};
 use tokio::{
     select,
     sync::{Mutex, watch},
@@ -14,6 +14,7 @@ use crate::{
     center::SharedPointCenter,
     config::{MqttRoute, Project},
     core::point::{DownDataPoint, Val},
+    dock::mqtt::MqttOverrideStore,
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -36,6 +37,7 @@ pub struct MqttClient {
     client: AsyncClient,
     watch_tx: watch::Sender<bool>,
     tasks: Mutex<Vec<JoinHandle<()>>>,
+    pub override_store: MqttOverrideStore,
 }
 
 struct MqttClientConf {
@@ -72,82 +74,29 @@ impl MqttClient {
         let mut mqttoptions = MqttOptions::new("collector", mqtt_host.as_str(), mqtt_port);
         mqttoptions.set_credentials(mqtt_username.as_str(), mqtt_password.as_str());
         mqttoptions.set_keep_alive(Duration::from_secs(5));
-        let (watch_tx, mut watch_rx) = watch::channel(false);
-        let (client, mut eventloop) = AsyncClient::new(mqttoptions, 10);
-        let event_client = client.clone();
-        let event_center = center.clone();
-        let event_task = tokio::spawn(async move {
-            if !mqtt_yt.is_empty()
-                && let Err(e) = event_client
-                    .subscribe(mqtt_yt.as_str(), QoS::AtLeastOnce)
-                    .await
-            {
-                error!("mqtt subscribe yt error: {:?}", e);
-            }
-            if !mqtt_yk.is_empty()
-                && mqtt_yk != mqtt_yt
-                && let Err(e) = event_client
-                    .subscribe(mqtt_yk.as_str(), QoS::AtLeastOnce)
-                    .await
-            {
-                error!("mqtt subscribe yk error: {:?}", e);
-            }
-            loop {
-                select! {
-                    changed = watch_rx.changed() => {
-                        match changed {
-                            Ok(()) if *watch_rx.borrow() => break,
-                            Ok(()) => {}
-                            Err(_) => break,
-                        }
-                    }
-                    event = eventloop.poll() => {
-                        match event {
-                            Ok(Event::Incoming(Packet::Publish(p))) => {
-                                if let Err(e) = handle_incoming_publish(
-                                    event_center.as_ref(),
-                                    p.topic.as_str(),
-                                    &p.payload,
-                                ).await {
-                                    error!("mqtt receive error: {}", e);
-                                }
-                            }
-                            Ok(_) => {}
-                            Err(e) => {
-                                error!("mqtt error: {:?}", e);
-                                break;
-                            }
-                        }
-                    }
-                }
-            }
-        });
-        let publish_client = client.clone();
-        let publish_routes = mqtt_routes;
-        let publish_center = center;
-        let mut publish_stop_rx = watch_tx.subscribe();
-        let publish_task = tokio::spawn(async move {
-            let mut ticker = time::interval(Duration::from_secs(1));
-            loop {
-                select! {
-                    changed = publish_stop_rx.changed() => {
-                        match changed {
-                            Ok(()) if *publish_stop_rx.borrow() => break,
-                            Ok(()) => {}
-                            Err(_) => break,
-                        }
-                    }
-                    _ = ticker.tick() => {
-                        publish_routes_task(publish_center.as_ref(), &publish_client, &publish_routes)
-                            .await;
-                    }
-                }
-            }
-        });
+        let (watch_tx, watch_rx) = watch::channel(false);
+        let (client, eventloop) = AsyncClient::new(mqttoptions, 10);
+        let override_store = MqttOverrideStore::new();
+        let event_task = tokio::spawn(receiver(
+            mqtt_yt,
+            mqtt_yk,
+            client.clone(),
+            watch_rx,
+            center.clone(),
+            eventloop,
+        ));
+        let publish_task = tokio::spawn(publisher(
+            watch_tx.subscribe(),
+            center.clone(),
+            client.clone(),
+            mqtt_routes.clone(),
+            override_store.clone(),
+        ));
         Ok(Self {
             client,
             watch_tx,
             tasks: Mutex::new(vec![event_task, publish_task]),
+            override_store,
         })
     }
 
@@ -179,6 +128,85 @@ impl MqttClientConf {
             mqtt_yk: project.mqtt_yk.clone()?,
             mqtt_routes: project.mqtt_routes.take().unwrap_or_default(),
         })
+    }
+}
+
+async fn publisher(
+    mut publish_stop_rx: watch::Receiver<bool>,
+    center: SharedPointCenter,
+    client: AsyncClient,
+    publish_routes: Vec<MqttRoute>,
+    override_store: MqttOverrideStore,
+) {
+    let mut ticker = time::interval(Duration::from_secs(1));
+    loop {
+        select! {
+            changed = publish_stop_rx.changed() => {
+                match changed {
+                    Ok(()) if *publish_stop_rx.borrow() => break,
+                    Ok(()) => {}
+                    Err(_) => break,
+                }
+            }
+            _ = ticker.tick() => {
+                publish_routes_task(center.as_ref(), &client, &publish_routes, &override_store)
+                    .await;
+            }
+        }
+    }
+}
+
+async fn receiver(
+    mqtt_yt: String,
+    mqtt_yk: String,
+    event_client: AsyncClient,
+    mut watch_rx: watch::Receiver<bool>,
+    event_center: SharedPointCenter,
+    mut eventloop: EventLoop,
+) {
+    if !mqtt_yt.is_empty()
+        && let Err(e) = event_client
+            .subscribe(mqtt_yt.as_str(), QoS::AtLeastOnce)
+            .await
+    {
+        error!("mqtt subscribe yt error: {:?}", e);
+    }
+    if !mqtt_yk.is_empty()
+        && mqtt_yk != mqtt_yt
+        && let Err(e) = event_client
+            .subscribe(mqtt_yk.as_str(), QoS::AtLeastOnce)
+            .await
+    {
+        error!("mqtt subscribe yk error: {:?}", e);
+    }
+    loop {
+        select! {
+            changed = watch_rx.changed() => {
+                match changed {
+                    Ok(()) if *watch_rx.borrow() => break,
+                    Ok(()) => {}
+                    Err(_) => break,
+                }
+            }
+            event = eventloop.poll() => {
+                match event {
+                    Ok(Event::Incoming(Packet::Publish(p))) => {
+                        if let Err(e) = handle_incoming_publish(
+                            event_center.as_ref(),
+                            p.topic.as_str(),
+                            &p.payload,
+                        ).await {
+                            error!("mqtt receive error: {}", e);
+                        }
+                    }
+                    Ok(_) => {}
+                    Err(e) => {
+                        error!("mqtt error: {:?}", e);
+                        break;
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -282,22 +310,28 @@ async fn publish_routes_task(
     center: &dyn crate::center::PointCenter,
     client: &AsyncClient,
     routes: &[MqttRoute],
+    override_store: &MqttOverrideStore,
 ) {
     for route in routes {
         for rule in &route.rules {
-            let points = center.read_many(route.device_id.as_str(), &rule.point_ids);
-            let mut map = serde_json::Map::with_capacity(points.len());
-            for point in points {
-                if let Ok(value) = serde_json::to_value(&point.value) {
-                    map.insert(point.id.to_string(), value);
-                }
-            }
-            let json = if map.is_empty() {
-                None
+            // 优先使用 Lua 覆盖值
+            let payload = if let Some(override_val) = override_store.get(&rule.topic) {
+                serde_json::to_vec(&override_val).ok()
             } else {
-                serde_json::to_vec(&map).ok()
+                let points = center.read_many(route.device_id.as_str(), &rule.point_ids);
+                let mut map = serde_json::Map::with_capacity(points.len());
+                for point in points {
+                    if let Ok(value) = serde_json::to_value(&point.value) {
+                        map.insert(point.id.to_string(), value);
+                    }
+                }
+                if map.is_empty() {
+                    None
+                } else {
+                    serde_json::to_vec(&map).ok()
+                }
             };
-            if let Some(data) = json {
+            if let Some(data) = payload {
                 let result = client
                     .publish(rule.topic.as_str(), QoS::AtLeastOnce, false, data)
                     .await;

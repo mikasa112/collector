@@ -201,13 +201,13 @@ pub enum ProtocolConfigs {
     None,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Clone)]
 pub struct MqttRoute {
     pub device_id: String,
     pub rules: Vec<MqttRule>,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Clone)]
 pub struct MqttRule {
     pub topic: String,
     pub point_ids: Vec<PointId>,

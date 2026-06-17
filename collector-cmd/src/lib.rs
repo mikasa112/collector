@@ -7,7 +7,7 @@ use collector_core::center::SharedPointCenter;
 use collector_core::config;
 use collector_core::dev::manager::DevManager;
 use collector_core::dock::modbus::ModbusServer;
-use collector_core::dock::mqtt::MqttClient;
+use collector_core::dock::mqtt::client::MqttClient;
 use collector_core::shutdown::ShutdownManager;
 use collector_engine::mod_engine::ScriptManager;
 use tracing::error;
@@ -137,7 +137,8 @@ pub async fn cmd() {
             tokio::spawn(api_server.start(shutdown.clone()));
 
             // 启动脚本模组引擎
-            let script_manager = ScriptManager::new(center.clone());
+            let override_store = mqtt_client.as_ref().map(|c| c.override_store.clone());
+            let script_manager = ScriptManager::new(center.clone(), override_store);
             let script_token = shutdown.child_token();
             tokio::spawn(async move {
                 if let Err(err) = script_manager.run("lua_scripts", script_token).await {

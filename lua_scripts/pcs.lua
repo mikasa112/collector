@@ -10,8 +10,13 @@ MOD = {
 --     end
 -- end)
 
-timer.every(1000, function()
-    local list = dc.read_all("pcs")
-    if list then
-    end
-end)
+-- timer.every(1000, function()
+--     local list = dc.read_all("pcs")
+--     if list then
+--         local table = {}
+--         for _, item in ipairs(list) do
+--             table[item.id] = item.value
+--             override.set("/pcs", table)
+--         end
+--     end
+-- end)
