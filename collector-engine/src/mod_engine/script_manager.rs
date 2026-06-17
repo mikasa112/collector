@@ -32,8 +32,8 @@ impl ScriptInstance {
         };
 
         let name = meta.name.clone();
-        let join = tokio::task::spawn_blocking(move || {
-            if let Err(e) = engine.run_blocking() {
+        let join = tokio::spawn(async move {
+            if let Err(e) = engine.run().await {
                 tracing::error!("[mod:{}] 引擎运行错误: {}", name, e);
             }
         });
@@ -143,9 +143,10 @@ impl ScriptManager {
                 // 去抖：同一路径 DEBOUNCE 时间内的重复事件忽略
                 let now = Instant::now();
                 if let Some(&last) = self.last_reload.get(&path)
-                    && now.duration_since(last) < DEBOUNCE {
-                        return;
-                    }
+                    && now.duration_since(last) < DEBOUNCE
+                {
+                    return;
+                }
                 self.last_reload.insert(path.clone(), now);
 
                 tracing::info!("[mod] 热更新: {}", path.display());

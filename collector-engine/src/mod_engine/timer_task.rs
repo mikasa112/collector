@@ -28,7 +28,6 @@ impl PartialOrd for TimerTask {
 
 impl Ord for TimerTask {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        // BinaryHeap 是最大堆，反转使其成为最小堆（next_run 最小的优先出队）
         other.next_run.cmp(&self.next_run)
     }
 }
@@ -37,7 +36,8 @@ impl Ord for TimerTask {
 pub struct CoroTask {
     pub id: u64,
     pub wake_at: Instant,
-    pub thread: mlua::Thread,
+    /// AsyncThread 作为 Stream，每次 next() 推进一步 yield
+    pub stream: mlua::AsyncThread<mlua::MultiValue>,
 }
 
 impl PartialEq for CoroTask {

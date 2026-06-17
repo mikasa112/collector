@@ -24,6 +24,7 @@ tracing-log = "0.2.0"
 tracing-error = "0.2.1"
 # 异步trait支持
 async-trait = "0.1.86"
+futures-util = "0.3"
 # 更好的内存分配器
 mimalloc = "0.1.47"
 bytes = "1.11.1"

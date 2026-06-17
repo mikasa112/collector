@@ -109,35 +109,33 @@ pub fn create_dc_table(lua: &Lua, center: SharedPointCenter) -> mlua::Result<Tab
     }
 
     // dc.dispatch(dev_id, point_mark, value)
-    // 底层是 mpsc channel send（微秒级），用 block_on 在阻塞线程里同步等待，
-    // 避免在协程调度器（同步 resume）中使用 async function 导致永久挂起。
-    // Handle::current() 在闭包内懒求值，避免 create 时不在 tokio 上下文中 panic。
     {
         let c = center.clone();
         dc_table.set(
             "dispatch",
-            lua.create_function(
+            lua.create_async_function(
                 move |_, (dev_id, point_mark, value): (String, Value, Value)| {
-                    let val = lua_to_val(value)?;
-                    let down = match point_mark {
-                        Value::Integer(point_id) => {
-                            collector_core::core::point::DownDataPoint::by_id(
-                                point_id as PointId,
-                                val,
-                            )
-                        }
-                        Value::String(point_key) => {
-                            let k = point_key.to_string_lossy();
-                            collector_core::core::point::DownDataPoint::by_key(k, val)
-                        }
-                        _ => return Err(mlua::Error::runtime("point_mark 必须是整数或字符串")),
-                    };
-                    let rt = tokio::runtime::Handle::try_current().map_err(|_| {
-                        mlua::Error::runtime("dc.dispatch 必须在 tokio 运行时中调用")
-                    })?;
-                    rt.block_on(c.dispatch(&dev_id, vec![down]))
-                        .map_err(|e| mlua::Error::runtime(e.to_string()))?;
-                    Ok(())
+                    let c = c.clone();
+                    async move {
+                        let val = lua_to_val(value)?;
+                        let down = match point_mark {
+                            Value::Integer(point_id) => {
+                                collector_core::core::point::DownDataPoint::by_id(
+                                    point_id as PointId,
+                                    val,
+                                )
+                            }
+                            Value::String(point_key) => {
+                                let k = point_key.to_string_lossy();
+                                collector_core::core::point::DownDataPoint::by_key(k, val)
+                            }
+                            _ => return Err(mlua::Error::runtime("point_mark 必须是整数或字符串")),
+                        };
+                        c.dispatch(&dev_id, vec![down])
+                            .await
+                            .map_err(|e| mlua::Error::runtime(e.to_string()))?;
+                        Ok(())
+                    }
                 },
             )?,
         )?;

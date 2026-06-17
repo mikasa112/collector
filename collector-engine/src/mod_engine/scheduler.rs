@@ -1,6 +1,7 @@
 use std::{collections::BinaryHeap, time::Duration};
 
-use mlua::{Function, RegistryKey, Thread, ThreadStatus};
+use futures_util::StreamExt;
+use mlua::{Function, RegistryKey, Thread};
 use tokio::time::Instant;
 
 use crate::mod_engine::{
@@ -51,16 +52,23 @@ impl Scheduler {
 
     /// 注册一个协程任务，立即（now）首次 resume
     pub fn add_coroutine(&mut self, thread: Thread) {
-        let task = CoroTask {
-            id: self.alloc_id(),
-            wake_at: Instant::now(),
-            thread,
-        };
-        self.coros.push(task);
+        let id = self.alloc_id();
+        match thread.into_async::<mlua::MultiValue>(()) {
+            Ok(stream) => {
+                self.coros.push(CoroTask {
+                    id,
+                    wake_at: Instant::now(),
+                    stream,
+                });
+            }
+            Err(e) => {
+                tracing::error!("[mod] 协程创建失败: {}", e);
+            }
+        }
     }
 
     /// 驱动一次调度：执行所有到期的回调任务和协程任务
-    pub fn tick(&mut self, lua: &mlua::Lua) -> crate::mod_engine::Result<()> {
+    pub async fn tick(&mut self, lua: &mlua::Lua) -> crate::mod_engine::Result<()> {
         let now = Instant::now();
 
         // 驱动回调定时器
@@ -70,43 +78,36 @@ impl Scheduler {
             }
             let mut task = self.timers.pop().ok_or(SchedulerError::TaskNotFound)?;
             let func: Function = lua.registry_value(&task.callback)?;
-            func.call::<()>(())?;
+            func.call_async::<()>(()).await?;
             if let Some(interval) = task.interval {
                 task.next_run = Instant::now() + interval;
                 self.timers.push(task);
             }
         }
 
-        // 驱动协程
+        // 驱动协程：取出所有到期任务，逐一推进一步
+        let mut ready = Vec::new();
         while let Some(task) = self.coros.peek() {
             if task.wake_at > now {
                 break;
             }
-            let task = self.coros.pop().ok_or(SchedulerError::TaskNotFound)?;
+            ready.push(self.coros.pop().ok_or(SchedulerError::TaskNotFound)?);
+        }
 
-            if task.thread.status() != ThreadStatus::Resumable {
-                continue;
-            }
-
-            // resume 协程；若它调用了 wait(ms)，会 yield 出一个毫秒数
-            let resume_result: mlua::Result<mlua::MultiValue> = task.thread.resume(());
-            match resume_result {
-                Ok(vals) => {
-                    // 协程 yield 出来，取第一个返回值作为 sleep ms
-                    if task.thread.status() == ThreadStatus::Resumable {
-                        let ms = vals.iter().next().and_then(|v| v.as_u32()).unwrap_or(0);
-                        let wake_at = Instant::now() + Duration::from_millis(ms as u64);
-                        self.coros.push(CoroTask {
-                            id: task.id,
-                            wake_at,
-                            thread: task.thread,
-                        });
-                    }
-                    // 若协程已结束（return），直接丢弃
+        for mut task in ready {
+            match task.stream.next().await {
+                Some(Ok(vals)) => {
+                    // 协程 yield 出一个 ms 数，重新入队等待
+                    let ms = vals.iter().next().and_then(|v| v.as_u32()).unwrap_or(0);
+                    task.wake_at = Instant::now() + Duration::from_millis(ms as u64);
+                    self.coros.push(task);
                 }
-                Err(e) => {
+                Some(Err(e)) => {
                     tracing::error!("[mod] 协程运行错误: {}", e);
-                    // 错误的协程直接丢弃，不再重新入队
+                    // 出错直接丢弃
+                }
+                None => {
+                    // 协程已结束，丢弃
                 }
             }
         }

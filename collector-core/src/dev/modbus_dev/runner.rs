@@ -198,8 +198,7 @@ impl ModbusRunner {
                 }
             }
 
-            self
-                .drain_downlinks(ctx, cfg_map, key_map, name_map, request_interval)
+            self.drain_downlinks(ctx, cfg_map, key_map, name_map, request_interval)
                 .await?;
         }
 

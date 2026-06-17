@@ -10,7 +10,9 @@ MOD = {
 --     end
 -- end)
 
-local data = dc.read("pcs", 5)
-if data then
-    log.info("data:" .. tostring(data))
-end
+-- timer.every(1000, function()
+--     local list = dc.read_all("pcs")
+--     if list then
+--         log.info(list[1].key)
+--     end
+-- end)
