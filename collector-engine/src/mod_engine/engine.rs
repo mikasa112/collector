@@ -117,7 +117,10 @@ impl ModEngine {
         globals.set("log", create_log_table(&self.lua)?)?;
         globals.set("dc", create_dc_table(&self.lua, center)?)?;
         if let Some(store) = override_store {
-            globals.set("override", create_mqtt_table(&self.lua, store, owned_topics)?)?;
+            globals.set(
+                "override",
+                create_mqtt_table(&self.lua, store, owned_topics)?,
+            )?;
         }
         Ok(())
     }
