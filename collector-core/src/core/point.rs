@@ -123,6 +123,19 @@ fn val_as_f64(value: &Val) -> Result<f64, ValError> {
     }
 }
 
+fn val_as_u32(value: &Val) -> Result<u32, ValError> {
+    match value {
+        Val::U8(v) => Ok(*v as u32),
+        Val::I8(v) => Ok(*v as u32),
+        Val::I16(v) => Ok(*v as u32),
+        Val::I32(v) => Ok(*v as u32),
+        Val::U16(v) => Ok(*v as u32),
+        Val::U32(v) => Ok(*v),
+        Val::F64(v) => Ok(*v as u32),
+        Val::List(_) => Err(ValError::InvalidValue),
+    }
+}
+
 impl TryFrom<Val> for bool {
     type Error = ValError;
 
@@ -152,6 +165,22 @@ impl TryFrom<&Val> for f64 {
 
     fn try_from(value: &Val) -> Result<Self, Self::Error> {
         val_as_f64(value)
+    }
+}
+
+impl TryFrom<&Val> for u32 {
+    type Error = ValError;
+
+    fn try_from(value: &Val) -> Result<Self, Self::Error> {
+        val_as_u32(value)
+    }
+}
+
+impl TryFrom<Val> for u32 {
+    type Error = ValError;
+
+    fn try_from(value: Val) -> Result<Self, Self::Error> {
+        val_as_u32(&value)
     }
 }
 
@@ -212,6 +241,7 @@ pub struct DataPoint {
     pub translator: Option<&'static Translator>,
     pub warn_bits: Option<&'static WarnBits>,
     pub status_word: Option<&'static StatusWords>,
+    pub unit: Option<&'static str>,
 }
 
 impl Display for DataPoint {

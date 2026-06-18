@@ -271,6 +271,7 @@ impl Blocks {
                 translator: region.cfg.trans,
                 warn_bits: region.cfg.warn_bits,
                 status_word: region.cfg.status_words,
+                unit: region.cfg.unit,
             });
         }
         out

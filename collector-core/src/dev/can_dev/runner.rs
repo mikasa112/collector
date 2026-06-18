@@ -50,6 +50,7 @@ impl CanRunner {
                 translator: None,
                 warn_bits: None,
                 status_word: None,
+                unit: None,
             }],
         );
     }
@@ -314,6 +315,7 @@ fn decode_signal(cfg: &CanSignalConfig, data: &[u8]) -> Option<DataPoint> {
         translator: None,
         warn_bits: None,
         status_word: None,
+        unit: None,
     })
 }
 
@@ -366,6 +368,7 @@ fn decode_ext_signal(
         translator: None,
         warn_bits: None,
         status_word: None,
+        unit: None,
     })
 }
 

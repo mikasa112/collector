@@ -53,30 +53,32 @@ fn val_as_u16(val: &Val) -> Option<u16> {
 fn append_status_and_faults(lua: &Lua, t: &Table, point: &DataPoint) -> mlua::Result<()> {
     if let Some(status_words) = point.status_word
         && let Some(raw) = val_as_u16(&point.value)
-            && let Some(sw) = status_words.words.get(&raw) {
-                let st = lua.create_table()?;
-                st.set("zh", sw.zh)?;
-                st.set("en", sw.en)?;
-                t.set("status", st)?;
-            }
+        && let Some(sw) = status_words.words.get(&raw)
+    {
+        let st = lua.create_table()?;
+        st.set("zh", sw.zh)?;
+        st.set("en", sw.en)?;
+        t.set("status", st)?;
+    }
     if let Some(warn_bits) = point.warn_bits
-        && let Some(raw) = val_as_u16(&point.value) {
-            let faults = lua.create_table()?;
-            let mut idx = 1usize;
-            for bit in 0..16u16 {
-                if raw & (1 << bit) != 0 {
-                    let wb = &warn_bits.bits[bit as usize];
-                    let ft = lua.create_table()?;
-                    ft.set("bit", bit)?;
-                    ft.set("zh", wb.zh)?;
-                    ft.set("en", wb.en)?;
-                    ft.set("level", wb.level as u8)?;
-                    faults.set(idx, ft)?;
-                    idx += 1;
-                }
+        && let Some(raw) = val_as_u16(&point.value)
+    {
+        let faults = lua.create_table()?;
+        let mut idx = 1usize;
+        for bit in 0..16u16 {
+            if raw & (1 << bit) != 0 {
+                let wb = &warn_bits.bits[bit as usize];
+                let ft = lua.create_table()?;
+                ft.set("bit", bit)?;
+                ft.set("zh", wb.zh)?;
+                ft.set("en", wb.en)?;
+                ft.set("level", wb.level as u8)?;
+                faults.set(idx, ft)?;
+                idx += 1;
             }
-            t.set("faults", faults)?;
         }
+        t.set("faults", faults)?;
+    }
     Ok(())
 }
 

@@ -46,24 +46,37 @@ pub async fn ws_handler(
 }
 
 #[derive(Debug, Clone, Serialize)]
-struct Point {
+struct Point<'a> {
     id: u32,
     key: &'static str,
     name: &'static str,
-    value: Val,
+    value: &'a Val,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    status: Option<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    unit: Option<&'static str>,
 }
 
-impl Point {
-    fn from_data_point(data_point: &DataPoint, lang: DevQueryLang) -> Self {
+impl<'a> Point<'a> {
+    fn from_data_point(data_point: &'a DataPoint, lang: DevQueryLang) -> Self {
         let name = match lang {
             DevQueryLang::Zh => data_point.name,
             DevQueryLang::En => data_point.translator.map_or(data_point.name, |t| t.en),
         };
+        let mut status: Option<&'static str> = None;
+        if let Some(sw) = data_point.status_word
+            && let Ok(v) = u32::try_from(&data_point.value)
+            && let Some(status_word) = sw.words.get(&(v as u16))
+        {
+            status = Some(status_word.zh);
+        }
         Point {
             id: data_point.id,
             key: data_point.key,
             name,
-            value: data_point.value.clone(),
+            value: &data_point.value,
+            status,
+            unit: data_point.unit,
         }
     }
 }

@@ -418,6 +418,7 @@ mod tests {
             translator: None,
             warn_bits: None,
             status_word: None,
+            unit: None,
         }
     }
 

@@ -57,6 +57,7 @@ impl GpioConfig {
             translator: self.trans,
             warn_bits: None,
             status_word: None,
+            unit: None,
         }
     }
 }
