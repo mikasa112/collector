@@ -20,3 +20,12 @@ MOD = {
 --         end
 --     end
 -- end)
+-- timer.every(1000, function()
+--     local data = dc.read("pcs", 156)
+--     if data then
+--         if data.faults then
+--             for index, value in ipairs(data.faults) do
+--             end
+--         end
+--     end
+-- end)

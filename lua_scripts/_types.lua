@@ -17,11 +17,23 @@ MOD = {}
 -- DataPoint
 -----------------------------------------------------------------------
 
+---@class StatusWord
+---@field zh string 中文描述
+---@field en string 英文描述
+
+---@class FaultBit
+---@field bit   integer 位索引（0~15）
+---@field zh    string  中文描述
+---@field en    string  英文描述
+---@field level integer 告警等级（0=无 1=普通 2=高 3=严重）
+
 ---@class DataPoint
----@field id    integer 数据点 ID
----@field key   string  数据点 key（英文标识）
----@field name  string  数据点名称（中文描述）
----@field value number  当前值
+---@field id     integer    数据点 ID
+---@field key    string     数据点 key（英文标识）
+---@field name   string     数据点名称（中文描述）
+---@field value  number     当前值
+---@field status StatusWord|nil 状态字解析结果（仅状态字点位有效，值未匹配时为 nil）
+---@field faults FaultBit[] 故障字解析结果（仅故障字点位有效，无故障时为空表）
 
 -----------------------------------------------------------------------
 -- dc - 数据中心 API
