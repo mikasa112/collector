@@ -51,3 +51,9 @@ opt-level = 3
 panic = "abort"
 # 限制代码生成单元为1, 可提高运行效率并减少程序体积
 codegen-units = 1
+
+# 火焰图专用 profile：保留调试符号，其余与 release 一致
+[profile.profiling]
+inherits = "release"
+strip = false
+debug = 1

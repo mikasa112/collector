@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::io;
 use std::time::{Duration, Instant};
 
 use futures::StreamExt;
@@ -189,15 +190,38 @@ impl CanRunner {
                 result = socket.next() => {
                     let frame = result
                         .expect("CAN socket stream ended unexpectedly")
-                        .map_err(|e| CanDevError::ReadFrame(std::io::Error::other(e)))?;
+                        .map_err(|e| CanDevError::ReadFrame(io::Error::other(e)))?;
                     let now = Instant::now();
                     last_rx_at = now;
+
+                    let mut batch: Vec<DataPoint> = Vec::new();
+
+                    // 处理第一帧
                     let points = Self::decode_frame(&frame, frame_states, &mut ext_cache, now);
-                    if !points.is_empty() {
-                        // info!("[{}] ↑: {}", self.id, DataPoints(points.clone()));
-                        self.center.ingest(&self.id, points);
-                    } else {
+                    if points.is_empty() {
                         debug!("[{}] 忽略未配置CAN报文: 0x{:X}", self.id, frame.raw_id());
+                    } else {
+                        batch.extend(points);
+                    }
+
+                    // 不重新进入 epoll，直接排空内核缓冲区中已就绪的帧
+                    loop {
+                        match socket.try_read_frame() {
+                            Ok(frame) => {
+                                let points = Self::decode_frame(&frame, frame_states, &mut ext_cache, now);
+                                if points.is_empty() {
+                                    debug!("[{}] 忽略未配置CAN报文: 0x{:X}", self.id, frame.raw_id());
+                                } else {
+                                    batch.extend(points);
+                                }
+                            }
+                            Err(e) if e.kind() == io::ErrorKind::WouldBlock => break,
+                            Err(e) => return Err(CanDevError::ReadFrame(e)),
+                        }
+                    }
+
+                    if !batch.is_empty() {
+                        self.center.ingest(&self.id, batch);
                     }
                 }
             }
@@ -426,14 +450,20 @@ pub(super) fn extract_raw(
 }
 
 fn extract_intel(data: &[u8], start_bit: u8, bit_len: u8) -> Option<u32> {
-    let mut raw = 0u32;
-    for bit_idx in 0..usize::from(bit_len) {
-        let pos = usize::from(start_bit) + bit_idx;
-        let byte = *data.get(pos / 8)?;
-        let bit = (byte >> (pos % 8)) & 1;
-        raw |= u32::from(bit) << bit_idx;
+    let start = usize::from(start_bit);
+    let end_byte = (start + usize::from(bit_len) - 1) / 8;
+    if end_byte >= data.len() {
+        return None;
     }
-    Some(raw)
+    // 将覆盖范围内的字节打包进 u64，一次位移+掩码完成提取
+    let start_byte = start / 8;
+    let mut val = 0u64;
+    for (i, &b) in data[start_byte..=end_byte].iter().enumerate() {
+        val |= (b as u64) << (i * 8);
+    }
+    let shift = start % 8;
+    let mask = if bit_len < 32 { (1u64 << bit_len) - 1 } else { u32::MAX as u64 };
+    Some(((val >> shift) & mask) as u32)
 }
 
 fn extract_motorola(data: &[u8], start_bit: u8, bit_len: u8) -> Option<u32> {
