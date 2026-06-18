@@ -197,26 +197,39 @@ impl CanRunner {
                     let mut batch: Vec<DataPoint> = Vec::new();
 
                     // 处理第一帧
+                    let is_configured = frame_states.contains_key(&frame.raw_id());
                     let points = Self::decode_frame(&frame, frame_states, &mut ext_cache, now);
                     if points.is_empty() {
-                        debug!("[{}] 忽略未配置CAN报文: 0x{:X}", self.id, frame.raw_id());
+                        if !is_configured {
+                            debug!("[{}] 忽略未配置CAN报文: 0x{:X}", self.id, frame.raw_id());
+                        }
                     } else {
                         batch.extend(points);
                     }
 
-                    // 不重新进入 epoll，直接排空内核缓冲区中已就绪的帧
-                    loop {
+                    // 不重新进入 epoll，直接排空内核缓冲区中已就绪的帧。
+                    // 每批上限 64 帧，防止 CAN 错误帧风暴时长时间独占工作线程。
+                    for _ in 0..64 {
                         match socket.try_read_frame() {
                             Ok(frame) => {
+                                last_rx_at = now;
+                                let is_configured = frame_states.contains_key(&frame.raw_id());
                                 let points = Self::decode_frame(&frame, frame_states, &mut ext_cache, now);
                                 if points.is_empty() {
-                                    debug!("[{}] 忽略未配置CAN报文: 0x{:X}", self.id, frame.raw_id());
+                                    if !is_configured {
+                                        debug!("[{}] 忽略未配置CAN报文: 0x{:X}", self.id, frame.raw_id());
+                                    }
                                 } else {
                                     batch.extend(points);
                                 }
                             }
                             Err(e) if e.kind() == io::ErrorKind::WouldBlock => break,
-                            Err(e) => return Err(CanDevError::ReadFrame(e)),
+                            Err(e) => {
+                                if !batch.is_empty() {
+                                    self.center.ingest(&self.id, batch);
+                                }
+                                return Err(CanDevError::ReadFrame(e));
+                            }
                         }
                     }
 
