@@ -66,9 +66,16 @@ impl<'a> Point<'a> {
         let mut status: Option<&'static str> = None;
         if let Some(sw) = data_point.status_word
             && let Ok(v) = u32::try_from(&data_point.value)
-            && let Some(status_word) = sw.words.get(&(v as u16))
         {
-            status = Some(status_word.zh);
+            for (k, w) in sw.words.iter() {
+                if *k == (v as u16) {
+                    status = Some(match lang {
+                        DevQueryLang::En => w.en,
+                        DevQueryLang::Zh => w.zh,
+                    });
+                    break;
+                }
+            }
         }
         Point {
             id: data_point.id,

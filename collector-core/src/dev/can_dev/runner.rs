@@ -475,7 +475,11 @@ fn extract_intel(data: &[u8], start_bit: u8, bit_len: u8) -> Option<u32> {
         val |= (b as u64) << (i * 8);
     }
     let shift = start % 8;
-    let mask = if bit_len < 32 { (1u64 << bit_len) - 1 } else { u32::MAX as u64 };
+    let mask = if bit_len < 32 {
+        (1u64 << bit_len) - 1
+    } else {
+        u32::MAX as u64
+    };
     Some(((val >> shift) & mask) as u32)
 }
 
