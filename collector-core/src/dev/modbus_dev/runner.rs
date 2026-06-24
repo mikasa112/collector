@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::sync::Arc;
 use std::time::Duration;
 
 use tokio::sync::{mpsc, watch};
@@ -8,13 +7,13 @@ use tokio_modbus::Slave;
 use tokio_modbus::client::{Context, rtu, tcp};
 use tokio_modbus::prelude::SlaveContext;
 use tokio_serial::{DataBits, Parity};
-use tracing::{error, info, warn};
+use tracing::{info, warn};
 
 use crate::center::SharedPointCenter;
 use crate::config::modbus_conf::{ModbusConfig, ModbusConfigs};
 use crate::core::point::{DataPoint, DownDataPoint, PointId, PointRef, Val};
 use crate::dev::modbus_dev::Protocol;
-use crate::dev::modbus_dev::block::{BlockRead, Blocks};
+use crate::dev::modbus_dev::block::Blocks;
 use crate::dev::modbus_dev::downlink::{WritePlan, build_cfg_map, build_key_map, build_name_map};
 use crate::dev::{LifecycleState, state::SharedState};
 
@@ -125,108 +124,7 @@ impl ModbusRunner {
         }
     }
 
-    /// TCP 模式：双连接并发读写
-    ///
-    /// 读连接 (`read_ctx`) 在独立 task 中按 poll_interval 轮询所有块，
-    /// 写连接 (`write_ctx`) 在主循环中即时处理下行命令，两者互不阻塞。
-    async fn run_connected_tcp(
-        &mut self,
-        read_ctx: Context,
-        write_ctx: &mut Context,
-        stop_rx: &mut watch::Receiver<bool>,
-        blocks: Arc<Blocks>,
-        maps: PointMaps<'_>,
-    ) {
-        self.state.store(&self.id, LifecycleState::Running);
-        self.report_comm_status(1);
-
-        // 读任务通过此通道把解析结果发回主循环；None 表示读取失败需重连
-        // 容量 8：主循环在写操作期间最多积压 8 个轮询结果，防止读任务阻塞
-        let (result_tx, mut result_rx) = mpsc::channel::<Option<Vec<DataPoint>>>(8);
-
-        let read_handle = tokio::spawn(tcp_read_loop(
-            read_ctx,
-            blocks,
-            self.timeout(),
-            self.request_interval(),
-            self.poll_interval(),
-            result_tx,
-        ));
-
-        loop {
-            tokio::select! {
-                _ = stop_rx.changed() => {
-                    if Self::stop_requested(stop_rx) {
-                        read_handle.abort();
-                        let _ = read_handle.await;
-                        self.report_comm_status(0);
-                        return;
-                    }
-                }
-                // 接收读任务的解析结果
-                result = result_rx.recv() => {
-                    match result {
-                        Some(Some(entries)) => {
-                            if !entries.is_empty() {
-                                self.center.ingest(&self.id, entries);
-                            }
-                        }
-                        // 读任务主动上报的读取错误
-                        Some(None) => {
-                            warn!("[{}] 读连接异常, 准备重连", self.id);
-                            read_handle.abort();
-                            let _ = read_handle.await;
-                            self.report_comm_status(0);
-                            return;
-                        }
-                        // 通道关闭：任务 panic 或被意外终止
-                        None => {
-                            match read_handle.await {
-                                Err(ref e) if e.is_panic() => {
-                                    error!("[{}] 读任务 panic, 准备重连: {:?}", self.id, e);
-                                }
-                                _ => {
-                                    warn!("[{}] 读任务意外退出, 准备重连", self.id);
-                                }
-                            }
-                            self.report_comm_status(0);
-                            return;
-                        }
-                    }
-                }
-                // 即时处理下行命令（写连接独立，不阻塞读）
-                msg = self.rx.recv() => {
-                    match msg {
-                        Some(entries) => {
-                            let items: Vec<String> = entries
-                                .iter()
-                                .map(|e| format!("{}: {}", resolve_modbus_name(&e.point, maps.cfg), e.value))
-                                .collect();
-                            info!("[{}] ↓: {}", self.id, items.join(", "));
-                            let plan = WritePlan::build(entries, maps.cfg, maps.key, maps.name, &self.id);
-                            if let Err(err) = plan.apply(write_ctx).await {
-                                warn!("[{}] 写连接下发失败, 准备重连: {}", self.id, err);
-                                read_handle.abort();
-                                let _ = read_handle.await;
-                                self.report_comm_status(0);
-                                return;
-                            }
-                        }
-                        None => {
-                            // 下行通道已关闭，设备正在停止
-                            read_handle.abort();
-                            let _ = read_handle.await;
-                            self.report_comm_status(0);
-                            self.state.store(&self.id, LifecycleState::Stopped);
-                            return;
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    /// RTU 模式：写优先的顺序读写
+    /// 写优先的顺序读写
     ///
     /// 每个轮询周期开始前先非阻塞排空下行队列，优先保证控制命令响应时效，
     /// 再依次读取各数据块（块间仍交织处理下行，维持原有行为）。
@@ -405,7 +303,7 @@ impl ModbusRunner {
         let cfg_map = build_cfg_map(&self.configs);
         let key_map = build_key_map(&self.configs);
         let name_map = build_name_map(&self.configs);
-        let blocks = Arc::new(match Blocks::build(self.configs.clone(), self.max_gap()) {
+        let blocks = match Blocks::build(self.configs.clone(), self.max_gap()) {
             Ok(blocks) => blocks,
             Err(err) => {
                 warn!("[{}] 构建读取块失败: {}", self.id, err);
@@ -413,7 +311,7 @@ impl ModbusRunner {
                 self.report_comm_status(0);
                 return;
             }
-        });
+        };
         let mut stop_rx = self.stop_rx.clone();
         let mut backoff = Backoff::new(Duration::from_millis(500), Duration::from_secs(10));
         loop {
@@ -425,53 +323,22 @@ impl ModbusRunner {
             self.state.store(&self.id, LifecycleState::Connecting);
             self.report_comm_status(0);
 
-            let is_tcp = matches!(&self.protocol, Protocol::Tcp(_));
             match self.connect().await {
-                Ok(ctx) => {
-                    // 首次连接成功即重置退避，无论第二条连接是否成功
+                Ok(mut ctx) => {
                     backoff.reset();
-                    if is_tcp {
-                        // TCP：再建一条写专用连接
-                        match self.connect().await {
-                            Ok(mut write_ctx) => {
-                                self.state.store(&self.id, LifecycleState::Connected);
-                                self.report_comm_status(1);
-                                self.run_connected_tcp(
-                                    ctx,
-                                    &mut write_ctx,
-                                    &mut stop_rx,
-                                    Arc::clone(&blocks),
-                                    PointMaps {
-                                        cfg: &cfg_map,
-                                        key: &key_map,
-                                        name: &name_map,
-                                    },
-                                )
-                                .await;
-                            }
-                            Err(err) => {
-                                self.state.store(&self.id, LifecycleState::Failed);
-                                warn!("[{}] 写连接建立失败, 准备重连: {}", self.id, err);
-                                self.report_comm_status(0);
-                            }
-                        }
-                    } else {
-                        // RTU：单连接，写优先
-                        let mut ctx = ctx;
-                        self.state.store(&self.id, LifecycleState::Connected);
-                        self.report_comm_status(1);
-                        self.run_connected_rtu(
-                            &mut ctx,
-                            &mut stop_rx,
-                            &blocks,
-                            PointMaps {
-                                cfg: &cfg_map,
-                                key: &key_map,
-                                name: &name_map,
-                            },
-                        )
-                        .await;
-                    }
+                    self.state.store(&self.id, LifecycleState::Connected);
+                    self.report_comm_status(1);
+                    self.run_connected_rtu(
+                        &mut ctx,
+                        &mut stop_rx,
+                        &blocks,
+                        PointMaps {
+                            cfg: &cfg_map,
+                            key: &key_map,
+                            name: &name_map,
+                        },
+                    )
+                    .await;
                 }
                 Err(err) => {
                     self.state.store(&self.id, LifecycleState::Failed);
@@ -494,48 +361,6 @@ impl ModbusRunner {
                     }
                 }
             }
-        }
-    }
-}
-
-/// TCP 读任务：在独立 task 中按 poll_interval 周期性读取所有数据块并解析。
-/// 通过 `result_tx` 发送解析结果；发送 `None` 表示发生错误，task 随即退出。
-async fn tcp_read_loop(
-    mut ctx: Context,
-    blocks: Arc<Blocks>,
-    timeout: Duration,
-    request_interval: Duration,
-    poll_interval: Duration,
-    result_tx: mpsc::Sender<Option<Vec<DataPoint>>>,
-) {
-    let mut ticker = time::interval(poll_interval);
-    ticker.set_missed_tick_behavior(time::MissedTickBehavior::Delay);
-    loop {
-        ticker.tick().await;
-
-        let mut reads: Vec<BlockRead> = Vec::with_capacity(blocks.block_count());
-        let mut failed = false;
-        for i in 0..blocks.block_count() {
-            match time::timeout(timeout, blocks.request_one(&mut ctx, i)).await {
-                Ok(Ok(read)) => reads.push(read),
-                Ok(Err(_)) | Err(_) => {
-                    failed = true;
-                    break;
-                }
-            }
-            if !request_interval.is_zero() && i + 1 < blocks.block_count() {
-                time::sleep(request_interval).await;
-            }
-        }
-
-        if failed {
-            let _ = result_tx.send(None).await;
-            return;
-        }
-
-        let entries = blocks.parse(&reads);
-        if result_tx.send(Some(entries)).await.is_err() {
-            return;
         }
     }
 }
