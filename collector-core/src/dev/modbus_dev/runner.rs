@@ -38,14 +38,14 @@ pub(super) struct ModbusRunner {
 }
 
 impl ModbusRunner {
-    /// 反馈通讯连接状态
-    fn report_comm_status(&self, v: u8) {
+    /// 上报通讯故障位：false = 有通讯，true = 无通讯。
+    fn set_comm_fault(&self, fault: bool) {
         self.center.ingest(
             &self.id,
             vec![DataPoint {
                 id: 0xFFFF,
                 name: "通讯状态",
-                value: Val::U8(v),
+                value: Val::U8(fault as u8),
                 key: "communicationStatus",
                 translator: None,
                 warn_bits: None,
@@ -124,11 +124,8 @@ impl ModbusRunner {
         }
     }
 
-    /// 写优先的顺序读写
-    ///
-    /// 每个轮询周期开始前先非阻塞排空下行队列，优先保证控制命令响应时效，
-    /// 再依次读取各数据块（块间仍交织处理下行，维持原有行为）。
-    async fn run_connected_rtu(
+    /// 写优先的轮询循环：每个周期先排空下行队列再读取数据块。
+    async fn run_connected(
         &mut self,
         ctx: &mut Context,
         stop_rx: &mut watch::Receiver<bool>,
@@ -136,29 +133,36 @@ impl ModbusRunner {
         maps: PointMaps<'_>,
     ) {
         self.state.store(&self.id, LifecycleState::Running);
-        self.report_comm_status(1);
         let mut ticker = time::interval(self.poll_interval());
         ticker.set_missed_tick_behavior(time::MissedTickBehavior::Delay);
         loop {
             tokio::select! {
                 _ = stop_rx.changed() => {
                     if Self::stop_requested(stop_rx) {
-                        self.report_comm_status(0);
+                        self.set_comm_fault(true);
                         return;
                     }
                 }
                 _ = ticker.tick() => {
-                    // 写优先：先排空队列中所有待发命令
-                    if let Err(reconnect) = self.flush_pending_writes(ctx, &maps).await {
-                        if reconnect {
-                            self.report_comm_status(0);
+                    match self.flush_priority_writes(ctx, &maps).await {
+                        Err(reconnect) => {
+                            if reconnect {
+                                self.set_comm_fault(true);
+                            }
+                            return;
                         }
-                        return;
+                        // 写完后等 request_interval，设备处理写命令后再接受读请求
+                        Ok(true) => {
+                            let interval = self.request_interval();
+                            if !interval.is_zero() {
+                                time::sleep(interval).await;
+                            }
+                        }
+                        Ok(false) => {}
                     }
-                    // 读取数据块，块间继续交织处理后续到达的下行命令
-                    if let Err(reconnect) = self.read_and_interleave_downlinks(ctx, blocks, &maps).await {
+                    if let Err(reconnect) = self.read_blocks(ctx, blocks, &maps).await {
                         if reconnect {
-                            self.report_comm_status(0);
+                            self.set_comm_fault(true);
                         }
                         return;
                     }
@@ -167,23 +171,23 @@ impl ModbusRunner {
         }
     }
 
-    /// RTU 写优先辅助：非阻塞排空下行队列中待发命令，以 poll_interval 为时间预算。
+    /// 非阻塞排空下行队列中的待发命令，以 poll_interval 为时间上限。
     ///
-    /// 避免无限制地消耗 tick 臂时间（屏蔽 stop 信号 / 饿死读操作）：
-    /// 超出时间预算后立即返回，剩余写命令留给块间 `drain_downlinks` 处理。
-    async fn flush_pending_writes(
+    /// 返回 `Ok(true)` 表示实际执行了写操作。
+    async fn flush_priority_writes(
         &mut self,
         ctx: &mut Context,
         maps: &PointMaps<'_>,
-    ) -> Result<(), bool> {
+    ) -> Result<bool, bool> {
         let deadline = tokio::time::Instant::now() + self.poll_interval();
+        let mut did_write = false;
         loop {
             match self.rx.try_recv() {
                 Ok(entries) => {
                     let items: Vec<String> = entries
                         .iter()
                         .map(|e| {
-                            format!("{}: {}", resolve_modbus_name(&e.point, maps.cfg), e.value)
+                            format!("{}: {}", resolve_name(&e.point, maps.cfg), e.value)
                         })
                         .collect();
                     info!("[{}] ↓ (优先): {}", self.id, items.join(", "));
@@ -192,13 +196,14 @@ impl ModbusRunner {
                         warn!("[{}] 下发失败, 准备重连: {}", self.id, err);
                         return Err(true);
                     }
+                    did_write = true;
                     if tokio::time::Instant::now() >= deadline {
-                        return Ok(());
+                        return Ok(did_write);
                     }
                 }
-                Err(mpsc::error::TryRecvError::Empty) => return Ok(()),
+                Err(mpsc::error::TryRecvError::Empty) => return Ok(did_write),
                 Err(mpsc::error::TryRecvError::Disconnected) => {
-                    self.report_comm_status(0);
+                    self.set_comm_fault(true);
                     self.state.store(&self.id, LifecycleState::Stopped);
                     return Err(false);
                 }
@@ -206,8 +211,8 @@ impl ModbusRunner {
         }
     }
 
-    /// 读取所有数据块并在块间交织处理下行命令（RTU 共用）
-    async fn read_and_interleave_downlinks(
+    /// 依次读取所有数据块，块间交织处理下行命令。
+    async fn read_blocks(
         &mut self,
         ctx: &mut Context,
         blocks: &Blocks,
@@ -244,6 +249,7 @@ impl ModbusRunner {
         Ok(())
     }
 
+    /// 在块间间隔窗口内处理到达的下行命令。
     async fn drain_downlinks(
         &mut self,
         ctx: &mut Context,
@@ -257,7 +263,7 @@ impl ModbusRunner {
                     Ok(entries) => Some(entries),
                     Err(tokio::sync::mpsc::error::TryRecvError::Empty) => None,
                     Err(tokio::sync::mpsc::error::TryRecvError::Disconnected) => {
-                        self.report_comm_status(0);
+                        self.set_comm_fault(true);
                         self.state.store(&self.id, LifecycleState::Stopped);
                         return Err(false);
                     }
@@ -268,7 +274,7 @@ impl ModbusRunner {
                         match msg {
                             Some(entries) => Some(entries),
                             None => {
-                                self.report_comm_status(0);
+                                self.set_comm_fault(true);
                                 self.state.store(&self.id, LifecycleState::Stopped);
                                 return Err(false);
                             }
@@ -284,7 +290,7 @@ impl ModbusRunner {
 
             let items: Vec<String> = entries
                 .iter()
-                .map(|e| format!("{}: {}", resolve_modbus_name(&e.point, maps.cfg), e.value))
+                .map(|e| format!("{}: {}", resolve_name(&e.point, maps.cfg), e.value))
                 .collect();
             info!("[{}] ↓: {}", self.id, items.join(", "));
             let plan = WritePlan::build(entries, maps.cfg, maps.key, maps.name, &self.id);
@@ -308,7 +314,7 @@ impl ModbusRunner {
             Err(err) => {
                 warn!("[{}] 构建读取块失败: {}", self.id, err);
                 self.state.store(&self.id, LifecycleState::Failed);
-                self.report_comm_status(0);
+                self.set_comm_fault(true);
                 return;
             }
         };
@@ -317,18 +323,18 @@ impl ModbusRunner {
         loop {
             if Self::stop_requested(&stop_rx) {
                 self.state.store(&self.id, LifecycleState::Stopped);
-                self.report_comm_status(0);
+                self.set_comm_fault(true);
                 return;
             }
             self.state.store(&self.id, LifecycleState::Connecting);
-            self.report_comm_status(0);
+            self.set_comm_fault(true);
 
             match self.connect().await {
                 Ok(mut ctx) => {
                     backoff.reset();
                     self.state.store(&self.id, LifecycleState::Connected);
-                    self.report_comm_status(1);
-                    self.run_connected_rtu(
+                    self.set_comm_fault(false);
+                    self.run_connected(
                         &mut ctx,
                         &mut stop_rx,
                         &blocks,
@@ -343,12 +349,12 @@ impl ModbusRunner {
                 Err(err) => {
                     self.state.store(&self.id, LifecycleState::Failed);
                     warn!("[{}] 连接失败, 准备重连: {}", self.id, err);
-                    self.report_comm_status(0);
+                    self.set_comm_fault(true);
                 }
             }
             if Self::stop_requested(&stop_rx) {
                 self.state.store(&self.id, LifecycleState::Stopped);
-                self.report_comm_status(0);
+                self.set_comm_fault(true);
                 return;
             }
             let delay = backoff.next_delay();
@@ -365,7 +371,7 @@ impl ModbusRunner {
     }
 }
 
-fn resolve_modbus_name<'a>(
+fn resolve_name<'a>(
     point: &'a PointRef,
     cfg_map: &'a HashMap<PointId, ModbusConfig>,
 ) -> &'a str {
