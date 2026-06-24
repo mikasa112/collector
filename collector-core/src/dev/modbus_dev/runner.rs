@@ -8,7 +8,7 @@ use tokio_modbus::Slave;
 use tokio_modbus::client::{Context, rtu, tcp};
 use tokio_modbus::prelude::SlaveContext;
 use tokio_serial::{DataBits, Parity};
-use tracing::{info, warn};
+use tracing::{error, info, warn};
 
 use crate::center::SharedPointCenter;
 use crate::config::modbus_conf::{ModbusConfig, ModbusConfigs};
@@ -141,7 +141,8 @@ impl ModbusRunner {
         self.report_comm_status(1);
 
         // 读任务通过此通道把解析结果发回主循环；None 表示读取失败需重连
-        let (result_tx, mut result_rx) = mpsc::channel::<Option<Vec<DataPoint>>>(2);
+        // 容量 8：主循环在写操作期间最多积压 8 个轮询结果，防止读任务阻塞
+        let (result_tx, mut result_rx) = mpsc::channel::<Option<Vec<DataPoint>>>(8);
 
         let read_handle = tokio::spawn(tcp_read_loop(
             read_ctx,
@@ -170,11 +171,24 @@ impl ModbusRunner {
                                 self.center.ingest(&self.id, entries);
                             }
                         }
-                        // None（通道关闭）或 Some(None)（读取出错）均触发重连
-                        _ => {
+                        // 读任务主动上报的读取错误
+                        Some(None) => {
                             warn!("[{}] 读连接异常, 准备重连", self.id);
                             read_handle.abort();
                             let _ = read_handle.await;
+                            self.report_comm_status(0);
+                            return;
+                        }
+                        // 通道关闭：任务 panic 或被意外终止
+                        None => {
+                            match read_handle.await {
+                                Err(ref e) if e.is_panic() => {
+                                    error!("[{}] 读任务 panic, 准备重连: {:?}", self.id, e);
+                                }
+                                _ => {
+                                    warn!("[{}] 读任务意外退出, 准备重连", self.id);
+                                }
+                            }
                             self.report_comm_status(0);
                             return;
                         }
@@ -226,6 +240,7 @@ impl ModbusRunner {
         self.state.store(&self.id, LifecycleState::Running);
         self.report_comm_status(1);
         let mut ticker = time::interval(self.poll_interval());
+        ticker.set_missed_tick_behavior(time::MissedTickBehavior::Delay);
         loop {
             tokio::select! {
                 _ = stop_rx.changed() => {
@@ -254,12 +269,16 @@ impl ModbusRunner {
         }
     }
 
-    /// RTU 写优先辅助：非阻塞排空下行队列中全部待发命令
+    /// RTU 写优先辅助：非阻塞排空下行队列中待发命令，以 poll_interval 为时间预算。
+    ///
+    /// 避免无限制地消耗 tick 臂时间（屏蔽 stop 信号 / 饿死读操作）：
+    /// 超出时间预算后立即返回，剩余写命令留给块间 `drain_downlinks` 处理。
     async fn flush_pending_writes(
         &mut self,
         ctx: &mut Context,
         maps: &PointMaps<'_>,
     ) -> Result<(), bool> {
+        let deadline = tokio::time::Instant::now() + self.poll_interval();
         loop {
             match self.rx.try_recv() {
                 Ok(entries) => {
@@ -274,6 +293,9 @@ impl ModbusRunner {
                     if let Err(err) = plan.apply(ctx).await {
                         warn!("[{}] 下发失败, 准备重连: {}", self.id, err);
                         return Err(true);
+                    }
+                    if tokio::time::Instant::now() >= deadline {
+                        return Ok(());
                     }
                 }
                 Err(mpsc::error::TryRecvError::Empty) => return Ok(()),
@@ -406,13 +428,14 @@ impl ModbusRunner {
             let is_tcp = matches!(&self.protocol, Protocol::Tcp(_));
             match self.connect().await {
                 Ok(ctx) => {
+                    // 首次连接成功即重置退避，无论第二条连接是否成功
+                    backoff.reset();
                     if is_tcp {
                         // TCP：再建一条写专用连接
                         match self.connect().await {
                             Ok(mut write_ctx) => {
                                 self.state.store(&self.id, LifecycleState::Connected);
                                 self.report_comm_status(1);
-                                backoff.reset();
                                 self.run_connected_tcp(
                                     ctx,
                                     &mut write_ctx,
@@ -437,7 +460,6 @@ impl ModbusRunner {
                         let mut ctx = ctx;
                         self.state.store(&self.id, LifecycleState::Connected);
                         self.report_comm_status(1);
-                        backoff.reset();
                         self.run_connected_rtu(
                             &mut ctx,
                             &mut stop_rx,
