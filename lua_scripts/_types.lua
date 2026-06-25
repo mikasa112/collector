@@ -63,6 +63,11 @@ function dc.read(dev_id, point_id) end
 ---@param value      number         要写入的值（仅支持数值类型）
 function dc.dispatch(dev_id, point_mark, value) end
 
+--- 订阅设备数据变化。调用后，该设备数据每次变化时会触发 "dc:changed" 事件。
+--- 同一设备重复调用无副作用。设备不存在时记录警告并忽略。
+---@param dev_id string 设备 ID
+function dc.watch(dev_id) end
+
 -----------------------------------------------------------------------
 -- log - 日志 API
 -----------------------------------------------------------------------
@@ -126,6 +131,35 @@ function timer.after(ms, fn) end
 ---@param ms integer 间隔毫秒数
 ---@param fn fun()   回调函数
 function timer.every(ms, fn) end
+
+-----------------------------------------------------------------------
+-- store - 脚本间共享 KV 存储（同一 ScriptManager 下所有脚本共享同一实例）
+-----------------------------------------------------------------------
+
+---@class StoreApi
+store = {}
+
+--- 写入一个值（支持 number/string/boolean/table）
+---@param key   string
+---@param value any
+function store.set(key, value) end
+
+--- 读取一个值，不存在时返回 nil
+---@param key string
+---@return any
+function store.get(key) end
+
+--- 删除一个键
+---@param key string
+function store.del(key) end
+
+-----------------------------------------------------------------------
+-- DcChangedEvent - dc:changed 事件 payload
+-----------------------------------------------------------------------
+
+---@class DcChangedEvent
+---@field dev    string      触发变化的设备 ID
+---@field points DataPoint[] 变化后的全量数据点列表
 
 -----------------------------------------------------------------------
 -- override - MQTT 覆盖推送 API（仅在 MQTT 已配置时可用）

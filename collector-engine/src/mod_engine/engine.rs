@@ -3,13 +3,20 @@ use std::{
     time::Duration,
 };
 
-use collector_core::{center::SharedPointCenter, dock::mqtt::MqttOverrideStore};
+use collector_core::{
+    center::SharedPointCenter, core::point::DataPoint, dock::mqtt::MqttOverrideStore,
+};
 use mlua::{Lua, LuaSerdeExt};
 use tokio::sync::{mpsc, oneshot};
 
 use crate::mod_engine::{
     self,
-    api::{dc::create_dc_table, log::create_log_table, mqtt::create_mqtt_table},
+    api::{
+        dc::create_dc_table,
+        log::create_log_table,
+        mqtt::create_mqtt_table,
+        store::{LuaStore, create_store_table},
+    },
     errors::Error,
     eventbus::EventBus,
     scheduler::Scheduler,
@@ -84,6 +91,7 @@ pub struct ModEngine {
     events: Arc<std::sync::RwLock<EventBus>>,
     scheduler: Scheduler,
     rx: mpsc::UnboundedReceiver<EngineCmd>,
+    dc_changed_rx: mpsc::UnboundedReceiver<(String, Arc<[DataPoint]>)>,
 }
 
 impl ModEngine {
@@ -91,15 +99,18 @@ impl ModEngine {
         center: SharedPointCenter,
         override_store: Option<MqttOverrideStore>,
         owned_topics: Arc<Mutex<Vec<String>>>,
+        store: LuaStore,
     ) -> mod_engine::Result<(Self, ModEngineHandle)> {
         let (tx, rx) = mpsc::unbounded_channel();
+        let (watch_tx, dc_changed_rx) = mpsc::unbounded_channel();
         let engine = Self {
             lua: Lua::new(),
             events: Arc::new(std::sync::RwLock::new(EventBus::new())),
             scheduler: Scheduler::new(),
             rx,
+            dc_changed_rx,
         };
-        engine.register_api(center, override_store, owned_topics)?;
+        engine.register_api(center, override_store, owned_topics, store, watch_tx)?;
         engine.register_event()?;
         engine.register_timer(tx.clone())?;
         engine.register_task(tx.clone())?;
@@ -112,14 +123,17 @@ impl ModEngine {
         center: SharedPointCenter,
         override_store: Option<MqttOverrideStore>,
         owned_topics: Arc<Mutex<Vec<String>>>,
+        store: LuaStore,
+        watch_tx: mpsc::UnboundedSender<(String, Arc<[DataPoint]>)>,
     ) -> mod_engine::Result<()> {
         let globals = self.lua.globals();
         globals.set("log", create_log_table(&self.lua)?)?;
-        globals.set("dc", create_dc_table(&self.lua, center)?)?;
-        if let Some(store) = override_store {
+        globals.set("dc", create_dc_table(&self.lua, center, watch_tx)?)?;
+        globals.set("store", create_store_table(&self.lua, store)?)?;
+        if let Some(mqtt_store) = override_store {
             globals.set(
                 "override",
-                create_mqtt_table(&self.lua, store, owned_topics)?,
+                create_mqtt_table(&self.lua, mqtt_store, owned_topics)?,
             )?;
         }
         Ok(())
@@ -277,12 +291,61 @@ impl ModEngine {
         Ok(())
     }
 
+    async fn emit_dc_changed(
+        &self,
+        dev_id: &str,
+        snapshot: &Arc<[DataPoint]>,
+    ) -> mod_engine::Result<()> {
+        let funcs: Vec<mlua::Function> = {
+            let binding = self.events.read().unwrap();
+            let Some(list) = binding.handlers.get("dc:changed") else {
+                return Ok(());
+            };
+            list.iter()
+                .filter_map(|k| self.lua.registry_value::<mlua::Function>(k).ok())
+                .collect()
+        };
+        if funcs.is_empty() {
+            return Ok(());
+        }
+        let points: Vec<serde_json::Value> = snapshot
+            .iter()
+            .map(|p| {
+                serde_json::json!({
+                    "id": p.id,
+                    "key": p.key,
+                    "name": p.name,
+                    "value": serde_json::to_value(&p.value).unwrap_or_default(),
+                })
+            })
+            .collect();
+        let payload = serde_json::json!({ "dev": dev_id, "points": points });
+        let lua_val = self.lua.to_value(&payload)?;
+        for func in funcs {
+            func.call_async::<()>(lua_val.clone()).await?;
+        }
+        Ok(())
+    }
+
+    async fn drain_dc_changes(&mut self) -> mod_engine::Result<()> {
+        let mut msgs = vec![];
+        while let Ok(msg) = self.dc_changed_rx.try_recv() {
+            msgs.push(msg);
+        }
+        for (dev_id, snapshot) in msgs {
+            self.emit_dc_changed(&dev_id, &snapshot).await?;
+        }
+        Ok(())
+    }
+
     /// 异步运行直到收到 Shutdown 命令或 sender 全部 drop
     pub async fn run(mut self) -> mod_engine::Result<()> {
         loop {
             if self.drain_commands().await? {
                 break;
             }
+
+            self.drain_dc_changes().await?;
 
             self.scheduler.tick(&self.lua).await?;
 
@@ -306,6 +369,11 @@ impl ModEngine {
                                 break;
                             }
                         }
+                    }
+                }
+                changed = self.dc_changed_rx.recv() => {
+                    if let Some((dev_id, snapshot)) = changed {
+                        self.emit_dc_changed(&dev_id, &snapshot).await?;
                     }
                 }
             }

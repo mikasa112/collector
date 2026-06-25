@@ -9,6 +9,7 @@ use collector_core::{center::SharedPointCenter, dock::mqtt::MqttOverrideStore};
 use tokio_util::sync::CancellationToken;
 
 use crate::mod_engine::{
+    api::store::{LuaStore, new_store},
     engine::{ModEngine, ModEngineHandle},
     script_loader::{self, ScriptMeta},
     watcher::{FileEvent, watch_dir},
@@ -29,10 +30,11 @@ impl ScriptInstance {
         meta: &ScriptMeta,
         center: SharedPointCenter,
         override_store: Option<MqttOverrideStore>,
+        store: LuaStore,
     ) -> Option<Self> {
         let owned_topics: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
         let (engine, handle) =
-            match ModEngine::create(center, override_store.clone(), owned_topics.clone()) {
+            match ModEngine::create(center, override_store.clone(), owned_topics.clone(), store) {
                 Ok(pair) => pair,
                 Err(e) => {
                     tracing::error!("[mod:{}] 引擎创建失败: {}", meta.name, e);
@@ -75,6 +77,7 @@ impl ScriptInstance {
 pub struct ScriptManager {
     center: SharedPointCenter,
     override_store: Option<MqttOverrideStore>,
+    store: LuaStore,
     scripts: HashMap<PathBuf, ScriptInstance>,
     /// 记录每个路径最近一次处理时间，用于热更新去抖
     last_reload: HashMap<PathBuf, Instant>,
@@ -85,6 +88,7 @@ impl ScriptManager {
         Self {
             center,
             override_store,
+            store: new_store(),
             scripts: HashMap::new(),
             last_reload: HashMap::new(),
         }
@@ -97,7 +101,7 @@ impl ScriptManager {
         let path = meta.path.clone();
         let name = meta.name.clone();
         if let Some(instance) =
-            ScriptInstance::spawn(&meta, self.center.clone(), self.override_store.clone()).await
+            ScriptInstance::spawn(&meta, self.center.clone(), self.override_store.clone(), self.store.clone()).await
         {
             tracing::info!("[mod:{}] 已启动 ({})", name, path.display());
             self.scripts.insert(path, instance);

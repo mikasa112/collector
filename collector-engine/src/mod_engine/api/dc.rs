@@ -1,8 +1,14 @@
+use std::{
+    collections::HashSet,
+    sync::{Arc, Mutex},
+};
+
 use collector_core::{
     center::SharedPointCenter,
     core::point::{DataPoint, PointId, Val},
 };
 use mlua::{Lua, Table, Value};
+use tokio::sync::mpsc;
 
 /// 将 Val 转为 Lua 值
 fn val_to_lua(lua: &Lua, val: &Val) -> mlua::Result<Value> {
@@ -82,7 +88,11 @@ fn append_status_and_faults(lua: &Lua, t: &Table, point: &DataPoint) -> mlua::Re
     Ok(())
 }
 
-pub fn create_dc_table(lua: &Lua, center: SharedPointCenter) -> mlua::Result<Table> {
+pub fn create_dc_table(
+    lua: &Lua,
+    center: SharedPointCenter,
+    watch_tx: mpsc::UnboundedSender<(String, Arc<[DataPoint]>)>,
+) -> mlua::Result<Table> {
     let dc_table = lua.create_table()?;
 
     // dc.read_all(dev_id) -> [{id, key, name, value}, ...]
@@ -183,6 +193,41 @@ pub fn create_dc_table(lua: &Lua, center: SharedPointCenter) -> mlua::Result<Tab
                     }
                 },
             )?,
+        )?;
+    }
+
+    // dc.watch(dev_id) — 订阅设备数据变化，变化时触发 "dc:changed" 事件
+    {
+        let c = center.clone();
+        let watched: Arc<Mutex<HashSet<String>>> = Arc::new(Mutex::new(HashSet::new()));
+        dc_table.set(
+            "watch",
+            lua.create_function(move |_, dev_id: String| {
+                let mut set = watched.lock().unwrap();
+                if set.contains(&dev_id) {
+                    return Ok(());
+                }
+                match c.subscribe(&dev_id) {
+                    None => {
+                        tracing::warn!("[mod] dc.watch: 设备 {} 尚未注册，忽略", dev_id);
+                    }
+                    Some(mut rx) => {
+                        set.insert(dev_id.clone());
+                        let tx = watch_tx.clone();
+                        let dev_id_task = dev_id.clone();
+                        tokio::spawn(async move {
+                            while rx.changed().await.is_ok() {
+                                let snap = rx.borrow_and_update().clone();
+                                if tx.send((dev_id_task.clone(), snap)).is_err() {
+                                    break;
+                                }
+                            }
+                        });
+                        tracing::info!("[mod] dc.watch: 开始监听设备 {}", dev_id);
+                    }
+                }
+                Ok(())
+            })?,
         )?;
     }
 
