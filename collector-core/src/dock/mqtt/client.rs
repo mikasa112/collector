@@ -234,7 +234,11 @@ fn parse_device_id_from_topic(topic: &str) -> Result<String, MqttReceiveError> {
     if len < 3 {
         return Err(MqttReceiveError::Topic(topic.to_owned()));
     }
-    let prefix = segments[len - 3];
+    let mut prefix = segments[len - 3];
+    // 这里是鸿合项目使用的
+    if prefix == "bank" {
+        prefix = "bcu";
+    }
     let index: u32 = segments[len - 2]
         .parse()
         .map_err(|_| MqttReceiveError::Topic(topic.to_owned()))?;
