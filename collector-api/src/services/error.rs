@@ -41,6 +41,10 @@ pub enum ServiceError {
     /// 线程池错误
     #[error("{0}")]
     Join(#[from] tokio::task::JoinError),
+
+    /// 系统内部错误
+    #[error("{0}")]
+    InternalError(String),
 }
 
 /// Service 层结果类型

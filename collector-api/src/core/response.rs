@@ -38,6 +38,18 @@ where
     pub total: Option<usize>,
 }
 
+impl<T: Serialize> ListResponse<T> {
+    pub fn ok(data: Vec<T>) -> Self {
+        let len = data.len();
+        Self {
+            err_msg: None,
+            status: 200,
+            data: Some(data),
+            total: Some(len),
+        }
+    }
+}
+
 #[async_trait]
 impl<T> Writer for ObjResponse<T>
 where

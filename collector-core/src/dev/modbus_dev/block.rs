@@ -161,6 +161,7 @@ pub(super) enum BlockRead {
 
 impl Blocks {
     /// 返回所有 block 的摘要，用于日志排查
+    #[allow(dead_code)]
     pub(super) fn describe(&self) -> String {
         self.blocks
             .iter()

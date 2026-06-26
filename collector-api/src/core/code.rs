@@ -88,6 +88,9 @@ impl Code {
                     503,
                     "服务暂时不可用".to_string(),
                 ),
+                ServiceError::InternalError(msg) => {
+                    (StatusCode::INTERNAL_SERVER_ERROR, 500, msg.clone())
+                }
             },
 
             // DAO 层错误映射（直接使用时）

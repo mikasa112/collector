@@ -16,6 +16,7 @@ pub struct ModbusTcpConfig {
     pub slave: u8,
     pub ip: String,
     pub port: u16,
+    #[allow(dead_code)]
     pub interval: u64,
     pub timeout: u64,
     pub request_interval: u64,
@@ -72,6 +73,7 @@ pub struct ModbusRtuConfig {
     pub data_bits: u8,
     pub parity: String,
     pub stop_bits: u8,
+    #[allow(dead_code)]
     pub interval: u64,
     pub timeout: u64,
     pub request_interval: u64,
