@@ -133,49 +133,62 @@ impl ModbusRunner {
         let request_interval = self.request_interval();
         let timeout = self.timeout();
 
-        let mut read_cursor = 0usize;
-        // 每个槽位缓存上一次读值，积满一圈后整体发布
-        let mut raw_reads: Vec<Option<_>> = (0..block_count).map(|_| None).collect();
+        let mut cursor = 0usize;
+        // 每个槽位缓存最近一次读值，积满一圈后整体发布
+        let mut read_slots: Vec<Option<_>> = (0..block_count).map(|_| None).collect();
+        // 连续失败计数，达到阈值才触发重连
+        let mut fail_streak = 0u32;
+        const MAX_FAILURES: u32 = 3;
 
         loop {
-            // 停止检查
             if Self::stop_requested(stop_rx) {
                 self.set_comm_fault(true);
                 return;
             }
 
-            // 写优先：非阻塞排空当前写队列
-            if let Err(reconnect) = self.drain_writes_nb(ctx, &maps).await {
-                if reconnect {
+            if let Err(fault) = self.drain_writes(ctx, &maps).await {
+                if fault {
                     self.set_comm_fault(true);
                 }
                 return;
             }
 
-            // 读取下一个块（round-robin）
             if block_count > 0 {
-                let i = read_cursor;
-                read_cursor = (read_cursor + 1) % block_count;
+                let i = cursor;
+                cursor = (cursor + 1) % block_count;
 
                 match time::timeout(timeout, blocks.request_one(ctx, i)).await {
                     Ok(Ok(read)) => {
-                        raw_reads[i] = Some(read);
+                        fail_streak = 0;
+                        read_slots[i] = Some(read);
                     }
                     Ok(Err(err)) => {
-                        warn!("[{}] 读取失败, 准备重连: {}", self.id, err);
-                        self.set_comm_fault(true);
-                        return;
+                        fail_streak += 1;
+                        warn!(
+                            "[{}] 读取失败 ({}/{}): {}",
+                            self.id, fail_streak, MAX_FAILURES, err
+                        );
+                        if fail_streak >= MAX_FAILURES {
+                            self.set_comm_fault(true);
+                            return;
+                        }
                     }
                     Err(_) => {
-                        warn!("[{}] 读取超时 (块 {}), 准备重连", self.id, i);
-                        self.set_comm_fault(true);
-                        return;
+                        fail_streak += 1;
+                        warn!(
+                            "[{}] 读取超时 ({}/{}, 块 {})",
+                            self.id, fail_streak, MAX_FAILURES, i
+                        );
+                        if fail_streak >= MAX_FAILURES {
+                            self.set_comm_fault(true);
+                            return;
+                        }
                     }
                 }
 
                 // 读完一圈 → 发布；take() 同时将槽位复位为 None
-                if read_cursor == 0 {
-                    let reads: Vec<_> = raw_reads.iter_mut().filter_map(|s| s.take()).collect();
+                if cursor == 0 {
+                    let reads: Vec<_> = read_slots.iter_mut().filter_map(|s| s.take()).collect();
                     if reads.len() == block_count {
                         let entries = blocks.parse(&reads);
                         if !entries.is_empty() {
@@ -203,11 +216,9 @@ impl ModbusRunner {
     }
 
     /// 非阻塞排空写队列：处理所有已到达的写命令，队列空时立即返回。
-    async fn drain_writes_nb(
-        &mut self,
-        ctx: &mut Context,
-        maps: &PointMaps<'_>,
-    ) -> Result<(), bool> {
+    ///
+    /// 返回 `Err(true)` 表示写失败需重连，`Err(false)` 表示 channel 已关闭。
+    async fn drain_writes(&mut self, ctx: &mut Context, maps: &PointMaps<'_>) -> Result<(), bool> {
         loop {
             match self.rx.try_recv() {
                 Ok(entries) => {
