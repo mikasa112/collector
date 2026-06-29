@@ -244,6 +244,29 @@ pub struct DataPoint {
     pub unit: Option<&'static str>,
 }
 
+impl DataPoint {
+    pub fn warning(&self) -> Vec<WarnBit> {
+        let Ok(v) = u32::try_from(&self.value) else {
+            return vec![];
+        };
+        let Some(warn_bits) = self.warn_bits else {
+            return vec![];
+        };
+        warn_bits
+            .bits
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| (v >> i) & 1 == 1)
+            .map(|(_, bit)| *bit)
+            .collect()
+    }
+
+    pub fn current_status(&self) -> Option<&'static StatusWord> {
+        let v = u32::try_from(&self.value).ok()? as u16;
+        self.status_word?.words.get(&v)
+    }
+}
+
 impl Display for DataPoint {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}:{}", self.name, self.value)
