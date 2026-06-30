@@ -3,7 +3,7 @@ use std::{
     fmt::{Debug, Display},
 };
 
-use serde::{Serialize, ser::SerializeSeq};
+use serde::{Deserialize, Serialize, ser::SerializeSeq};
 use serde_json::Value;
 
 #[derive(Debug, thiserror::Error)]
@@ -205,6 +205,64 @@ impl Serialize for Val {
                 seq.end()
             }
         }
+    }
+}
+
+impl<'de> Deserialize<'de> for Val {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        struct ValVisitor;
+
+        impl<'de> serde::de::Visitor<'de> for ValVisitor {
+            type Value = Val;
+
+            fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+                f.write_str("a number or array of numbers")
+            }
+
+            fn visit_u64<E: serde::de::Error>(self, v: u64) -> Result<Val, E> {
+                if v <= u8::MAX as u64 {
+                    Ok(Val::U8(v as u8))
+                } else if v <= u16::MAX as u64 {
+                    Ok(Val::U16(v as u16))
+                } else if v <= u32::MAX as u64 {
+                    Ok(Val::U32(v as u32))
+                } else {
+                    Ok(Val::F64(v as f64))
+                }
+            }
+
+            fn visit_i64<E: serde::de::Error>(self, v: i64) -> Result<Val, E> {
+                if v >= 0 {
+                    return self.visit_u64(v as u64);
+                }
+                if v >= i8::MIN as i64 {
+                    Ok(Val::I8(v as i8))
+                } else if v >= i16::MIN as i64 {
+                    Ok(Val::I16(v as i16))
+                } else if v >= i32::MIN as i64 {
+                    Ok(Val::I32(v as i32))
+                } else {
+                    Ok(Val::F64(v as f64))
+                }
+            }
+
+            fn visit_f64<E: serde::de::Error>(self, v: f64) -> Result<Val, E> {
+                Ok(Val::F64(v))
+            }
+
+            fn visit_seq<A: serde::de::SeqAccess<'de>>(self, mut seq: A) -> Result<Val, A::Error> {
+                let mut items = Vec::new();
+                while let Some(item) = seq.next_element::<Val>()? {
+                    items.push(item);
+                }
+                Ok(Val::List(items))
+            }
+        }
+
+        deserializer.deserialize_any(ValVisitor)
     }
 }
 

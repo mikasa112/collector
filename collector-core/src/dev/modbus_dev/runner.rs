@@ -311,7 +311,11 @@ impl ModbusRunner {
 
 fn resolve_name<'a>(point: &'a PointRef, cfg_map: &'a HashMap<PointId, ModbusConfig>) -> &'a str {
     match point {
-        PointRef::Key(k) | PointRef::Name(k) => k,
+        PointRef::Key(k) | PointRef::Name(k) => cfg_map
+            .values()
+            .find(|cfg| cfg.key == k)
+            .map(|cfg| cfg.name)
+            .unwrap_or("unknown"),
         PointRef::Id(id) => cfg_map.get(id).map(|cfg| cfg.name).unwrap_or("unknown"),
     }
 }
