@@ -1,3 +1,4 @@
+mod data;
 #[cfg(target_os = "linux")]
 mod network;
 mod user;
@@ -12,6 +13,7 @@ pub(crate) fn root_router(center: SharedPointCenter) -> Router {
         .hoop(InjectCenter::new(center))
         .path("v1")
         .push(user::router())
+        .push(data::router())
         .push(ws::router());
     #[cfg(target_os = "linux")]
     let v1 = v1.push(network::router());
