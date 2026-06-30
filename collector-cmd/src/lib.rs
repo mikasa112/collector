@@ -11,7 +11,6 @@ use collector_core::dock::mqtt::client::MqttClient;
 use collector_core::shutdown::ShutdownManager;
 use collector_engine::mod_engine::ScriptManager;
 use tracing::error;
-use tracing::level_filters::LevelFilter;
 use tracing_error::ErrorLayer;
 use tracing_log::LogTracer;
 use tracing_subscriber::fmt::format::FmtSpan;
@@ -44,7 +43,7 @@ pub fn init_tracing() -> Vec<tracing_appender::non_blocking::WorkerGuard> {
         .with_timer(fmt::time::ChronoLocal::rfc_3339())
         .with_level(true)
         .with_writer(std::io::stdout)
-        .with_filter(LevelFilter::INFO);
+        .with_filter(EnvFilter::new("info,zbus=off"));
 
     // API 模块文件层 - 只记录 collector_api 模块的日志
     let api_layer = fmt::layer()
