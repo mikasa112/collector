@@ -1,5 +1,3 @@
-use std::fmt::Display;
-
 use collector_core::core::point::{PointId, Val};
 use salvo::{Depot, Request, handler};
 use validator::Validate;

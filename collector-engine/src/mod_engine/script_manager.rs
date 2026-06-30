@@ -100,8 +100,13 @@ impl ScriptManager {
         }
         let path = meta.path.clone();
         let name = meta.name.clone();
-        if let Some(instance) =
-            ScriptInstance::spawn(&meta, self.center.clone(), self.override_store.clone(), self.store.clone()).await
+        if let Some(instance) = ScriptInstance::spawn(
+            &meta,
+            self.center.clone(),
+            self.override_store.clone(),
+            self.store.clone(),
+        )
+        .await
         {
             tracing::info!("[mod:{}] 已启动 ({})", name, path.display());
             self.scripts.insert(path, instance);
