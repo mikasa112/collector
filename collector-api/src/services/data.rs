@@ -23,6 +23,9 @@ impl DataService {
         }
         let center = self.center(depot)?;
         let ids = center.dev_ids();
+        let json = serde_json::to_string(&params)
+            .map_err(|e| ServiceError::InternalError(e.to_string()))?;
+        tracing::info!("set points: {}", json);
         for param in params.points {
             if !ids.contains(&param.dev_id) {
                 return Err(ServiceError::InvalidParameter(format!(

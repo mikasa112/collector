@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 use collector_core::core::point::{PointId, Val};
 use salvo::{Depot, Request, handler};
 use validator::Validate;
@@ -7,12 +9,12 @@ use crate::{
     services::data::DataService,
 };
 
-#[derive(Debug, Clone, serde::Deserialize, Validate)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Validate)]
 pub struct RequestDataParams {
     pub points: Vec<RequestDataParam>,
 }
 
-#[derive(Debug, Clone, serde::Deserialize, Validate)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Validate)]
 pub struct RequestDataParam {
     #[validate(length(min = 1, message = "设备ID不能为空"))]
     pub dev_id: String,
