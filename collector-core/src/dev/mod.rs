@@ -22,17 +22,17 @@ pub enum DeviceError {
     InvalidComType,
     #[error("不支持的通信类型")]
     UnSupportedComType,
-    #[error("Modbus TCP配置错误")]
+    #[error("Modbus TCP配置错误: {0}")]
     ModbusTcpConfigError(#[from] ModbusTcpConfError),
-    #[error("Modbus RTU配置错误")]
+    #[error("Modbus RTU配置错误: {0}")]
     ModbusRtuConfigError(#[from] ModbusRtuConfError),
-    #[error("CAN配置错误")]
+    #[error("CAN配置错误: {0}")]
     CanConfigError(#[from] CanConfError),
     #[error("{0}找不到点位表")]
     NotFoundConfigs(String),
-    #[error("数据中心错误")]
+    #[error("数据中心错误: {0}")]
     DCenterError(#[from] DataCenterError),
-    #[error("设备发生错误")]
+    #[error("设备发生错误: {0}")]
     DevRuntimeError(#[from] Box<dyn std::error::Error>),
 }
 

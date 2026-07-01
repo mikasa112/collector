@@ -243,8 +243,8 @@ pub struct CanSignalConfig {
 impl CanSignalConfig {
     fn new(row: &[Data]) -> Result<Self, CanConfParseError> {
         const ENTITY: &str = "CAN信号配置";
-        if row.len() != 13 {
-            return Err(CanConfParseError::invalid_row_length(ENTITY, 13, row.len()));
+        if row.len() < 10 {
+            return Err(CanConfParseError::invalid_row_length(ENTITY, 10, row.len()));
         }
         let id = required_usize_integerish(row, 0, "点号")
             .map_err(|err| CanConfParseError::invalid_field(ENTITY, "点号", err))?
@@ -254,7 +254,6 @@ impl CanSignalConfig {
         let frame_id = required_hex(row, 2, "FrameID")
             .map_err(|err| CanConfParseError::invalid_field(ENTITY, "FrameID", err))?;
         let signal_name = required_static_str(row, 3, "信号名称").unwrap_or_default();
-        // .map_err(|err| CanConfParseError::invalid_field(ENTITY, "信号名称", err))?;
         let start_bit = required_usize_integerish(row, 4, "起始位")
             .map_err(|err| CanConfParseError::invalid_field(ENTITY, "起始位", err))?
             as u8;
@@ -273,13 +272,21 @@ impl CanSignalConfig {
             .map_err(|err| CanConfParseError::invalid_field(ENTITY, "缩放", err))?;
         let offset = required_f64(row, 9, "偏移")
             .map_err(|err| CanConfParseError::invalid_field(ENTITY, "偏移", err))?;
-        let unit = required_static_str(row, 10, "单位").unwrap_or_default();
-        // .map_err(|err| CanConfParseError::invalid_field(ENTITY, "单位", err))?;
-        let invalid_val = required_hex(row, 11, "无效值").unwrap_or_default();
-        // .map_err(|err| CanConfParseError::invalid_field(ENTITY, "无效值", err))?
-        // as u32;
-        let enum_values = required_static_str(row, 12, "枚举值").unwrap_or_default();
-        // .map_err(|err| CanConfParseError::invalid_field(ENTITY, "枚举值", err))?;
+        let unit = if row.len() > 10 {
+            required_static_str(row, 10, "单位").unwrap_or_default()
+        } else {
+            ""
+        };
+        let invalid_val = if row.len() > 11 {
+            required_hex(row, 11, "无效值").ok()
+        } else {
+            None
+        };
+        let enum_values = if row.len() > 12 {
+            required_static_str(row, 12, "枚举值").unwrap_or_default()
+        } else {
+            ""
+        };
         Ok(Self {
             id,
             name,
@@ -292,7 +299,7 @@ impl CanSignalConfig {
             scale,
             offset,
             unit,
-            invalid_val: Some(invalid_val),
+            invalid_val,
             enum_values,
         })
     }
