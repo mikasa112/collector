@@ -5,7 +5,9 @@ use std::{
     time::{Duration, Instant},
 };
 
-use collector_core::{center::SharedPointCenter, dock::mqtt::MqttOverrideStore};
+use collector_core::{
+    center::SharedPointCenter, dev::can_bus::SharedCanBus, dock::mqtt::MqttOverrideStore,
+};
 use tokio_util::sync::CancellationToken;
 
 use crate::mod_engine::{
@@ -31,16 +33,22 @@ impl ScriptInstance {
         center: SharedPointCenter,
         override_store: Option<MqttOverrideStore>,
         store: LuaStore,
+        can_bus: Option<SharedCanBus>,
     ) -> Option<Self> {
         let owned_topics: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
-        let (engine, handle) =
-            match ModEngine::create(center, override_store.clone(), owned_topics.clone(), store) {
-                Ok(pair) => pair,
-                Err(e) => {
-                    tracing::error!("[mod:{}] 引擎创建失败: {}", meta.name, e);
-                    return None;
-                }
-            };
+        let (engine, handle) = match ModEngine::create(
+            center,
+            override_store.clone(),
+            owned_topics.clone(),
+            store,
+            can_bus,
+        ) {
+            Ok(pair) => pair,
+            Err(e) => {
+                tracing::error!("[mod:{}] 引擎创建失败: {}", meta.name, e);
+                return None;
+            }
+        };
 
         let name = meta.name.clone();
         let join = tokio::spawn(async move {
@@ -78,17 +86,23 @@ pub struct ScriptManager {
     center: SharedPointCenter,
     override_store: Option<MqttOverrideStore>,
     store: LuaStore,
+    can_bus: Option<SharedCanBus>,
     scripts: HashMap<PathBuf, ScriptInstance>,
     /// 记录每个路径最近一次处理时间，用于热更新去抖
     last_reload: HashMap<PathBuf, Instant>,
 }
 
 impl ScriptManager {
-    pub fn new(center: SharedPointCenter, override_store: Option<MqttOverrideStore>) -> Self {
+    pub fn new(
+        center: SharedPointCenter,
+        override_store: Option<MqttOverrideStore>,
+        can_bus: Option<SharedCanBus>,
+    ) -> Self {
         Self {
             center,
             override_store,
             store: new_store(),
+            can_bus,
             scripts: HashMap::new(),
             last_reload: HashMap::new(),
         }
@@ -105,6 +119,7 @@ impl ScriptManager {
             self.center.clone(),
             self.override_store.clone(),
             self.store.clone(),
+            self.can_bus.clone(),
         )
         .await
         {

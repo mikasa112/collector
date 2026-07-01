@@ -4,7 +4,8 @@ use std::{
 };
 
 use collector_core::{
-    center::SharedPointCenter, core::point::DataPoint, dock::mqtt::MqttOverrideStore,
+    center::SharedPointCenter, core::point::DataPoint, dev::can_bus::SharedCanBus,
+    dock::mqtt::MqttOverrideStore,
 };
 use mlua::{Lua, LuaSerdeExt};
 use tokio::sync::{mpsc, oneshot};
@@ -12,6 +13,7 @@ use tokio::sync::{mpsc, oneshot};
 use crate::mod_engine::{
     self,
     api::{
+        can::create_can_table,
         dc::create_dc_table,
         log::create_log_table,
         mqtt::create_mqtt_table,
@@ -100,6 +102,7 @@ impl ModEngine {
         override_store: Option<MqttOverrideStore>,
         owned_topics: Arc<Mutex<Vec<String>>>,
         store: LuaStore,
+        can_bus: Option<SharedCanBus>,
     ) -> mod_engine::Result<(Self, ModEngineHandle)> {
         let (tx, rx) = mpsc::unbounded_channel();
         let (watch_tx, dc_changed_rx) = mpsc::unbounded_channel();
@@ -110,7 +113,14 @@ impl ModEngine {
             rx,
             dc_changed_rx,
         };
-        engine.register_api(center, override_store, owned_topics, store, watch_tx)?;
+        engine.register_api(
+            center,
+            override_store,
+            owned_topics,
+            store,
+            watch_tx,
+            can_bus,
+        )?;
         engine.register_event()?;
         engine.register_timer(tx.clone())?;
         engine.register_task(tx.clone())?;
@@ -125,6 +135,7 @@ impl ModEngine {
         owned_topics: Arc<Mutex<Vec<String>>>,
         store: LuaStore,
         watch_tx: mpsc::UnboundedSender<(String, Arc<[DataPoint]>)>,
+        can_bus: Option<SharedCanBus>,
     ) -> mod_engine::Result<()> {
         let globals = self.lua.globals();
         globals.set("log", create_log_table(&self.lua)?)?;
@@ -135,6 +146,9 @@ impl ModEngine {
                 "override",
                 create_mqtt_table(&self.lua, mqtt_store, owned_topics)?,
             )?;
+        }
+        if let Some(bus) = can_bus {
+            globals.set("can", create_can_table(&self.lua, bus)?)?;
         }
         Ok(())
     }

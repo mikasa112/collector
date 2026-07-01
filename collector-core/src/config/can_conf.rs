@@ -169,7 +169,7 @@ pub struct CanFrameConfig {
 impl CanFrameConfig {
     fn new(row: &[Data]) -> Result<Self, CanConfParseError> {
         const ENTITY: &str = "CAN报文配置";
-        if row.len() != 11 {
+        if row.len() < 11 {
             return Err(CanConfParseError::invalid_row_length(ENTITY, 11, row.len()));
         }
         let id = required_usize_integerish(row, 0, "序号")

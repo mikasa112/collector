@@ -8,6 +8,7 @@ use tracing::error;
 use crate::center::SharedPointCenter;
 use crate::config::{ComType, Device};
 
+use crate::dev::can_bus::SharedCanBus;
 #[cfg(target_os = "linux")]
 use crate::dev::can_dev::CanDev;
 #[cfg(target_os = "linux")]
@@ -24,14 +25,17 @@ pub struct DevManager {
 }
 
 impl DevManager {
-    pub fn new(map: HashMap<String, Device>, center: SharedPointCenter) -> Self {
+    pub fn new(
+        map: HashMap<String, Device>,
+        center: SharedPointCenter,
+        can_bus: SharedCanBus,
+    ) -> Self {
         let mut devices: Vec<Arc<Mutex<Box<dyn Executable>>>> = Vec::new();
         for (_, dev) in map.into_iter() {
             let Some(com_type) = dev.config.com_type else {
                 continue;
             };
-            let center_clone = center.clone();
-            match init_device(dev, com_type, center_clone) {
+            match init_device(dev, com_type, center.clone(), can_bus.clone()) {
                 Ok(dev) => {
                     devices.push(dev);
                 }
@@ -96,15 +100,19 @@ fn init_device(
     dev: Device,
     com_type: ComType,
     center: SharedPointCenter,
+    can_bus: SharedCanBus,
 ) -> Result<Arc<Mutex<Box<dyn Executable>>>, DeviceError> {
     let my_dev: Box<dyn Executable> = match com_type {
         config::ComType::ModbusTCP | config::ComType::ModbusRTU => {
             Box::new(ModbusDev::new(dev, center)?)
         }
         #[cfg(target_os = "linux")]
-        config::ComType::CAN => Box::new(CanDev::new(dev, center)?),
+        config::ComType::CAN => Box::new(CanDev::new(dev, center, can_bus)?),
         #[cfg(not(target_os = "linux"))]
-        config::ComType::CAN => return Err(DeviceError::UnSupportedComType),
+        config::ComType::CAN => {
+            let _ = can_bus;
+            return Err(DeviceError::UnSupportedComType);
+        }
         config::ComType::IEC104 => return Err(DeviceError::UnSupportedComType),
         config::ComType::IEC61850 => return Err(DeviceError::UnSupportedComType),
         #[cfg(target_os = "linux")]

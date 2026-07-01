@@ -17,6 +17,7 @@ use crate::{
 };
 
 use super::runner::CanRunner;
+use crate::dev::can_bus::SharedCanBus;
 
 pub struct CanDev {
     id: String,
@@ -27,10 +28,15 @@ pub struct CanDev {
     stop_rx: watch::Receiver<bool>,
     task: Mutex<Option<JoinHandle<()>>>,
     center: SharedPointCenter,
+    can_bus: SharedCanBus,
 }
 
 impl CanDev {
-    pub fn new(dev: Device, center: SharedPointCenter) -> Result<Self, DeviceError> {
+    pub fn new(
+        dev: Device,
+        center: SharedPointCenter,
+        can_bus: SharedCanBus,
+    ) -> Result<Self, DeviceError> {
         let Some(id) = dev.id else {
             return Err(DeviceError::InvalidId);
         };
@@ -59,6 +65,7 @@ impl CanDev {
             stop_rx,
             task: Mutex::new(None),
             center,
+            can_bus,
         })
     }
 
@@ -120,6 +127,9 @@ impl Lifecycle for CanDev {
             handle.abort();
         }
 
+        let (raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel();
+        self.can_bus.register(&self.id, raw_tx);
+
         let runner = CanRunner {
             id: self.id.clone(),
             config: self.config.clone(),
@@ -127,6 +137,7 @@ impl Lifecycle for CanDev {
             state: self.state.clone(),
             stop_rx: self.stop_rx.clone(),
             rx,
+            raw_rx,
             center: self.center.clone(),
         };
         let handle = tokio::spawn(async move {
@@ -137,6 +148,7 @@ impl Lifecycle for CanDev {
     }
 
     async fn stop(&self) -> Result<(), DeviceError> {
+        self.can_bus.unregister(&self.id);
         let _ = self.stop_tx.send(true);
         let cur = self.load_state();
         match cur {

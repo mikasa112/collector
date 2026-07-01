@@ -3,7 +3,7 @@ use std::io;
 use std::time::{Duration, Instant};
 
 use futures::StreamExt;
-use socketcan::{CanFrame, EmbeddedFrame, Frame, tokio::CanSocket};
+use socketcan::{CanFrame, EmbeddedFrame, ExtendedId, Frame, Id, StandardId, tokio::CanSocket};
 use tokio::sync::{mpsc, watch};
 use tokio::time;
 use tracing::{debug, info, warn};
@@ -18,6 +18,7 @@ use crate::dev::{LifecycleState, dev_config::CanDeviceConfig, state::SharedState
 
 use super::backoff::Backoff;
 use super::downlink::{FrameBinding, WritePlan, build_frame_map, build_name_map, build_point_map};
+use crate::dev::can_bus::RawFrameRx;
 
 pub(super) struct CanRunner {
     pub(super) id: String,
@@ -26,6 +27,7 @@ pub(super) struct CanRunner {
     pub(super) state: SharedState,
     pub(super) stop_rx: watch::Receiver<bool>,
     pub(super) rx: mpsc::Receiver<Vec<DownDataPoint>>,
+    pub(super) raw_rx: RawFrameRx,
     pub(super) center: SharedPointCenter,
 }
 
@@ -171,6 +173,15 @@ impl CanRunner {
                 _ = ticker.tick() => {
                     let now = Instant::now();
                     self.check_timeouts(frame_states, now, connected_at, last_rx_at)?;
+                }
+                raw = self.raw_rx.recv() => {
+                    if let Some((frame_id, data)) = raw {
+                        if let Some(frame) = build_raw_frame(frame_id, &data) {
+                            socket.write_frame(frame).await.map_err(CanDevError::WriteFrame)?;
+                        } else {
+                            warn!("[{}] Lua can.send: 无效 frame_id=0x{:X} 或数据长度错误", self.id, frame_id);
+                        }
+                    }
                 }
                 msg = self.rx.recv() => {
                     let Some(entries) = msg else {
@@ -539,6 +550,15 @@ fn decode_value(raw: u32, bit_len: u8, data_type: CanDataType, scale: f64, offse
             }
         }
     }
+}
+
+fn build_raw_frame(frame_id: u32, data: &[u8]) -> Option<CanFrame> {
+    let id: Id = if frame_id <= 0x7FF {
+        StandardId::new(frame_id as u16)?.into()
+    } else {
+        ExtendedId::new(frame_id)?.into()
+    };
+    CanFrame::new(id, data)
 }
 
 fn sign_extend(raw: u32, bit_len: u8) -> i32 {

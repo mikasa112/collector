@@ -5,6 +5,7 @@ use collector_api::ApiApp;
 use collector_core::center::DataCenter;
 use collector_core::center::SharedPointCenter;
 use collector_core::config;
+use collector_core::dev::can_bus::SharedCanBus;
 use collector_core::dev::manager::DevManager;
 use collector_core::dock::modbus::ModbusServer;
 use collector_core::dock::mqtt::client::MqttClient;
@@ -96,6 +97,7 @@ pub async fn cmd() {
             let shutdown = ShutdownManager::new();
 
             let center: SharedPointCenter = Arc::new(DataCenter::new(32));
+            let can_bus = SharedCanBus::default();
             let mqtt_client = match MqttClient::from_project(&mut p.project, center.clone()) {
                 Ok(client) => client,
                 Err(err) => {
@@ -103,7 +105,7 @@ pub async fn cmd() {
                     None
                 }
             };
-            let mut manager = DevManager::new(p.project.devices, center.clone());
+            let mut manager = DevManager::new(p.project.devices, center.clone(), can_bus.clone());
             manager.start_all().await;
 
             // 启动北向 Modbus TCP 服务器
@@ -138,7 +140,7 @@ pub async fn cmd() {
 
             // 启动脚本模组引擎
             let override_store = mqtt_client.as_ref().map(|c| c.override_store.clone());
-            let script_manager = ScriptManager::new(center.clone(), override_store);
+            let script_manager = ScriptManager::new(center.clone(), override_store, Some(can_bus));
             let script_token = shutdown.child_token();
             tokio::spawn(async move {
                 if let Err(err) = script_manager.run("lua_scripts", script_token).await {
