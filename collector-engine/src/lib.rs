@@ -2,6 +2,7 @@ use collector_core::shutdown::ShutdownManager;
 use tokio_util::sync::CancellationToken;
 
 mod core;
+pub mod emu;
 pub mod mod_engine;
 pub mod strategy;
 
