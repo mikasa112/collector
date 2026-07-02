@@ -10,8 +10,8 @@ use collector_core::dev::manager::DevManager;
 use collector_core::dock::modbus::ModbusServer;
 use collector_core::dock::mqtt::client::MqttClient;
 use collector_core::shutdown::ShutdownManager;
+use collector_engine::emu::core::Emu;
 use collector_engine::mod_engine::ScriptManager;
-use collector_engine::{Engine, FaultDiagnosis};
 use tracing::error;
 use tracing_error::ErrorLayer;
 use tracing_log::LogTracer;
@@ -148,9 +148,9 @@ pub async fn cmd() {
                 }
             });
 
-            // 启动策略引擎
-            let engine = Engine::new().register(FaultDiagnosis::new(center.clone()));
-            tokio::spawn(engine.start(shutdown.clone()));
+            // 启动EMU
+            let emu = Emu::new(center.clone());
+            tokio::spawn(emu.await.run(shutdown.clone()));
 
             // 在后台监听关闭信号
             tokio::spawn(shutdown.clone().listen_shutdown_signal());

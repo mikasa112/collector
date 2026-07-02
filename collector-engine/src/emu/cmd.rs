@@ -1,8 +1,8 @@
 use std::{future::Future, pin::Pin};
 
 use collector_core::{
-    center::{DataCenterError, SharedPointCenter},
-    core::point::Val,
+    center::{self, DataCenterError, SharedPointCenter},
+    core::point::{DataPoint, Val},
     down,
 };
 
@@ -17,19 +17,26 @@ pub enum CommandError {
     New(String),
 }
 
-pub struct Command {
-    name: String,
-    func: CommandFunc,
+pub trait Command: Send + 'static {
+    fn name(&self) -> String;
+    fn func(&self) -> CommandFunc;
 }
 
-impl Command {
-    pub fn power_on() -> Self {
-        let func = Box::new(
+pub struct PowerOn;
+
+impl Command for PowerOn {
+    fn name(&self) -> String {
+        String::from("系统上电")
+    }
+
+    fn func(&self) -> CommandFunc {
+        Box::new(
             |center: SharedPointCenter| -> Pin<Box<dyn Future<Output = Result<(), CommandError>>>> {
+                tracing::info!("[上电] 执行中...");
                 Box::pin(async move {
-                    //上高压
+                    //bcu 启动
                     center
-                        .dispatch("bcu", vec![down!(id: 123, Val::U8(1))])
+                        .dispatch("bcu", vec![down!(id: 3, Val::U8(0x1))])
                         .await?;
                     //等待PCS上电，建立通信
                     let mut ticker = tokio::time::interval(std::time::Duration::from_secs(1));
@@ -37,13 +44,14 @@ impl Command {
                     let mut tries = 0;
                     loop {
                         ticker.tick().await;
-                        if let Some(comm) = center.read("pcs", 0xFFFF) {
-                            if comm.value == Val::U8(0) {
-                                break;
-                            }
+                        if let Some(comm) = center.read("pcs", 0xFFFF)
+                            && comm.value == Val::U8(0)
+                        {
+                            break;
                         }
                         tries += 1;
                         if tries >= MAX_TRIES {
+                            tracing::info!("[上电] 失败, PCS上电超时!");
                             return Err(CommandError::New("PCS上电超时".to_string()));
                         }
                     }
@@ -53,16 +61,17 @@ impl Command {
                     center
                         .dispatch(
                             "pcs",
-                            vec![down!(id: 3000, Val::U8(1)), down!(id: 3001, Val::U8(1))],
+                            vec![
+                                down!(id: 3000, Val::U8(1)),
+                                down!(id: 3001, Val::U8(1)),
+                                down!(id: 3006, Val::U8(1)),
+                            ],
                         )
                         .await?;
+                    tracing::info!("[上电] 成功");
                     Ok(())
                 })
             },
-        );
-        Self {
-            name: String::from("开机"),
-            func,
-        }
+        )
     }
 }

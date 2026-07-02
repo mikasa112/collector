@@ -1,9 +1,13 @@
 use std::time::Duration;
 
 use async_trait::async_trait;
+use collector_core::center::DataCenterError;
 
 #[derive(Debug, thiserror::Error)]
-pub enum StrategyError {}
+pub enum StrategyError {
+    #[error("{0}")]
+    DataCenterErr(#[from] DataCenterError),
+}
 
 pub enum Schedule {
     Interval(Duration),
