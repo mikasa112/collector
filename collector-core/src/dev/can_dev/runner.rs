@@ -42,13 +42,14 @@ struct ExtSignalState {
 }
 
 impl CanRunner {
-    fn report_comm_status(&self, v: u8) {
+    /// 上报通讯故障位：false = 有通讯，true = 无通讯。
+    fn set_comm_fault(&self, fault: bool) {
         self.center.ingest(
             &self.id,
             vec![DataPoint {
                 id: 0xFFFF,
                 name: "通讯状态",
-                value: Val::U8(v),
+                value: Val::U8(fault as u8),
                 key: "communicationStatus",
                 translator: None,
                 warn_bits: None,
@@ -77,7 +78,41 @@ impl CanRunner {
     }
 
     fn connect(&self) -> Result<CanSocket, CanDevError> {
+        if let Some(bitrate) = self.config.bitrate {
+            self.setup_interface(bitrate)?;
+        }
         Ok(CanSocket::open(&self.config.interface)?)
+    }
+
+    fn setup_interface(&self, bitrate: u32) -> Result<(), CanDevError> {
+        // 先 down，忽略失败（接口可能已是 down 状态）
+        let _ = std::process::Command::new("ip")
+            .args(["link", "set", &self.config.interface, "down"])
+            .output();
+
+        let output = std::process::Command::new("ip")
+            .args([
+                "link",
+                "set",
+                &self.config.interface,
+                "up",
+                "type",
+                "can",
+                "bitrate",
+                &bitrate.to_string(),
+            ])
+            .output()
+            .map_err(|e| CanDevError::SetupInterface(e.to_string()))?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(CanDevError::SetupInterface(stderr.trim().to_string()));
+        }
+        info!(
+            "[{}] CAN接口已初始化: {} bitrate={}",
+            self.id, self.config.interface, bitrate
+        );
+        Ok(())
     }
 
     fn decode_frame(
@@ -116,7 +151,6 @@ impl CanRunner {
         &self,
         states: &HashMap<u32, FrameState>,
         now: Instant,
-        connected_at: Instant,
         last_rx_at: Instant,
     ) -> Result<(), CanDevError> {
         if now.duration_since(last_rx_at) >= self.config.timeout {
@@ -131,11 +165,11 @@ impl CanRunner {
             if timeout.is_zero() {
                 continue;
             }
-            let elapsed = state
-                .last_seen
-                .map(|instant| now.duration_since(instant))
-                .unwrap_or_else(|| now.duration_since(connected_at));
-            if elapsed >= timeout {
+            // 从未收到过的帧跳过：可能是下行帧（永远不会被接收），不做超时判断
+            let Some(last_seen) = state.last_seen else {
+                continue;
+            };
+            if now.duration_since(last_seen) >= timeout {
                 return Err(CanDevError::Timeout(format!(
                     "报文0x{:X}超时{:?}",
                     state.raw_id, timeout
@@ -155,7 +189,7 @@ impl CanRunner {
         frame_map: &HashMap<u32, FrameBinding>,
     ) -> Result<(), CanDevError> {
         self.state.store(&self.id, LifecycleState::Running);
-        self.report_comm_status(1);
+        self.set_comm_fault(false);
 
         let connected_at = Instant::now();
         let mut last_rx_at = connected_at;
@@ -166,13 +200,13 @@ impl CanRunner {
             tokio::select! {
                 _ = stop_rx.changed() => {
                     if Self::stop_requested(stop_rx) {
-                        self.report_comm_status(0);
+                        self.set_comm_fault(true);
                         return Ok(());
                     }
                 }
                 _ = ticker.tick() => {
                     let now = Instant::now();
-                    self.check_timeouts(frame_states, now, connected_at, last_rx_at)?;
+                    self.check_timeouts(frame_states, now, last_rx_at)?;
                 }
                 raw = self.raw_rx.recv() => {
                     if let Some((frame_id, data)) = raw {
@@ -186,7 +220,7 @@ impl CanRunner {
                 msg = self.rx.recv() => {
                     let Some(entries) = msg else {
                         self.state.store(&self.id, LifecycleState::Stopped);
-                        self.report_comm_status(0);
+                        self.set_comm_fault(true);
                         return Ok(());
                     };
                     let items: Vec<String> = entries.iter().map(|e| format!("{}: {}", resolve_signal_name(&e.point, point_map), e.value)).collect();
@@ -262,12 +296,12 @@ impl CanRunner {
         loop {
             if Self::stop_requested(&stop_rx) {
                 self.state.store(&self.id, LifecycleState::Stopped);
-                self.report_comm_status(0);
+                self.set_comm_fault(true);
                 return;
             }
 
             self.state.store(&self.id, LifecycleState::Connecting);
-            self.report_comm_status(0);
+            self.set_comm_fault(false);
 
             match self.connect() {
                 Ok(mut socket) => {
@@ -288,19 +322,19 @@ impl CanRunner {
                     {
                         self.state.store(&self.id, LifecycleState::Failed);
                         warn!("[{}] CAN连接中断，准备重连: {}", self.id, err);
-                        self.report_comm_status(0);
+                        self.set_comm_fault(true);
                     }
                 }
                 Err(err) => {
                     self.state.store(&self.id, LifecycleState::Failed);
                     warn!("[{}] 打开CAN接口失败，准备重连: {}", self.id, err);
-                    self.report_comm_status(0);
+                    self.set_comm_fault(true);
                 }
             }
 
             if Self::stop_requested(&stop_rx) {
                 self.state.store(&self.id, LifecycleState::Stopped);
-                self.report_comm_status(0);
+                self.set_comm_fault(true);
                 return;
             }
 
@@ -310,7 +344,7 @@ impl CanRunner {
                 _ = stop_rx.changed() => {
                     if Self::stop_requested(&stop_rx) {
                         self.state.store(&self.id, LifecycleState::Stopped);
-                        self.report_comm_status(0);
+                        self.set_comm_fault(true);
                         return;
                     }
                 }

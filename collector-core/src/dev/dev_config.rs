@@ -136,6 +136,7 @@ pub struct CanDeviceConfig {
     pub interface: String,
     pub interval: Duration,
     pub timeout: Duration,
+    pub bitrate: Option<u32>,
 }
 
 impl TryFrom<DeviceConfig> for CanDeviceConfig {
@@ -155,6 +156,7 @@ impl TryFrom<DeviceConfig> for CanDeviceConfig {
             interface,
             interval: Duration::from_millis(interval),
             timeout: Duration::from_millis(timeout),
+            bitrate: value.baud_rate,
         })
     }
 }

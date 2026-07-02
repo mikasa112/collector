@@ -15,4 +15,6 @@ pub enum CanDevError {
     WriteFrame(std::io::Error),
     #[error("CAN总线超时: {0}")]
     Timeout(String),
+    #[error("CAN接口初始化失败: {0}")]
+    SetupInterface(String),
 }
