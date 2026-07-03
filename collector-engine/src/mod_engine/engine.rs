@@ -372,6 +372,12 @@ impl ModEngine {
                 })
                 .unwrap_or(Duration::from_millis(100));
 
+            // sleep_dur 为零时直接 yield，避免 sleep(0) 不挂起任务导致单核 100%
+            if sleep_dur.is_zero() {
+                tokio::task::yield_now().await;
+                continue;
+            }
+
             // select! 让新命令（尤其是 Shutdown）能立即打断休眠
             tokio::select! {
                 _ = tokio::time::sleep(sleep_dur) => {}

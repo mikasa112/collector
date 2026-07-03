@@ -198,19 +198,16 @@ impl ModbusRunner {
                 }
             }
 
-            // 块间间隔：等待期间同步响应停止信号；yield 保证 interval=0 时不饥饿
-            if !request_interval.is_zero() {
-                tokio::select! {
-                    _ = time::sleep(request_interval) => {}
-                    _ = stop_rx.changed() => {
-                        if Self::stop_requested(stop_rx) {
-                            self.set_comm_fault(true);
-                            return;
-                        }
+            // 块间间隔：至少 1ms，防止 request_interval=0 时循环不挂起导致单核 100%
+            let effective_interval = request_interval.max(Duration::from_millis(1));
+            tokio::select! {
+                _ = time::sleep(effective_interval) => {}
+                _ = stop_rx.changed() => {
+                    if Self::stop_requested(stop_rx) {
+                        self.set_comm_fault(true);
+                        return;
                     }
                 }
-            } else {
-                tokio::task::yield_now().await;
             }
         }
     }
