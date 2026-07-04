@@ -541,13 +541,24 @@ fn extract_motorola(data: &[u8], start_bit: u8, bit_len: u8) -> Option<u32> {
     Some(raw)
 }
 
+fn round_scaled(value: f64, scale: f64) -> f64 {
+    // 根据 scale 的小数位数四舍五入，消除浮点乘法噪声（如 239 * 0.001 = 0.239000...02）
+    let decimals = if scale > 0.0 && scale < 1.0 {
+        (-scale.log10().floor()) as i32 + 1
+    } else {
+        6
+    };
+    let factor = 10f64.powi(decimals);
+    (value * factor).round() / factor
+}
+
 fn decode_value(raw: u32, bit_len: u8, data_type: CanDataType, scale: f64, offset: f64) -> Val {
     let needs_scale = (scale - 1.0).abs() > f64::EPSILON || offset.abs() > f64::EPSILON;
     match data_type {
         CanDataType::U8 => {
             let value = raw as u8;
             if needs_scale {
-                Val::F64(f64::from(value) * scale + offset)
+                Val::F64(round_scaled(f64::from(value) * scale + offset, scale))
             } else {
                 Val::U8(value)
             }
@@ -555,14 +566,14 @@ fn decode_value(raw: u32, bit_len: u8, data_type: CanDataType, scale: f64, offse
         CanDataType::U16 => {
             let value = raw as u16;
             if needs_scale {
-                Val::F64(f64::from(value) * scale + offset)
+                Val::F64(round_scaled(f64::from(value) * scale + offset, scale))
             } else {
                 Val::U16(value)
             }
         }
         CanDataType::U32 => {
             if needs_scale {
-                Val::F64(raw as f64 * scale + offset)
+                Val::F64(round_scaled(raw as f64 * scale + offset, scale))
             } else {
                 Val::U32(raw)
             }
@@ -570,7 +581,7 @@ fn decode_value(raw: u32, bit_len: u8, data_type: CanDataType, scale: f64, offse
         CanDataType::I16 => {
             let value = sign_extend(raw, bit_len) as i16;
             if needs_scale {
-                Val::F64(f64::from(value) * scale + offset)
+                Val::F64(round_scaled(f64::from(value) * scale + offset, scale))
             } else {
                 Val::I16(value)
             }
@@ -578,7 +589,7 @@ fn decode_value(raw: u32, bit_len: u8, data_type: CanDataType, scale: f64, offse
         CanDataType::I32 => {
             let value = sign_extend(raw, bit_len);
             if needs_scale {
-                Val::F64(value as f64 * scale + offset)
+                Val::F64(round_scaled(value as f64 * scale + offset, scale))
             } else {
                 Val::I32(value)
             }

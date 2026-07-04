@@ -1,8 +1,8 @@
 use std::{future::Future, pin::Pin};
 
 use collector_core::{
-    center::{self, DataCenterError, SharedPointCenter},
-    core::point::{DataPoint, Val},
+    center::{DataCenterError, SharedPointCenter},
+    core::point::Val,
     down,
 };
 

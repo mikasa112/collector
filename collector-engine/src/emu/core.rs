@@ -9,6 +9,14 @@ use crate::{
     strategy::{Schedule, Strategy},
 };
 
+/**
+ * 命令:
+ *  1. 根据点做动作的命令
+ *
+ * 策略:
+ *  1.无映射到点的策略
+ *  2.有映射到点的策略
+ */
 pub struct Emu {
     pub commands: Vec<Box<dyn Command>>,
     strategies: Vec<Box<dyn Strategy>>,
