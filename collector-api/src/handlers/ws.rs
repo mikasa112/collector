@@ -109,8 +109,13 @@ async fn handle_ws(ws: &mut WebSocket, center: SharedPointCenter, query: DevQuer
         return;
     };
 
-    // 初始化为足够早，使第一条数据立即发出
-    let mut last_sent = Instant::now() - PUSH_THROTTLE;
+    // 建立连接后立即推送当前全量数据
+    let initial = rx.borrow().clone();
+    if !push_points(ws, &initial, query.lang).await {
+        return;
+    }
+
+    let mut last_sent = Instant::now();
     let mut pending = false;
 
     loop {
@@ -143,11 +148,10 @@ async fn handle_ws(ws: &mut WebSocket, center: SharedPointCenter, query: DevQuer
                     None => break,
                     Some(Ok(msg)) => {
                         if msg.is_close() { break; }
-                        if msg.is_ping() {
-                            if ws.send(Message::pong(msg.as_bytes().to_vec())).await.is_err() {
+                        if msg.is_ping()
+                            && ws.send(Message::pong(msg.as_bytes().to_vec())).await.is_err() {
                                 break;
                             }
-                        }
                     }
                     Some(Err(_)) => break,
                 }
