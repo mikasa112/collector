@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use collector_core::{
     center::SharedPointCenter,
     core::point::{DataPoint, Val},
@@ -9,6 +11,7 @@ use salvo::{
     websocket::{Message, WebSocket},
 };
 use serde::{Deserialize, Serialize};
+use tokio::time::{self, Instant};
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -88,55 +91,65 @@ impl<'a> Point<'a> {
     }
 }
 
+const PUSH_THROTTLE: Duration = Duration::from_millis(500);
+
+async fn push_points(ws: &mut WebSocket, data: &[DataPoint], lang: DevQueryLang) -> bool {
+    let points = data
+        .iter()
+        .map(|p| Point::from_data_point(p, lang))
+        .collect::<Vec<_>>();
+    if let Ok(json) = serde_json::to_string(&points) {
+        return ws.send(Message::text(json)).await.is_ok();
+    }
+    true
+}
+
 async fn handle_ws(ws: &mut WebSocket, center: SharedPointCenter, query: DevQueryParams) {
-    let rx = center.subscribe(&query.dev);
-    if let Some(mut rx) = rx {
-        loop {
-            tokio::select! {
-                // 监听数据更新
-                result = rx.changed() => {
-                    if result.is_err() {
-                        // 发送器已关闭，退出循环
-                        break;
-                    }
+    let Some(mut rx) = center.subscribe(&query.dev) else {
+        return;
+    };
 
+    // 初始化为足够早，使第一条数据立即发出
+    let mut last_sent = Instant::now() - PUSH_THROTTLE;
+    let mut pending = false;
+
+    loop {
+        let deadline = last_sent + PUSH_THROTTLE;
+
+        tokio::select! {
+            result = rx.changed() => {
+                if result.is_err() { break; }
+                pending = true;
+                // 抑制窗口已过：立即推送
+                if Instant::now() >= deadline {
                     let data = rx.borrow().clone();
-                    let points = data
-                        .iter()
-                        .map(|p| Point::from_data_point(p, query.lang))
-                        .collect::<Vec<_>>();
-
-                    if let Ok(json) = serde_json::to_string(&points) {
-                        // 如果发送失败，说明连接已断开
-                        if ws.send(Message::text(json)).await.is_err() {
-                            break;
-                        }
-                    }
+                    if !push_points(ws, &data, query.lang).await { break; }
+                    last_sent = Instant::now();
+                    pending = false;
                 }
+                // 否则等待下面的 sleep_until 分支到期后推送
+            }
 
-                // 监听客户端消息（包括断开事件）
-                msg = ws.recv() => {
-                    match msg {
-                        // 客户端断开连接
-                        None => break,
-                        // 收到消息
-                        Some(Ok(msg)) => {
-                            // 检查是否是关闭消息
-                            if msg.is_close() {
+            // 抑制窗口到期，推送期间积压的最新值
+            _ = time::sleep_until(deadline), if pending => {
+                let data = rx.borrow().clone();
+                if !push_points(ws, &data, query.lang).await { break; }
+                last_sent = Instant::now();
+                pending = false;
+            }
+
+            msg = ws.recv() => {
+                match msg {
+                    None => break,
+                    Some(Ok(msg)) => {
+                        if msg.is_close() { break; }
+                        if msg.is_ping() {
+                            if ws.send(Message::pong(msg.as_bytes().to_vec())).await.is_err() {
                                 break;
                             }
-                            // 收到 Ping，回复 Pong
-                            if msg.is_ping() {
-                                let data = msg.as_bytes();
-                                if ws.send(Message::pong(data.to_vec())).await.is_err() {
-                                    break;
-                                }
-                            }
-                            // 其他消息忽略（可以根据需要处理）
                         }
-                        // 接收错误，断开连接
-                        Some(Err(_)) => break,
                     }
+                    Some(Err(_)) => break,
                 }
             }
         }
