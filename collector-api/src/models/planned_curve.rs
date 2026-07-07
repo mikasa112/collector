@@ -1,8 +1,8 @@
 use chrono::NaiveDateTime;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use sqlx::prelude::{FromRow, Type};
 
-#[derive(Debug, Type, Serialize)]
+#[derive(Debug, Type, Serialize, Deserialize, Clone)]
 #[repr(u8)]
 pub enum CurveType {
     Day = 1,
@@ -32,7 +32,7 @@ pub struct PlanCurveMaster {
     pub deleted_at: Option<NaiveDateTime>,
 }
 
-#[derive(FromRow, Debug)]
+#[derive(FromRow, Debug, Serialize)]
 pub struct PlanCurveDetail {
     pub id: u32,
     pub curve_id: u32,

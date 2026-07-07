@@ -1,4 +1,3 @@
-use chrono::NaiveDateTime;
 use sqlx::SqlitePool;
 
 use crate::{
@@ -18,8 +17,8 @@ impl PlanCurveMasterDao {
         curve_type: CurveType,
         priority: Option<u8>,
         status: Option<u8>,
-        valid_start_date: Option<NaiveDateTime>,
-        valid_end_date: Option<NaiveDateTime>,
+        valid_start_date: Option<&str>,
+        valid_end_date: Option<&str>,
         effective_weekdays: Option<&str>,
         created_by: Option<&str>,
         remark: Option<&str>,
@@ -99,7 +98,7 @@ impl PlanCurveMasterDao {
 
     pub async fn find_by_id(pool: &SqlitePool, id: u32) -> DaoResult<Option<PlanCurveMaster>> {
         let plan =
-            sqlx::query_as::<_, PlanCurveMaster>("SELECT * FROM plan_curve_master WHERE id = ?")
+            sqlx::query_as::<_, PlanCurveMaster>("SELECT * FROM t_plan_curve_master WHERE id = ?")
                 .bind(id)
                 .fetch_optional(pool)
                 .await?;
@@ -153,10 +152,42 @@ impl PlanCurveDetailDao {
         Ok(result.rows_affected())
     }
 
+    /// 增量合并某条曲线的明细：已存在的 time_index 更新功率/SOC，不存在的插入，其余时间点不受影响
+    pub async fn upsert_details(
+        pool: &SqlitePool,
+        curve_id: u32,
+        details: &[(u8, f64, Option<f64>)],
+    ) -> DaoResult<u64> {
+        if details.is_empty() {
+            return Ok(0);
+        }
+
+        let mut query_builder = sqlx::QueryBuilder::new(
+            "INSERT INTO t_plan_curve_detail (curve_id, time_index, power_value, soc_limit) ",
+        );
+        query_builder.push_values(details, |mut b, (time_index, power_value, soc_limit)| {
+            b.push_bind(curve_id)
+                .push_bind(*time_index)
+                .push_bind(*power_value)
+                .push_bind(*soc_limit);
+        });
+        query_builder.push(
+            " ON CONFLICT (curve_id, time_index) DO UPDATE SET
+                power_value = excluded.power_value,
+                soc_limit = excluded.soc_limit,
+                updated_at = datetime('now', 'localtime')",
+        );
+
+        let result = query_builder.build().execute(pool).await?;
+        Ok(result.rows_affected())
+    }
+
     pub async fn query_by_master_id(pool: &SqlitePool, id: u32) -> DaoResult<Vec<PlanCurveDetail>> {
         let details = sqlx::query_as::<_, PlanCurveDetail>(
-            "
-            SELECT tpcd.time_index, tpcd.power_value, tpcd.soc_limit
+            "SELECT id, curve_id, time_index,
+                    CAST(power_value AS REAL) AS power_value,
+                    CAST(soc_limit AS REAL) AS soc_limit,
+                    created_at, updated_at, deleted_at
             FROM t_plan_curve_detail tpcd
             WHERE tpcd.curve_id = ?
             ORDER BY tpcd.time_index",
@@ -172,7 +203,10 @@ impl PlanCurveDetailDao {
         id: u32,
     ) -> DaoResult<Vec<PlanCurveDetail>> {
         let details = sqlx::query_as::<_, PlanCurveDetail>(
-            "SELECT tpcd.time_index , tpcd.power_value , tpcd.soc_limit
+            "SELECT id, curve_id, time_index,
+                    CAST(power_value AS REAL) AS power_value,
+                    CAST(soc_limit AS REAL) AS soc_limit,
+                    created_at, updated_at, deleted_at
             FROM t_plan_curve_detail tpcd
             WHERE tpcd.curve_id = ? AND tpcd.power_value != 0
             ORDER BY tpcd.time_index",
