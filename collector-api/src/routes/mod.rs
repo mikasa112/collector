@@ -1,6 +1,7 @@
 mod data;
 #[cfg(target_os = "linux")]
 mod network;
+mod planned_curve;
 mod user;
 mod ws;
 
@@ -14,6 +15,7 @@ pub(crate) fn root_router(center: SharedPointCenter) -> Router {
         .path("v1")
         .push(user::router())
         .push(data::router())
+        .push(planned_curve::router())
         .push(ws::router());
     #[cfg(target_os = "linux")]
     let v1 = v1.push(network::router());

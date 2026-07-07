@@ -13,7 +13,8 @@ use crate::{
 pub async fn scan() -> ApiResult<ListResponse<WifiDev>> {
     let service = NetworkService::new()?;
     let list = service.scan().await?;
-    Ok(ListResponse::ok(list))
+    let len = list.len();
+    Ok(ListResponse::ok(list, len))
 }
 
 #[derive(Debug, Clone, serde::Deserialize, Validate)]

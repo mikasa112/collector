@@ -2,6 +2,7 @@ pub mod data;
 pub mod error;
 #[cfg(target_os = "linux")]
 pub mod network;
+pub mod planned_curve;
 pub mod user;
 
 use collector_core::center::SharedPointCenter;

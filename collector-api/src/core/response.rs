@@ -39,13 +39,12 @@ where
 }
 
 impl<T: Serialize> ListResponse<T> {
-    pub fn ok(data: Vec<T>) -> Self {
-        let len = data.len();
+    pub fn ok(data: Vec<T>, total: usize) -> Self {
         Self {
             err_msg: None,
             status: 200,
             data: Some(data),
-            total: Some(len),
+            total: Some(total),
         }
     }
 }
