@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use collector_core::{
-    center::SharedPointCenter,
+    center::{self, SharedPointCenter},
     core::point::{DataPoint, Val},
 };
 use salvo::{
@@ -27,7 +27,7 @@ struct DevQueryParams {
 }
 
 #[handler]
-pub async fn ws_handler(
+pub async fn data_ws_handler(
     req: &mut Request,
     res: &mut Response,
     depot: &mut Depot,
@@ -158,4 +158,92 @@ async fn handle_ws(ws: &mut WebSocket, center: SharedPointCenter, query: DevQuer
             }
         }
     }
+}
+
+#[derive(Debug, Serialize)]
+struct HomeAcData {
+    voltage: Option<f64>,
+    current: Option<f64>,
+    power: Option<f64>,
+    frequency: Option<f64>,
+}
+
+impl HomeAcData {
+    fn new(center: &SharedPointCenter) -> Self {
+        //PCS 输入电压
+        let pcs_v = center
+            .read("pcs", 25)
+            .and_then(|it| f64::try_from(it.value).ok());
+        //PCS 输入功率
+        let pcs_power = center
+            .read("pcs", 24)
+            .and_then(|it| f64::try_from(it.value).ok());
+        //PCS 输入电流
+        let pcs_current = center
+            .read("pcs", 26)
+            .and_then(|it| f64::try_from(it.value).ok());
+        //电网频率
+        let pcs_frequency = center
+            .read("pcs", 7)
+            .and_then(|it| f64::try_from(it.value).ok());
+        HomeAcData {
+            voltage: pcs_v,
+            current: pcs_current,
+            power: pcs_power,
+            frequency: pcs_frequency,
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
+struct HomeDcData {
+    name: Option<String>,
+    soc: Option<f64>,
+    avg_temp: Option<f64>,
+    voltage: Option<f64>,
+    current: Option<f64>,
+    power: Option<f64>,
+}
+
+impl HomeDcData {
+    fn new(center: &SharedPointCenter) -> Self {
+        //bcu 单体累加和总压
+        let voltage = center
+            .read("bcu", 6)
+            .and_then(|it| f64::try_from(it.value).ok());
+        let soc = center
+            .read("bcu", 32)
+            .and_then(|it| f64::try_from(it.value).ok());
+        // let current= center.read("bcu", )
+        todo!()
+    }
+}
+
+#[derive(Debug, Serialize)]
+struct HomeCommonData {
+    ac: HomeAcData,
+    dc: HomeDcData,
+}
+
+#[handler]
+pub async fn home_ws_handler(
+    req: &mut Request,
+    res: &mut Response,
+    depot: &mut Depot,
+) -> Result<(), StatusError> {
+    let center = depot
+        .get::<SharedPointCenter>("center")
+        .map_err(|_| StatusError::service_unavailable())?
+        .clone();
+    WebSocketUpgrade::new()
+        .upgrade(req, res, |mut ws| async move {
+            handle_home_ws(&mut ws, center).await;
+        })
+        .await
+}
+
+// 首页业务数据待定，先保持连接骨架，收到 ping 回 pong
+async fn handle_home_ws(ws: &mut WebSocket, center: SharedPointCenter) {
+    let mut ticker = tokio::time::interval(std::time::Duration::from_secs(1));
+    loop {}
 }
