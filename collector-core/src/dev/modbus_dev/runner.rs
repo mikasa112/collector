@@ -282,6 +282,7 @@ impl ModbusRunner {
 
     /// 非阻塞排空写队列：处理所有已到达的写命令，队列空时立即返回。
     async fn drain_writes(&mut self, ctx: &mut Context, maps: &PointMaps<'_>) -> DrainOutcome {
+        let timeout = self.timeout();
         let mut wrote_any = false;
         loop {
             match self.rx.try_recv() {
@@ -298,9 +299,16 @@ impl ModbusRunner {
                         maps.name_map,
                         &self.id,
                     );
-                    if let Err(err) = plan.apply(ctx).await {
-                        warn!("[{}] 下发失败, 准备重连: {}", self.id, err);
-                        return DrainOutcome::WriteFailed;
+                    match time::timeout(timeout, plan.apply(ctx)).await {
+                        Ok(Ok(())) => {}
+                        Ok(Err(err)) => {
+                            warn!("[{}] 下发失败, 准备重连: {}", self.id, err);
+                            return DrainOutcome::WriteFailed;
+                        }
+                        Err(_) => {
+                            warn!("[{}] 下发超时, 准备重连", self.id);
+                            return DrainOutcome::WriteFailed;
+                        }
                     }
                     wrote_any = true;
                 }

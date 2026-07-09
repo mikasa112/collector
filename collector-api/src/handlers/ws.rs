@@ -199,23 +199,54 @@ impl HomeAcData {
 struct HomeDcData {
     name: Option<String>,
     soc: Option<f64>,
-    avg_temp: Option<f64>,
     voltage: Option<f64>,
+    highest_single_voltage: Option<f64>,
+    lowest_single_voltage: Option<f64>,
     current: Option<f64>,
     power: Option<f64>,
+    avg_temp: Option<f64>,
+    highest_temp: Option<f64>,
+    lowest_temp: Option<f64>,
 }
 
 impl HomeDcData {
     fn new(center: &SharedPointCenter) -> Self {
+        let soc = center
+            .read("bcu", 32)
+            .and_then(|it| f64::try_from(it.value).ok());
         //bcu 单体累加和总压
         let voltage = center
             .read("bcu", 6)
             .and_then(|it| f64::try_from(it.value).ok());
-        let soc = center
-            .read("bcu", 32)
+        let highest_single_voltage = center
+            .read("bcu", 9)
+            .and_then(|it| f64::try_from(it.value).ok());
+        let lowest_single_voltage = center
+            .read("bcu", 13)
             .and_then(|it| f64::try_from(it.value).ok());
         // let current= center.read("bcu", )
-        todo!()
+        // let power = center.read("bcu", point_id)
+        let avg_temp = center
+            .read("bcu", 27)
+            .and_then(|it| f64::try_from(it.value).ok());
+        let highest_temp = center
+            .read("bcu", 19)
+            .and_then(|it| f64::try_from(it.value).ok());
+        let lowest_temp = center
+            .read("bcu", 23)
+            .and_then(|it| f64::try_from(it.value).ok());
+        Self {
+            name: None,
+            soc,
+            voltage,
+            highest_single_voltage,
+            lowest_single_voltage,
+            current: None,
+            power: None,
+            avg_temp,
+            highest_temp,
+            lowest_temp,
+        }
     }
 }
 
