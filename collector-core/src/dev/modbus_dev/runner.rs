@@ -13,18 +13,113 @@ use crate::center::SharedPointCenter;
 use crate::config::modbus_conf::{ModbusConfig, ModbusConfigs};
 use crate::core::point::{DataPoint, DownDataPoint, PointId, PointRef, Val};
 use crate::dev::modbus_dev::Protocol;
-use crate::dev::modbus_dev::block::Blocks;
+use crate::dev::modbus_dev::block::{BlockRead, Blocks};
 use crate::dev::modbus_dev::downlink::{WritePlan, build_cfg_map, build_key_map, build_name_map};
 use crate::dev::{LifecycleState, state::SharedState};
 
 use super::backoff::Backoff;
 use super::error::ModbusDevError;
 
+/// 连续读取失败（含超时）达到该阈值即判定连接不可用，触发重连
+const MAX_READ_FAILURES: u32 = 3;
+
 /// 三张点位查找表的打包引用，避免函数参数过多。
 struct PointMaps<'a> {
-    cfg: &'a HashMap<PointId, ModbusConfig>,
-    key: &'a HashMap<&'static str, PointId>,
-    name: &'a HashMap<&'static str, PointId>,
+    cfg_map: &'a HashMap<PointId, ModbusConfig>,
+    key_map: &'a HashMap<&'static str, PointId>,
+    name_map: &'a HashMap<&'static str, PointId>,
+}
+
+/// `drain_writes` 的结果
+enum DrainOutcome {
+    /// 写队列已排空；`true` 表示本轮确实下发过至少一次写入
+    Idle(bool),
+    /// 写入失败，需要断线重连
+    WriteFailed,
+    /// 上游 channel 已关闭，设备应停止运行
+    ChannelClosed,
+}
+
+/// round-robin 读取一圈 block 的结果
+enum ReadOutcome {
+    /// 还未读满一圈，暂无可发布的数据
+    Pending,
+    /// 读满一圈，得到解析后的数据点（可能为空）
+    Published(Vec<DataPoint>),
+    /// 连续失败已达阈值，需要断线重连
+    FailureThresholdReached,
+}
+
+/// round-robin 读取状态：当前游标、上一圈的槽位缓存、连续失败计数
+struct ReadCursor {
+    index: usize,
+    block_count: usize,
+    slots: Vec<Option<BlockRead>>,
+    fail_streak: u32,
+}
+
+impl ReadCursor {
+    fn new(block_count: usize) -> Self {
+        Self {
+            index: 0,
+            block_count,
+            slots: (0..block_count).map(|_| None).collect(),
+            fail_streak: 0,
+        }
+    }
+
+    /// 读取下一个 block，读满一圈后统一发布，语义与原周期读取一致
+    async fn advance(
+        &mut self,
+        ctx: &mut Context,
+        blocks: &Blocks,
+        timeout: Duration,
+        id: &str,
+    ) -> ReadOutcome {
+        if self.block_count == 0 {
+            return ReadOutcome::Pending;
+        }
+
+        let i = self.index;
+        self.index = (self.index + 1) % self.block_count;
+
+        match time::timeout(timeout, blocks.request_one(ctx, i)).await {
+            Ok(Ok(read)) => {
+                self.fail_streak = 0;
+                self.slots[i] = Some(read);
+            }
+            Ok(Err(err)) => {
+                self.fail_streak += 1;
+                warn!(
+                    "[{}] 读取失败 ({}/{}): {}",
+                    id, self.fail_streak, MAX_READ_FAILURES, err
+                );
+                if self.fail_streak >= MAX_READ_FAILURES {
+                    return ReadOutcome::FailureThresholdReached;
+                }
+            }
+            Err(_) => {
+                self.fail_streak += 1;
+                warn!(
+                    "[{}] 读取超时 ({}/{}, 块 {})",
+                    id, self.fail_streak, MAX_READ_FAILURES, i
+                );
+                if self.fail_streak >= MAX_READ_FAILURES {
+                    return ReadOutcome::FailureThresholdReached;
+                }
+            }
+        }
+
+        if self.index != 0 {
+            return ReadOutcome::Pending;
+        }
+        // 读完一圈：取出所有槽位数据，take() 同时将槽位复位为 None
+        let reads: Vec<_> = self.slots.iter_mut().filter_map(|s| s.take()).collect();
+        if reads.len() != self.block_count {
+            return ReadOutcome::Pending;
+        }
+        ReadOutcome::Published(blocks.parse(&reads))
+    }
 }
 
 pub(super) struct ModbusRunner {
@@ -120,7 +215,8 @@ impl ModbusRunner {
     /// 单请求调度器：每次节拍先排空写队列，再按 round-robin 读下一个块。
     ///
     /// 写延迟 ≤ request_interval，不随块数增长。
-    /// 读满一圈（block_count 个块）后统一发布，语义与原周期读取一致。
+    /// 写入之后、以及每次读取之后都会等待一个 request_interval，
+    /// 避免写完立刻读、或读请求过于密集导致从站/网关来不及响应。
     async fn run_connected(
         &mut self,
         ctx: &mut Context,
@@ -129,16 +225,10 @@ impl ModbusRunner {
         maps: PointMaps<'_>,
     ) {
         self.state.store(&self.id, LifecycleState::Running);
-        let block_count = blocks.block_count();
-        let request_interval = self.request_interval();
         let timeout = self.timeout();
+        let effective_interval = self.request_interval().max(Duration::from_millis(1));
 
-        let mut cursor = 0usize;
-        // 每个槽位缓存最近一次读值，积满一圈后整体发布
-        let mut read_slots: Vec<Option<_>> = (0..block_count).map(|_| None).collect();
-        // 连续失败计数，达到阈值才触发重连
-        let mut fail_streak = 0u32;
-        const MAX_FAILURES: u32 = 3;
+        let mut reader = ReadCursor::new(blocks.block_count());
 
         loop {
             if Self::stop_requested(stop_rx) {
@@ -146,95 +236,79 @@ impl ModbusRunner {
                 return;
             }
 
-            if let Err(fault) = self.drain_writes(ctx, &maps).await {
-                if fault {
-                    self.set_comm_fault(true);
-                }
-                return;
-            }
-
-            if block_count > 0 {
-                let i = cursor;
-                cursor = (cursor + 1) % block_count;
-
-                match time::timeout(timeout, blocks.request_one(ctx, i)).await {
-                    Ok(Ok(read)) => {
-                        fail_streak = 0;
-                        read_slots[i] = Some(read);
-                    }
-                    Ok(Err(err)) => {
-                        fail_streak += 1;
-                        warn!(
-                            "[{}] 读取失败 ({}/{}): {}",
-                            self.id, fail_streak, MAX_FAILURES, err
-                        );
-                        if fail_streak >= MAX_FAILURES {
-                            self.set_comm_fault(true);
-                            return;
-                        }
-                    }
-                    Err(_) => {
-                        fail_streak += 1;
-                        warn!(
-                            "[{}] 读取超时 ({}/{}, 块 {})",
-                            self.id, fail_streak, MAX_FAILURES, i
-                        );
-                        if fail_streak >= MAX_FAILURES {
-                            self.set_comm_fault(true);
-                            return;
-                        }
-                    }
-                }
-
-                // 读完一圈 → 发布；take() 同时将槽位复位为 None
-                if cursor == 0 {
-                    let reads: Vec<_> = read_slots.iter_mut().filter_map(|s| s.take()).collect();
-                    if reads.len() == block_count {
-                        let entries = blocks.parse(&reads);
-                        if !entries.is_empty() {
-                            self.center.ingest(&self.id, entries);
-                        }
-                    }
-                }
-            }
-
-            // 块间间隔：至少 1ms，防止 request_interval=0 时循环不挂起导致单核 100%
-            let effective_interval = request_interval.max(Duration::from_millis(1));
-            tokio::select! {
-                _ = time::sleep(effective_interval) => {}
-                _ = stop_rx.changed() => {
-                    if Self::stop_requested(stop_rx) {
+            match self.drain_writes(ctx, &maps).await {
+                DrainOutcome::Idle(wrote_any) => {
+                    // 写后至少让从站/网关喘一口气，避免写完立刻读导致超时
+                    if wrote_any && Self::wait_interval(stop_rx, effective_interval).await {
                         self.set_comm_fault(true);
                         return;
                     }
                 }
+                DrainOutcome::WriteFailed => {
+                    self.set_comm_fault(true);
+                    return;
+                }
+                DrainOutcome::ChannelClosed => return,
+            }
+
+            match reader.advance(ctx, blocks, timeout, &self.id).await {
+                ReadOutcome::Published(entries) => {
+                    if !entries.is_empty() {
+                        self.center.ingest(&self.id, entries);
+                    }
+                }
+                ReadOutcome::Pending => {}
+                ReadOutcome::FailureThresholdReached => {
+                    self.set_comm_fault(true);
+                    return;
+                }
+            }
+
+            // 块间间隔：至少 1ms，防止 request_interval=0 时循环不挂起导致单核 100%
+            if Self::wait_interval(stop_rx, effective_interval).await {
+                self.set_comm_fault(true);
+                return;
             }
         }
     }
 
+    /// 等待 interval 或直到收到停止信号；返回 true 表示应停止
+    async fn wait_interval(stop_rx: &mut watch::Receiver<bool>, interval: Duration) -> bool {
+        tokio::select! {
+            _ = time::sleep(interval) => false,
+            _ = stop_rx.changed() => Self::stop_requested(stop_rx),
+        }
+    }
+
     /// 非阻塞排空写队列：处理所有已到达的写命令，队列空时立即返回。
-    ///
-    /// 返回 `Err(true)` 表示写失败需重连，`Err(false)` 表示 channel 已关闭。
-    async fn drain_writes(&mut self, ctx: &mut Context, maps: &PointMaps<'_>) -> Result<(), bool> {
+    async fn drain_writes(&mut self, ctx: &mut Context, maps: &PointMaps<'_>) -> DrainOutcome {
+        let mut wrote_any = false;
         loop {
             match self.rx.try_recv() {
                 Ok(entries) => {
                     let items: Vec<String> = entries
                         .iter()
-                        .map(|e| format!("{}: {}", resolve_name(&e.point, maps.cfg), e.value))
+                        .map(|e| format!("{}: {}", resolve_name(&e.point, maps.cfg_map), e.value))
                         .collect();
                     info!("[{}] ↓: {}", self.id, items.join(", "));
-                    let plan = WritePlan::build(entries, maps.cfg, maps.key, maps.name, &self.id);
+                    let plan = WritePlan::build(
+                        entries,
+                        maps.cfg_map,
+                        maps.key_map,
+                        maps.name_map,
+                        &self.id,
+                    );
                     if let Err(err) = plan.apply(ctx).await {
                         warn!("[{}] 下发失败, 准备重连: {}", self.id, err);
-                        return Err(true);
+                        return DrainOutcome::WriteFailed;
                     }
+                    wrote_any = true;
                 }
-                Err(mpsc::error::TryRecvError::Empty) => return Ok(()),
+                Err(mpsc::error::TryRecvError::Empty) => return DrainOutcome::Idle(wrote_any),
                 Err(mpsc::error::TryRecvError::Disconnected) => {
                     self.set_comm_fault(true);
                     self.state.store(&self.id, LifecycleState::Stopped);
-                    return Err(false);
+                    return DrainOutcome::ChannelClosed;
                 }
             }
         }
@@ -274,9 +348,9 @@ impl ModbusRunner {
                         &mut stop_rx,
                         &blocks,
                         PointMaps {
-                            cfg: &cfg_map,
-                            key: &key_map,
-                            name: &name_map,
+                            cfg_map: &cfg_map,
+                            key_map: &key_map,
+                            name_map: &name_map,
                         },
                     )
                     .await;
