@@ -1,7 +1,10 @@
 use std::collections::{BTreeMap, HashMap};
+use std::time::Duration;
 
 use smallvec::Array;
 use smallvec::SmallVec;
+use tokio::sync::watch;
+use tokio::time;
 use tokio_modbus::client::{Context, Writer};
 use tracing::warn;
 
@@ -15,6 +18,14 @@ use super::error::ModbusDevError;
 pub(super) struct WritePlan {
     coils: Vec<(u16, SmallVec<[bool; 16]>)>,
     holding: Vec<(u16, SmallVec<[u16; 16]>)>,
+}
+
+/// [`WritePlan::apply`] 的结果
+pub(super) enum WriteOutcome {
+    /// 所有写块均已下发完成
+    Completed,
+    /// 写间隔等待期间收到停止信号，提前结束
+    Stopped,
 }
 
 impl WritePlan {
@@ -67,22 +78,48 @@ impl WritePlan {
         }
     }
 
-    pub(super) async fn apply(&self, ctx: &mut Context) -> Result<(), ModbusDevError> {
+    /// 依次下发所有写块；每次实际写入之后都会等待一个 `interval`，
+    /// 避免连续写入过于密集导致从站/网关来不及响应。
+    pub(super) async fn apply(
+        &self,
+        ctx: &mut Context,
+        io_timeout: Duration,
+        stop_rx: &mut watch::Receiver<bool>,
+        interval: Duration,
+    ) -> Result<WriteOutcome, ModbusDevError> {
         for (start, vals) in self.coils.iter() {
             if vals.len() == 1 {
-                ctx.write_single_coil(*start, vals[0]).await??;
+                time::timeout(io_timeout, ctx.write_single_coil(*start, vals[0])).await???;
             } else {
-                ctx.write_multiple_coils(*start, vals).await??;
+                time::timeout(io_timeout, ctx.write_multiple_coils(*start, vals)).await???;
+            }
+            if wait_interval(stop_rx, interval).await {
+                return Ok(WriteOutcome::Stopped);
             }
         }
         for (start, vals) in self.holding.iter() {
             if vals.len() == 1 {
-                ctx.write_single_register(*start, vals[0]).await??;
+                time::timeout(io_timeout, ctx.write_single_register(*start, vals[0])).await???;
             } else {
-                ctx.write_multiple_registers(*start, vals).await??;
+                time::timeout(io_timeout, ctx.write_multiple_registers(*start, vals)).await???;
+            }
+            if wait_interval(stop_rx, interval).await {
+                return Ok(WriteOutcome::Stopped);
             }
         }
-        Ok(())
+        Ok(WriteOutcome::Completed)
+    }
+}
+
+pub(super) fn stop_requested(stop_rx: &watch::Receiver<bool>) -> bool {
+    *stop_rx.borrow()
+}
+
+/// 等待 interval 或直到收到停止信号；返回 true 表示应停止
+pub(super) async fn wait_interval(stop_rx: &mut watch::Receiver<bool>, interval: Duration) -> bool {
+    tokio::select! {
+        _ = time::sleep(interval) => false,
+        _ = stop_rx.changed() => stop_requested(stop_rx),
     }
 }
 

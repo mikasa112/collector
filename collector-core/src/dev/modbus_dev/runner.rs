@@ -14,7 +14,10 @@ use crate::config::modbus_conf::{ModbusConfig, ModbusConfigs};
 use crate::core::point::{DataPoint, DownDataPoint, PointId, PointRef, Val};
 use crate::dev::modbus_dev::Protocol;
 use crate::dev::modbus_dev::block::{BlockRead, Blocks};
-use crate::dev::modbus_dev::downlink::{WritePlan, build_cfg_map, build_key_map, build_name_map};
+use crate::dev::modbus_dev::downlink::{
+    WriteOutcome, WritePlan, build_cfg_map, build_key_map, build_name_map, stop_requested,
+    wait_interval,
+};
 use crate::dev::{LifecycleState, state::SharedState};
 
 use super::backoff::Backoff;
@@ -38,6 +41,8 @@ enum DrainOutcome {
     WriteFailed,
     /// 上游 channel 已关闭，设备应停止运行
     ChannelClosed,
+    /// 写间隔等待期间收到停止信号
+    Stopped,
 }
 
 /// round-robin 读取一圈 block 的结果
@@ -150,10 +155,6 @@ impl ModbusRunner {
         );
     }
 
-    fn stop_requested(stop_rx: &watch::Receiver<bool>) -> bool {
-        *stop_rx.borrow()
-    }
-
     fn timeout(&self) -> Duration {
         match &self.protocol {
             Protocol::Tcp(cfg) => Duration::from_millis(cfg.timeout),
@@ -231,15 +232,18 @@ impl ModbusRunner {
         let mut reader = ReadCursor::new(blocks.block_count());
 
         loop {
-            if Self::stop_requested(stop_rx) {
+            if stop_requested(stop_rx) {
                 self.set_comm_fault(true);
                 return;
             }
 
-            match self.drain_writes(ctx, &maps).await {
+            match self
+                .drain_writes(ctx, &maps, stop_rx, effective_interval)
+                .await
+            {
                 DrainOutcome::Idle(wrote_any) => {
                     // 写后至少让从站/网关喘一口气，避免写完立刻读导致超时
-                    if wrote_any && Self::wait_interval(stop_rx, effective_interval).await {
+                    if wrote_any && wait_interval(stop_rx, effective_interval).await {
                         self.set_comm_fault(true);
                         return;
                     }
@@ -249,6 +253,10 @@ impl ModbusRunner {
                     return;
                 }
                 DrainOutcome::ChannelClosed => return,
+                DrainOutcome::Stopped => {
+                    self.set_comm_fault(true);
+                    return;
+                }
             }
 
             match reader.advance(ctx, blocks, timeout, &self.id).await {
@@ -265,23 +273,24 @@ impl ModbusRunner {
             }
 
             // 块间间隔：至少 1ms，防止 request_interval=0 时循环不挂起导致单核 100%
-            if Self::wait_interval(stop_rx, effective_interval).await {
+            if wait_interval(stop_rx, effective_interval).await {
                 self.set_comm_fault(true);
                 return;
             }
         }
     }
 
-    /// 等待 interval 或直到收到停止信号；返回 true 表示应停止
-    async fn wait_interval(stop_rx: &mut watch::Receiver<bool>, interval: Duration) -> bool {
-        tokio::select! {
-            _ = time::sleep(interval) => false,
-            _ = stop_rx.changed() => Self::stop_requested(stop_rx),
-        }
-    }
-
     /// 非阻塞排空写队列：处理所有已到达的写命令，队列空时立即返回。
-    async fn drain_writes(&mut self, ctx: &mut Context, maps: &PointMaps<'_>) -> DrainOutcome {
+    ///
+    /// 每次下发（每个 coil/register block 的写操作）之后都会等待一个
+    /// `interval`，避免连续写入过于密集导致从站/网关来不及响应。
+    async fn drain_writes(
+        &mut self,
+        ctx: &mut Context,
+        maps: &PointMaps<'_>,
+        stop_rx: &mut watch::Receiver<bool>,
+        interval: Duration,
+    ) -> DrainOutcome {
         let timeout = self.timeout();
         let mut wrote_any = false;
         loop {
@@ -299,14 +308,11 @@ impl ModbusRunner {
                         maps.name_map,
                         &self.id,
                     );
-                    match time::timeout(timeout, plan.apply(ctx)).await {
-                        Ok(Ok(())) => {}
-                        Ok(Err(err)) => {
+                    match plan.apply(ctx, timeout, stop_rx, interval).await {
+                        Ok(WriteOutcome::Completed) => {}
+                        Ok(WriteOutcome::Stopped) => return DrainOutcome::Stopped,
+                        Err(err) => {
                             warn!("[{}] 下发失败, 准备重连: {}", self.id, err);
-                            return DrainOutcome::WriteFailed;
-                        }
-                        Err(_) => {
-                            warn!("[{}] 下发超时, 准备重连", self.id);
                             return DrainOutcome::WriteFailed;
                         }
                     }
@@ -338,7 +344,7 @@ impl ModbusRunner {
         let mut stop_rx = self.stop_rx.clone();
         let mut backoff = Backoff::new(Duration::from_millis(500), Duration::from_secs(10));
         loop {
-            if Self::stop_requested(&stop_rx) {
+            if stop_requested(&stop_rx) {
                 self.state.store(&self.id, LifecycleState::Stopped);
                 self.set_comm_fault(true);
                 return;
@@ -369,7 +375,7 @@ impl ModbusRunner {
                     self.set_comm_fault(true);
                 }
             }
-            if Self::stop_requested(&stop_rx) {
+            if stop_requested(&stop_rx) {
                 self.state.store(&self.id, LifecycleState::Stopped);
                 self.set_comm_fault(true);
                 return;
@@ -378,7 +384,7 @@ impl ModbusRunner {
             tokio::select! {
                 _ = time::sleep(delay) => {}
                 _ = stop_rx.changed() => {
-                    if Self::stop_requested(&stop_rx) {
+                    if stop_requested(&stop_rx) {
                         self.state.store(&self.id, LifecycleState::Stopped);
                         return;
                     }
