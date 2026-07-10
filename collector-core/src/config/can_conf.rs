@@ -1,9 +1,13 @@
 use std::{collections::HashMap, time::Duration};
 
-use calamine::{Data, HeaderRow, Reader, Xlsx, open_workbook};
+use calamine::{Data, DataType, HeaderRow, Reader, Xlsx, open_workbook};
 
-use crate::config::{
-    required_f64, required_hex, required_static_str, required_str, required_usize_integerish,
+use crate::{
+    config::{
+        optional_static_str, required_f64, required_hex, required_static_str, required_str,
+        required_usize_integerish,
+    },
+    core::point::{StatusWords, Translator, WarnBits},
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -235,9 +239,13 @@ pub struct CanSignalConfig {
     pub data_type: CanDataType,
     pub scale: f64,
     pub offset: f64,
-    pub unit: &'static str,
+    pub unit: Option<&'static str>,
     pub invalid_val: Option<u32>,
-    pub enum_values: &'static str,
+    pub enum_values: Option<&'static StatusWords>,
+    pub remark: Option<&'static str>,
+    pub key: &'static str,
+    pub trans: Option<&'static Translator>,
+    pub enum_bits: Option<&'static WarnBits>,
 }
 
 impl CanSignalConfig {
@@ -272,20 +280,32 @@ impl CanSignalConfig {
             .map_err(|err| CanConfParseError::invalid_field(ENTITY, "缩放", err))?;
         let offset = required_f64(row, 9, "偏移")
             .map_err(|err| CanConfParseError::invalid_field(ENTITY, "偏移", err))?;
-        let unit = if row.len() > 10 {
-            required_static_str(row, 10, "单位").unwrap_or_default()
-        } else {
-            ""
+        let unit = optional_static_str(row, 10);
+        let invalid_val = optional_static_str(row, 11).and_then(|it| it.parse::<u32>().ok());
+        let enum_values = row.get(12).and_then(|it| {
+            it.get_string()
+                .and_then(|str| StatusWords::try_from(str).ok())
+        });
+        let enum_values: Option<&'static StatusWords> = match enum_values {
+            Some(t) => Some(Box::leak(Box::new(t))),
+            None => None,
         };
-        let invalid_val = if row.len() > 11 {
-            required_hex(row, 11, "无效值").ok()
-        } else {
-            None
+        let remark = optional_static_str(row, 13);
+        let key = required_static_str(row, 14, "键")
+            .map_err(|err| CanConfParseError::invalid_field(ENTITY, "键", err))?;
+        let trans = row[15]
+            .get_string()
+            .and_then(|str| Translator::try_from(str).ok());
+        let trans: Option<&'static Translator> = match trans {
+            Some(t) => Some(Box::leak(Box::new(t))),
+            None => None,
         };
-        let enum_values = if row.len() > 12 {
-            required_static_str(row, 12, "枚举值").unwrap_or_default()
-        } else {
-            ""
+        let enum_bits = row
+            .get(16)
+            .and_then(|it| it.get_string().and_then(|str| WarnBits::try_from(str).ok()));
+        let enum_bits: Option<&'static WarnBits> = match enum_bits {
+            Some(t) => Some(Box::leak(Box::new(t))),
+            None => None,
         };
         Ok(Self {
             id,
@@ -301,6 +321,10 @@ impl CanSignalConfig {
             unit,
             invalid_val,
             enum_values,
+            remark,
+            key,
+            trans,
+            enum_bits,
         })
     }
 }
@@ -322,12 +346,14 @@ pub struct CanSignalExtConfig {
     pub offset: f64,
     pub unit: &'static str,
     pub invalid_val: Option<u32>,
+    pub key: &'static str,
+    pub trans: Option<&'static Translator>,
 }
 
 impl CanSignalExtConfig {
     fn new(row: &[Data]) -> Result<Self, CanConfParseError> {
         const ENTITY: &str = "CAN扩展信号配置";
-        if row.len() != 16 {
+        if row.len() < 16 {
             return Err(CanConfParseError::invalid_row_length(ENTITY, 16, row.len()));
         }
         let id = required_usize_integerish(row, 0, "点号")
@@ -374,6 +400,15 @@ impl CanSignalExtConfig {
         let invalid_val = required_hex(row, 15, "无效值").unwrap_or_default();
         // .map_err(|err| CanConfParseError::invalid_field(ENTITY, "无效值", err))?
         // as u32;
+        let key = required_static_str(row, 16, "键")
+            .map_err(|err| CanConfParseError::invalid_field(ENTITY, "键", err))?;
+        let trans = row[17]
+            .get_string()
+            .and_then(|str| Translator::try_from(str).ok());
+        let trans: Option<&'static Translator> = match trans {
+            Some(t) => Some(Box::leak(Box::new(t))),
+            None => None,
+        };
         Ok(Self {
             id,
             name,
@@ -391,6 +426,8 @@ impl CanSignalExtConfig {
             offset,
             unit,
             invalid_val: Some(invalid_val),
+            key,
+            trans,
         })
     }
 }

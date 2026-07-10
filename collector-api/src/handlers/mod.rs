@@ -11,6 +11,7 @@ pub(crate) mod ws;
 pub(crate) struct RequestExtensions<'a>(&'a Request);
 
 impl<'a> RequestExtensions<'a> {
+    #[allow(dead_code)]
     fn parse_path_parameter<T>(&self, t: &str) -> Option<T>
     where
         T: Deserialize<'a>,

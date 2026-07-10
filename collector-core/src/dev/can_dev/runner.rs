@@ -393,11 +393,11 @@ fn decode_signal(cfg: &CanSignalConfig, data: &[u8]) -> Option<DataPoint> {
         id: cfg.id,
         name: cfg.name,
         value: decode_value(raw, cfg.bit_len, cfg.data_type, cfg.scale, cfg.offset),
-        key: cfg.name,
-        translator: None,
-        warn_bits: None,
-        status_word: None,
-        unit: None,
+        key: cfg.key,
+        translator: cfg.trans,
+        warn_bits: cfg.enum_bits,
+        status_word: cfg.enum_values,
+        unit: cfg.unit,
     })
 }
 
@@ -446,8 +446,8 @@ fn decode_ext_signal(
                 })
                 .collect(),
         ),
-        key: "",
-        translator: None,
+        key: cfg.key,
+        translator: cfg.trans,
         warn_bits: None,
         status_word: None,
         unit: None,
@@ -669,9 +669,13 @@ mod tests {
                     data_type: CanDataType::U16,
                     scale: 1.0,
                     offset: 0.0,
-                    unit: "",
+                    unit: None,
                     invalid_val: None,
-                    enum_values: "",
+                    enum_values: None,
+                    remark: None,
+                    key: "",
+                    trans: None,
+                    enum_bits: None,
                 }),
                 CanSignal::Ext(CanSignalExtConfig {
                     id: 11,
@@ -690,6 +694,8 @@ mod tests {
                     offset: 0.0,
                     unit: "",
                     invalid_val: None,
+                    key: "",
+                    trans: None,
                 }),
             ],
         };
@@ -718,6 +724,8 @@ mod tests {
             offset: 0.0,
             unit: "",
             invalid_val: None,
+            key: "",
+            trans: None,
         };
 
         let mut cache = ExtSignalCache::default();
@@ -758,6 +766,8 @@ mod tests {
             offset: 0.0,
             unit: "",
             invalid_val: None,
+            key: "",
+            trans: None,
         };
 
         let mut cache = ExtSignalCache::default();

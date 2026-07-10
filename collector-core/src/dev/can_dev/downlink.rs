@@ -380,9 +380,13 @@ mod tests {
                 data_type: CanDataType::U8,
                 scale: 1.0,
                 offset: 0.0,
-                unit: "",
+                unit: None,
                 invalid_val: None,
-                enum_values: "",
+                enum_values: None,
+                remark: None,
+                key: "",
+                trans: None,
+                enum_bits: None,
             })],
         };
         let disabled = CanConfig {
@@ -410,9 +414,13 @@ mod tests {
                 data_type: CanDataType::U8,
                 scale: 1.0,
                 offset: 0.0,
-                unit: "",
+                unit: None,
                 invalid_val: None,
-                enum_values: "",
+                enum_values: None,
+                remark: None,
+                key: "",
+                trans: None,
+                enum_bits: None,
             })],
         };
 
