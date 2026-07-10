@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use collector_core::{
-    center::{self, SharedPointCenter},
+    center::SharedPointCenter,
     core::point::{DataPoint, Val},
 };
 use salvo::{
@@ -275,6 +275,33 @@ pub async fn home_ws_handler(
 
 // 首页业务数据待定，先保持连接骨架，收到 ping 回 pong
 async fn handle_home_ws(ws: &mut WebSocket, center: SharedPointCenter) {
-    let mut ticker = tokio::time::interval(std::time::Duration::from_secs(1));
-    loop {}
+    let mut ticker = tokio::time::interval(Duration::from_secs(1));
+    loop {
+        tokio::select! {
+            _ = ticker.tick() => {
+                let ac_data = HomeAcData::new(&center);
+                let dc_data = HomeDcData::new(&center);
+                let home_common_data = HomeCommonData {
+                    ac: ac_data,
+                    dc: dc_data,
+                };
+                if let Ok(json) = serde_json::to_string(&home_common_data) {
+                    let _ = ws.send(Message::text(json)).await;
+                }
+            }
+            msg = ws.recv() => {
+                match msg {
+                    None => break,
+                    Some(Ok(msg)) => {
+                        if msg.is_close() { break; }
+                        if msg.is_ping()
+                            && ws.send(Message::pong(msg.as_bytes().to_vec())).await.is_err() {
+                                break;
+                            }
+                    }
+                    Some(Err(_)) => break,
+                }
+            }
+        }
+    }
 }

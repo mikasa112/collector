@@ -49,12 +49,11 @@ impl PlannedCurveService {
         let valid_end_date = params.valid_end_date.as_deref();
         let start_date = validate_date(valid_start_date)?;
         let end_date = validate_date(valid_end_date)?;
-        if start_date.is_some() && end_date.is_some()
-            && end_date.unwrap() < start_date.unwrap() {
-                return Err(ServiceError::InvalidParameter(String::from(
-                    "结束时间须在开始时间之后",
-                )));
-            };
+        if start_date.is_some() && end_date.is_some() && end_date.unwrap() < start_date.unwrap() {
+            return Err(ServiceError::InvalidParameter(String::from(
+                "结束时间须在开始时间之后",
+            )));
+        };
         let _ = PlanCurveMasterDao::create(
             &self.pool,
             &params.curve_name,
