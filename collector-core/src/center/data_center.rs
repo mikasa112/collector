@@ -330,6 +330,11 @@ impl PointCenter for DataCenter {
         self.devices.iter().map(|it| it.key().to_owned()).collect()
     }
 
+    /// 判断设备是否已注册下行通道
+    fn has_downlink(&self, dev_id: &str) -> bool {
+        self.downlinks.contains_key(dev_id)
+    }
+
     /// 附加下行通道
     ///
     /// 为设备注册一个下行数据发送器，用于接收控制指令

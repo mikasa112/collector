@@ -27,7 +27,7 @@ impl DataService {
             .map_err(|e| ServiceError::InternalError(e.to_string()))?;
         tracing::info!("set points: {}", json);
         for param in params.points {
-            if !ids.contains(&param.dev_id) {
+            if !ids.contains(&param.dev_id) && !center.has_downlink(&param.dev_id) {
                 return Err(ServiceError::InvalidParameter(format!(
                     "设备ID {} 不存在",
                     param.dev_id

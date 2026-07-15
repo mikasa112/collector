@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use async_trait::async_trait;
-use collector_core::center::SharedPointCenter;
+use collector_core::center::{DataCenterError, SharedPointCenter};
 
 use crate::strategy::{Schedule, Strategy, StrategyError};
 
@@ -36,7 +36,6 @@ impl Strategy for FaultDiagnosis {
             .flatten()
             .flat_map(|p| p.warning())
             .collect();
-
         if !warnings.is_empty() {
             tracing::warn!(
                 "[故障诊断] {} 条告警: {}",
@@ -44,7 +43,16 @@ impl Strategy for FaultDiagnosis {
                 warnings.iter().map(|w| w.zh).collect::<Vec<_>>().join(", ")
             );
         }
+        Ok(())
+    }
+}
 
+#[async_trait]
+impl crate::DataDriven for FaultDiagnosis {
+    async fn down(
+        &self,
+        _points: &[collector_core::core::point::DownDataPoint],
+    ) -> Result<(), DataCenterError> {
         Ok(())
     }
 }

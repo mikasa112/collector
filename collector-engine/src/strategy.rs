@@ -15,7 +15,7 @@ pub enum Schedule {
 }
 
 #[async_trait]
-pub trait Strategy: Send + 'static {
+pub trait Strategy: crate::DataDriven + Send + Sync + 'static {
     fn name(&self) -> &str;
     fn schedule(&self) -> Schedule;
 

@@ -214,9 +214,9 @@ impl HomeDcData {
         let soc = center
             .read("bcu", 32)
             .and_then(|it| f64::try_from(it.value).ok());
-        //bcu 单体累加和总压
+        //bcu 电池总压
         let voltage = center
-            .read("bcu", 6)
+            .read("bcu", 44)
             .and_then(|it| f64::try_from(it.value).ok());
         let highest_single_voltage = center
             .read("bcu", 9)
@@ -224,8 +224,12 @@ impl HomeDcData {
         let lowest_single_voltage = center
             .read("bcu", 13)
             .and_then(|it| f64::try_from(it.value).ok());
-        // let current= center.read("bcu", )
-        // let power = center.read("bcu", point_id)
+        let current = center
+            .read("bcu", 46)
+            .and_then(|it| f64::try_from(it.value).ok());
+        let power = voltage
+            .zip(current)
+            .map(|(u, i)| ((u * i) / 1000.0 * 100.0).round() / 100.0);
         let avg_temp = center
             .read("bcu", 27)
             .and_then(|it| f64::try_from(it.value).ok());
@@ -241,8 +245,8 @@ impl HomeDcData {
             voltage,
             highest_single_voltage,
             lowest_single_voltage,
-            current: None,
-            power: None,
+            current,
+            power,
             avg_temp,
             highest_temp,
             lowest_temp,

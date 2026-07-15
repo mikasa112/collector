@@ -12,6 +12,7 @@ use collector_core::dock::mqtt::client::MqttClient;
 use collector_core::shutdown::ShutdownManager;
 use collector_engine::emu::core::Emu;
 use collector_engine::mod_engine::ScriptManager;
+use tokio::sync::Mutex;
 use tracing::error;
 use tracing_error::ErrorLayer;
 use tracing_log::LogTracer;
@@ -106,6 +107,10 @@ pub async fn cmd() {
                 }
             };
             let mut manager = DevManager::new(p.project.devices, center.clone(), can_bus.clone());
+            let emu = Emu::new(center.clone()).await;
+            manager
+                .add_device(Arc::new(Mutex::new(Box::new(emu))))
+                .await;
             manager.start_all().await;
 
             // 启动北向 Modbus TCP 服务器
@@ -147,10 +152,6 @@ pub async fn cmd() {
                     error!("脚本模组引擎异常: {}", err);
                 }
             });
-
-            // 启动EMU
-            let emu = Emu::new(center.clone());
-            tokio::spawn(emu.await.run(shutdown.clone()));
 
             // 在后台监听关闭信号
             tokio::spawn(shutdown.clone().listen_shutdown_signal());

@@ -13,7 +13,7 @@ pub(crate) mod dev_config;
 pub(crate) mod gpio;
 pub mod manager;
 pub(crate) mod modbus_dev;
-pub(crate) mod state;
+pub mod state;
 
 #[derive(Debug, thiserror::Error)]
 pub enum DeviceError {

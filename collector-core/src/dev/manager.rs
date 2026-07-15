@@ -55,7 +55,14 @@ impl DevManager {
         self.cancel_token = Some(token);
     }
 
-    pub fn add_device(&mut self, device: Arc<Mutex<Box<dyn Executable>>>) {
+    pub async fn add_device(&mut self, device: Arc<Mutex<Box<dyn Executable>>>) {
+        {
+            let dev = device.lock().await;
+            if let Err(err) = dev.init() {
+                error!("设备 {} 初始化失败: {}", dev.id(), err);
+                return;
+            }
+        }
         self.devices.push(device);
     }
 

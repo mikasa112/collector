@@ -30,6 +30,8 @@ pub trait PointCenter: Send + Sync {
 
     fn dev_ids(&self) -> Vec<String>;
 
+    fn has_downlink(&self, dev_id: &str) -> bool;
+
     fn attach_downlink(&self, dev_id: &str, tx: DownlinkSender) -> Result<(), DataCenterError>;
 
     fn detach_downlink(&self, dev_id: &str);

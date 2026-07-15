@@ -2,9 +2,11 @@ use std::{future::Future, pin::Pin};
 
 use collector_core::{
     center::{DataCenterError, SharedPointCenter},
-    core::point::Val,
+    core::point::{DownDataPoint, Val},
     down,
 };
+
+use crate::DataDriven;
 
 pub type CommandFunc =
     Box<dyn Fn(SharedPointCenter) -> Pin<Box<dyn Future<Output = Result<(), CommandError>>>>>;
@@ -17,7 +19,7 @@ pub enum CommandError {
     New(String),
 }
 
-pub trait Command: Send + 'static {
+pub trait Command: crate::DataDriven + Send + Sync + 'static {
     fn name(&self) -> String;
     fn func(&self) -> CommandFunc;
 }
@@ -73,5 +75,12 @@ impl Command for PowerOn {
                 })
             },
         )
+    }
+}
+
+#[async_trait::async_trait]
+impl DataDriven for PowerOn {
+    async fn down(&self, points: &[DownDataPoint]) -> Result<(), DataCenterError> {
+        Ok(())
     }
 }
