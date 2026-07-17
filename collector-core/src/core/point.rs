@@ -297,17 +297,17 @@ pub struct DataPoint {
     pub name: &'static str,
     pub value: Val,
     pub translator: Option<&'static Translator>,
-    pub warn_bits: Option<&'static WarnBits>,
-    pub status_word: Option<&'static StatusWords>,
+    pub bits: Option<&'static Bits>,
+    pub words: Option<&'static Words>,
     pub unit: Option<&'static str>,
 }
 
 impl DataPoint {
-    pub fn warning(&self) -> Vec<WarnBit> {
+    pub fn warning(&self) -> Vec<Bit> {
         let Ok(v) = u32::try_from(&self.value) else {
             return vec![];
         };
-        let Some(warn_bits) = self.warn_bits else {
+        let Some(warn_bits) = self.bits else {
             return vec![];
         };
         warn_bits
@@ -319,9 +319,9 @@ impl DataPoint {
             .collect()
     }
 
-    pub fn current_status(&self) -> Option<&'static StatusWord> {
+    pub fn current_status(&self) -> Option<&'static Word> {
         let v = u32::try_from(&self.value).ok()? as u16;
-        self.status_word?.words.get(&v)
+        self.words?.0.get(&v)
     }
 }
 
@@ -366,8 +366,8 @@ impl TryFrom<&str> for Translator {
 }
 
 #[derive(Debug, Clone)]
-pub struct WarnBits {
-    pub bits: [WarnBit; 16],
+pub struct Bits {
+    pub bits: [Bit; 16],
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -391,13 +391,13 @@ impl From<u8> for WarnLevel {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct WarnBit {
+pub struct Bit {
     pub zh: &'static str,
     pub en: &'static str,
     pub level: WarnLevel,
 }
 
-impl Default for WarnBit {
+impl Default for Bit {
     fn default() -> Self {
         Self {
             zh: Default::default(),
@@ -407,7 +407,7 @@ impl Default for WarnBit {
     }
 }
 
-impl TryFrom<&str> for WarnBit {
+impl TryFrom<&str> for Bit {
     type Error = anyhow::Error;
 
     fn try_from(value: &str) -> Result<Self, Self::Error> {
@@ -432,7 +432,7 @@ impl TryFrom<&str> for WarnBit {
     }
 }
 
-impl TryFrom<&str> for WarnBits {
+impl TryFrom<&str> for Bits {
     type Error = anyhow::Error;
 
     fn try_from(value: &str) -> Result<Self, Self::Error> {
@@ -440,20 +440,18 @@ impl TryFrom<&str> for WarnBits {
         if values.len() != 16 {
             return Err(anyhow::anyhow!("expected 16 values, got {}", values.len()));
         }
-        let mut bits = [WarnBit::default(); 16];
+        let mut bits = [Bit::default(); 16];
         for (i, s) in values.iter().enumerate() {
-            bits[i] = WarnBit::try_from(*s)?;
+            bits[i] = Bit::try_from(*s)?;
         }
-        Ok(WarnBits { bits })
+        Ok(Bits { bits })
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct StatusWords {
-    pub words: HashMap<u16, StatusWord>,
-}
+#[derive(Debug, Clone, Serialize)]
+pub struct Words(pub HashMap<u16, Word>);
 
-impl TryFrom<&str> for StatusWords {
+impl TryFrom<&str> for Words {
     type Error = anyhow::Error;
 
     fn try_from(value: &str) -> Result<Self, Self::Error> {
@@ -468,20 +466,20 @@ impl TryFrom<&str> for StatusWords {
             let status = *col_strs
                 .get(1)
                 .ok_or(anyhow::anyhow!("`status` field is missing"))?;
-            let status_word = StatusWord::try_from(status)?;
+            let status_word = Word::try_from(status)?;
             map.insert(word, status_word);
         }
-        Ok(Self { words: map })
+        Ok(Self(map))
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct StatusWord {
+#[derive(Debug, Clone, Serialize)]
+pub struct Word {
     pub zh: &'static str,
     pub en: &'static str,
 }
 
-impl TryFrom<&str> for StatusWord {
+impl TryFrom<&str> for Word {
     type Error = anyhow::Error;
 
     fn try_from(value: &str) -> Result<Self, Self::Error> {
@@ -513,24 +511,24 @@ mod tests {
 
     #[test]
     fn test_parse_status_word() {
-        let status_word = StatusWord::try_from("zh|en").unwrap();
+        let status_word = Word::try_from("zh|en").unwrap();
         assert_eq!(status_word.zh, "zh");
         assert_eq!(status_word.en, "en");
     }
 
     #[test]
     fn test_parse_status_words() {
-        let status_words = StatusWords::try_from("0 zh|en\r\n1 zh|en").unwrap();
-        assert_eq!(status_words.words.len(), 2);
-        assert_eq!(status_words.words[&0].zh, "zh");
-        assert_eq!(status_words.words[&0].en, "en");
-        assert_eq!(status_words.words[&1].zh, "zh");
-        assert_eq!(status_words.words[&1].en, "en");
+        let status_words = Words::try_from("0 zh|en\r\n1 zh|en").unwrap();
+        assert_eq!(status_words.0.len(), 2);
+        assert_eq!(status_words.0[&0].zh, "zh");
+        assert_eq!(status_words.0[&0].en, "en");
+        assert_eq!(status_words.0[&1].zh, "zh");
+        assert_eq!(status_words.0[&1].en, "en");
     }
 
     #[test]
     fn test_parse_warn_bit() {
-        let warn_bit = WarnBit::try_from("zh|en|1").unwrap();
+        let warn_bit = Bit::try_from("zh|en|1").unwrap();
         assert_eq!(warn_bit.zh, "zh");
         assert_eq!(warn_bit.en, "en");
         assert_eq!(warn_bit.level, WarnLevel::Normal);
@@ -538,7 +536,7 @@ mod tests {
 
     #[test]
     fn test_parse_warn_bits() {
-        let warn_bits = WarnBits::try_from(
+        let warn_bits = Bits::try_from(
             r#"硬件故障-A 相硬件过流|Hardware failure - Phase A hardware overcurrent
         硬件故障-B 相硬件过流|Hardware failure - B-phase hardware overcurrent
         硬件故障-C 相硬件过流|Hardware failure - C-phase hardware overcurrent

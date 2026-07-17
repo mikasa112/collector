@@ -421,8 +421,8 @@ mod tests {
             value: Val::U8(value),
             key: "p",
             translator: None,
-            warn_bits: None,
-            status_word: None,
+            bits: None,
+            words: None,
             unit: None,
         }
     }

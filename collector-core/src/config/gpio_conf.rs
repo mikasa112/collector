@@ -55,8 +55,8 @@ impl GpioConfig {
             name: self.name.unwrap_or_default(),
             value: Val::U8(value),
             translator: self.trans,
-            warn_bits: None,
-            status_word: None,
+            bits: None,
+            words: None,
             unit: None,
         }
     }

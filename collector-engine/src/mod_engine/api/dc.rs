@@ -57,16 +57,16 @@ fn val_as_u16(val: &Val) -> Option<u16> {
 }
 
 fn append_status_and_faults(lua: &Lua, t: &Table, point: &DataPoint) -> mlua::Result<()> {
-    if let Some(status_words) = point.status_word
+    if let Some(status_words) = point.words
         && let Some(raw) = val_as_u16(&point.value)
-        && let Some(sw) = status_words.words.get(&raw)
+        && let Some(sw) = status_words.0.get(&raw)
     {
         let st = lua.create_table()?;
         st.set("zh", sw.zh)?;
         st.set("en", sw.en)?;
         t.set("status", st)?;
     }
-    if let Some(warn_bits) = point.warn_bits
+    if let Some(warn_bits) = point.bits
         && let Some(raw) = val_as_u16(&point.value)
     {
         let faults = lua.create_table()?;

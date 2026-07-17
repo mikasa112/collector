@@ -7,7 +7,7 @@ use crate::{
         optional_static_str, required_f64, required_hex, required_static_str, required_str,
         required_usize_integerish,
     },
-    core::point::{StatusWords, Translator, WarnBits},
+    core::point::{Bits, Translator, Words},
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -241,11 +241,11 @@ pub struct CanSignalConfig {
     pub offset: f64,
     pub unit: Option<&'static str>,
     pub invalid_val: Option<u32>,
-    pub enum_values: Option<&'static StatusWords>,
+    pub enum_values: Option<&'static Words>,
     pub remark: Option<&'static str>,
     pub key: &'static str,
     pub trans: Option<&'static Translator>,
-    pub enum_bits: Option<&'static WarnBits>,
+    pub enum_bits: Option<&'static Bits>,
 }
 
 impl CanSignalConfig {
@@ -282,11 +282,10 @@ impl CanSignalConfig {
             .map_err(|err| CanConfParseError::invalid_field(ENTITY, "偏移", err))?;
         let unit = optional_static_str(row, 10);
         let invalid_val = optional_static_str(row, 11).and_then(|it| it.parse::<u32>().ok());
-        let enum_values = row.get(12).and_then(|it| {
-            it.get_string()
-                .and_then(|str| StatusWords::try_from(str).ok())
-        });
-        let enum_values: Option<&'static StatusWords> = match enum_values {
+        let enum_values = row
+            .get(12)
+            .and_then(|it| it.get_string().and_then(|str| Words::try_from(str).ok()));
+        let enum_values: Option<&'static Words> = match enum_values {
             Some(t) => Some(Box::leak(Box::new(t))),
             None => None,
         };
@@ -302,8 +301,8 @@ impl CanSignalConfig {
         };
         let enum_bits = row
             .get(16)
-            .and_then(|it| it.get_string().and_then(|str| WarnBits::try_from(str).ok()));
-        let enum_bits: Option<&'static WarnBits> = match enum_bits {
+            .and_then(|it| it.get_string().and_then(|str| Bits::try_from(str).ok()));
+        let enum_bits: Option<&'static Bits> = match enum_bits {
             Some(t) => Some(Box::leak(Box::new(t))),
             None => None,
         };

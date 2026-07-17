@@ -73,8 +73,8 @@ impl Tms {
                 name: "系统热管理模式",
                 value: Val::U8(SysTmsMode::Auto as u8),
                 translator: None,
-                warn_bits: None,
-                status_word: None,
+                bits: None,
+                words: None,
                 unit: None,
             })),
         }
@@ -219,24 +219,31 @@ impl crate::DataDriven for Tms {
                 let mode = SysTmsMode::from_value(&p.value);
                 match mode {
                     SysTmsMode::Manual => {
+                        tracing::info!("[热管理] 手动");
                         self.manual().await?;
                     }
                     SysTmsMode::Auto => {
+                        tracing::info!("[热管理] 自动");
                         self.auto().await?;
                     }
                     SysTmsMode::Circulation => {
+                        tracing::info!("[热管理] 自循环");
                         self.circulation().await?;
                     }
                     SysTmsMode::Level1Cooling => {
+                        tracing::info!("[热管理] 一级制冷");
                         self.level1_cooling().await?;
                     }
                     SysTmsMode::Level2Cooling => {
+                        tracing::info!("[热管理] 二级制冷");
                         self.level2_cooling().await?;
                     }
                     SysTmsMode::Heating => {
+                        tracing::info!("[热管理] 制热");
                         self.heating().await?;
                     }
                     SysTmsMode::Standby => {
+                        tracing::info!("[热管理] 待机");
                         self.standby().await?;
                     }
                 }

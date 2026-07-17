@@ -80,7 +80,7 @@ impl Command for PowerOn {
 
 #[async_trait::async_trait]
 impl DataDriven for PowerOn {
-    async fn down(&self, points: &[DownDataPoint]) -> Result<(), DataCenterError> {
+    async fn down(&self, _points: &[DownDataPoint]) -> Result<(), DataCenterError> {
         Ok(())
     }
 }

@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use collector_core::{
     center::SharedPointCenter,
-    core::point::{DataPoint, Val},
+    core::point::{DataPoint, Val, Words},
 };
 use salvo::{
     Depot, Request, Response, handler,
@@ -55,7 +55,7 @@ struct Point<'a> {
     name: &'static str,
     value: &'a Val,
     #[serde(skip_serializing_if = "Option::is_none")]
-    status: Option<&'static str>,
+    words: Option<&'static Words>,
     #[serde(skip_serializing_if = "Option::is_none")]
     unit: Option<&'static str>,
 }
@@ -66,26 +66,12 @@ impl<'a> Point<'a> {
             DevQueryLang::Zh => data_point.name,
             DevQueryLang::En => data_point.translator.map_or(data_point.name, |t| t.en),
         };
-        let mut status: Option<&'static str> = None;
-        if let Some(sw) = data_point.status_word
-            && let Ok(v) = u32::try_from(&data_point.value)
-        {
-            for (k, w) in sw.words.iter() {
-                if *k == (v as u16) {
-                    status = Some(match lang {
-                        DevQueryLang::En => w.en,
-                        DevQueryLang::Zh => w.zh,
-                    });
-                    break;
-                }
-            }
-        }
         Point {
             id: data_point.id,
             key: data_point.key,
             name,
             value: &data_point.value,
-            status,
+            words: data_point.words,
             unit: data_point.unit,
         }
     }

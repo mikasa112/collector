@@ -52,8 +52,8 @@ impl CanRunner {
                 value: Val::U8(fault as u8),
                 key: "communicationStatus",
                 translator: None,
-                warn_bits: None,
-                status_word: None,
+                bits: None,
+                words: None,
                 unit: None,
             }],
         );
@@ -395,8 +395,8 @@ fn decode_signal(cfg: &CanSignalConfig, data: &[u8]) -> Option<DataPoint> {
         value: decode_value(raw, cfg.bit_len, cfg.data_type, cfg.scale, cfg.offset),
         key: cfg.key,
         translator: cfg.trans,
-        warn_bits: cfg.enum_bits,
-        status_word: cfg.enum_values,
+        bits: cfg.enum_bits,
+        words: cfg.enum_values,
         unit: cfg.unit,
     })
 }
@@ -448,8 +448,8 @@ fn decode_ext_signal(
         ),
         key: cfg.key,
         translator: cfg.trans,
-        warn_bits: None,
-        status_word: None,
+        bits: None,
+        words: None,
         unit: None,
     })
 }

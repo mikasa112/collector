@@ -8,7 +8,7 @@ use crate::{
         optional_static_str, required_f64, required_static_str, required_str,
         required_usize_integerish,
     },
-    core::point::{StatusWords, Translator, WarnBits},
+    core::point::{Bits, Translator, Words},
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -185,8 +185,8 @@ pub struct ModbusConfig {
     pub enable: bool,
     pub key: &'static str,
     pub trans: Option<&'static Translator>,
-    pub status_words: Option<&'static StatusWords>,
-    pub warn_bits: Option<&'static WarnBits>,
+    pub status_words: Option<&'static Words>,
+    pub warn_bits: Option<&'static Bits>,
 }
 
 impl ModbusConfig {
@@ -223,18 +223,17 @@ impl ModbusConfig {
             Some(t) => Some(Box::leak(Box::new(t))),
             None => None,
         };
-        let status_words = row.get(14).and_then(|it| {
-            it.get_string()
-                .and_then(|str| StatusWords::try_from(str).ok())
-        });
-        let status_words: Option<&'static StatusWords> = match status_words {
+        let status_words = row
+            .get(14)
+            .and_then(|it| it.get_string().and_then(|str| Words::try_from(str).ok()));
+        let status_words: Option<&'static Words> = match status_words {
             Some(t) => Some(Box::leak(Box::new(t))),
             None => None,
         };
         let warn_bits = row
             .get(15)
-            .and_then(|it| it.get_string().and_then(|str| WarnBits::try_from(str).ok()));
-        let warn_bits: Option<&'static WarnBits> = match warn_bits {
+            .and_then(|it| it.get_string().and_then(|str| Bits::try_from(str).ok()));
+        let warn_bits: Option<&'static Bits> = match warn_bits {
             Some(t) => Some(Box::leak(Box::new(t))),
             None => None,
         };

@@ -270,8 +270,8 @@ impl Blocks {
                 value,
                 key: region.cfg.key,
                 translator: region.cfg.trans,
-                warn_bits: region.cfg.warn_bits,
-                status_word: region.cfg.status_words,
+                bits: region.cfg.warn_bits,
+                words: region.cfg.status_words,
                 unit: region.cfg.unit,
             });
         }

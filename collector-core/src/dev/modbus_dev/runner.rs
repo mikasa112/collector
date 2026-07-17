@@ -148,8 +148,8 @@ impl ModbusRunner {
                 value: Val::U8(fault as u8),
                 key: "communicationStatus",
                 translator: None,
-                warn_bits: None,
-                status_word: None,
+                bits: None,
+                words: None,
                 unit: None,
             }],
         );
