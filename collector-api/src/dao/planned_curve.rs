@@ -45,10 +45,14 @@ impl PlanCurveMasterDao {
     }
 
     pub async fn find_all_len(pool: &SqlitePool) -> DaoResult<usize> {
-        let total: i64 =
-            sqlx::query_scalar("SELECT COUNT(*) AS total FROM t_plan_curve_master tpcm")
-                .fetch_one(pool)
-                .await?;
+        let total: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*)
+            AS total
+            FROM t_plan_curve_master tpcm
+            WHERE tpcm.deleted_at is NULL",
+        )
+        .fetch_one(pool)
+        .await?;
         Ok(total as usize)
     }
 
@@ -59,6 +63,7 @@ impl PlanCurveMasterDao {
     ) -> DaoResult<Vec<PlanCurveMaster>> {
         let plan_curve_master = sqlx::query_as::<_, PlanCurveMaster>(
             "SELECT * FROM t_plan_curve_master tpcm
+            WHERE deleted_at is NULL
             ORDER BY tpcm.updated_at DESC
             LIMIT ? OFFSET ?",
         )
@@ -73,6 +78,7 @@ impl PlanCurveMasterDao {
         let current_active = sqlx::query_as::<_, PlanCurveMaster>(
             "SELECT * FROM t_plan_curve_master tpcm
             WHERE tpcm.status = 1
+              AND tpcm.deleted_at is NULL
               AND tpcm.valid_start_date <= date('now')
               AND tpcm.valid_end_date >= date('now')
             ORDER BY tpcm.priority, tpcm.created_at",
@@ -88,7 +94,9 @@ impl PlanCurveMasterDao {
     ) -> DaoResult<Vec<PlanCurveMaster>> {
         let plans = sqlx::query_as::<_, PlanCurveMaster>(
             "SELECT * FROM plan_curve_master
-            WHERE curve_name LIKE '%?%' AND status != 3;",
+            WHERE curve_name LIKE '%?%'
+              AND tpcm.status != 3
+              AND tpcm.deleted_at is NULL;",
         )
         .bind(like_name)
         .fetch_all(pool)
@@ -97,11 +105,12 @@ impl PlanCurveMasterDao {
     }
 
     pub async fn find_by_id(pool: &SqlitePool, id: u32) -> DaoResult<Option<PlanCurveMaster>> {
-        let plan =
-            sqlx::query_as::<_, PlanCurveMaster>("SELECT * FROM t_plan_curve_master WHERE id = ?")
-                .bind(id)
-                .fetch_optional(pool)
-                .await?;
+        let plan = sqlx::query_as::<_, PlanCurveMaster>(
+            "SELECT * FROM t_plan_curve_master WHERE id = ? AND deleted_at is NULL",
+        )
+        .bind(id)
+        .fetch_optional(pool)
+        .await?;
         Ok(plan)
     }
 }
@@ -190,6 +199,7 @@ impl PlanCurveDetailDao {
                     created_at, updated_at, deleted_at
             FROM t_plan_curve_detail tpcd
             WHERE tpcd.curve_id = ?
+              AND tpcd.deleted_at is NULL
             ORDER BY tpcd.time_index",
         )
         .bind(id)
@@ -209,6 +219,7 @@ impl PlanCurveDetailDao {
                     created_at, updated_at, deleted_at
             FROM t_plan_curve_detail tpcd
             WHERE tpcd.curve_id = ? AND tpcd.power_value != 0
+              AND tpcd.deleted_at is NULL
             ORDER BY tpcd.time_index",
         )
         .bind(id)

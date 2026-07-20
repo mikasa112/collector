@@ -1,7 +1,7 @@
 use collector_core::{
     center::SharedPointCenter,
     shutdown::ShutdownManager,
-    utils::database::{DatabaseConfig, close_database, init_database},
+    utils::database::close_database,
 };
 use salvo::{Listener, Server, conn::TcpListener};
 use tracing::info;
@@ -33,9 +33,6 @@ impl ApiApp {
             .await;
         let server = Server::new(acceptor);
         let handle = server.handle();
-        if let Err(e) = init_database(DatabaseConfig::default()).await {
-            tracing::error!("{}", e)
-        }
         // 在后台任务中等待关闭信号
         let shutdown_handle = handle.clone();
         tokio::spawn(async move {

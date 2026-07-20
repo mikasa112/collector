@@ -7,8 +7,11 @@ use crate::{
         response::{ListResponse, ObjResponse},
     },
     handlers::RequestExtensions,
-    models::planned_curve::{CurveType, PlanCurveDetail, PlanCurveMaster},
-    services::{ServiceError, planned_curve::PlannedCurveService},
+    models::planned_curve::{CurveType, PlanCurveDetail},
+    services::{
+        ServiceError,
+        planned_curve::{PlanCurveMasterSimpleResp, PlannedCurveService},
+    },
 };
 
 #[derive(Debug, Clone, serde::Deserialize, Validate)]
@@ -40,7 +43,7 @@ pub struct BindPlannedCurveDetailsParams {
 }
 
 #[handler]
-pub async fn list(req: &mut Request) -> ApiResult<ListResponse<PlanCurveMaster>> {
+pub async fn list(req: &mut Request) -> ApiResult<ListResponse<PlanCurveMasterSimpleResp>> {
     let page = req.query::<u32>("page").unwrap_or(1);
     let size = req.query::<u32>("size").unwrap_or(10);
     let service = PlannedCurveService::new()?;
@@ -49,7 +52,9 @@ pub async fn list(req: &mut Request) -> ApiResult<ListResponse<PlanCurveMaster>>
 }
 
 #[handler]
-pub async fn find_master_by_id(req: &mut Request) -> ApiResult<ObjResponse<PlanCurveMaster>> {
+pub async fn find_master_by_id(
+    req: &mut Request,
+) -> ApiResult<ObjResponse<PlanCurveMasterSimpleResp>> {
     let service = PlannedCurveService::new()?;
     let id = RequestExtensions(req)
         .parse_reqeust_parameter::<u32>("id")

@@ -3,7 +3,7 @@ use std::{sync::Arc, time::Duration};
 use crate::{
     emu::{
         cmd::{self, Command},
-        tms,
+        planned_curve, tms,
     },
     strategy::{Schedule, Strategy},
 };
@@ -11,6 +11,7 @@ use collector_core::{
     center::{DataCenterError, SharedPointCenter},
     core::point::DownDataPoint,
     dev::{DeviceError, Executable, Identifiable, Lifecycle, LifecycleState, state::SharedState},
+    utils::database::get_database,
 };
 use parking_lot::Mutex;
 use tokio::{
@@ -34,10 +35,11 @@ impl Emu {
     pub async fn new(center: SharedPointCenter) -> Self {
         let commands: Arc<AsyncMutex<Vec<Box<dyn Command>>>> =
             Arc::new(AsyncMutex::new(vec![Box::new(cmd::PowerOn)]));
-        let strategies: Arc<AsyncMutex<Vec<Box<dyn Strategy>>>> =
-            Arc::new(AsyncMutex::new(vec![Box::new(tms::Tms::new(
-                center.clone(),
-            ))]));
+        let pool = get_database().expect("[engine] 数据库初始化失败");
+        let strategies: Arc<AsyncMutex<Vec<Box<dyn Strategy>>>> = Arc::new(AsyncMutex::new(vec![
+            Box::new(tms::Tms::new(center.clone())),
+            Box::new(planned_curve::PlannedCurve::new(center.clone(), pool)),
+        ]));
         let state = SharedState::new(LifecycleState::New);
         let (stop_tx, stop_rx) = watch::channel(false);
         Self {

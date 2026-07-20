@@ -2,14 +2,51 @@ use std::collections::HashSet;
 
 use chrono::NaiveDate;
 use collector_core::utils::database::get_database;
+use serde::Serialize;
 use sqlx::SqlitePool;
 
 use crate::{
     dao::planned_curve::{PlanCurveDetailDao, PlanCurveMasterDao},
     handlers::planned_curve::{BindPlannedCurveDetailsParams, CreatePlannedCurveParams},
-    models::planned_curve::{PlanCurveDetail, PlanCurveMaster},
+    models::planned_curve::{CurveType, PlanCurveDetail, PlanCurveMaster},
     services::{ServiceError, ServiceResult},
 };
+
+#[derive(Debug, Serialize)]
+pub struct PlanCurveMasterSimpleResp {
+    pub id: u32,
+    pub curve_name: String,
+    pub curve_type: CurveType,
+    //优先级，数字越小优先级越高
+    pub priority: Option<u8>,
+    //状态：0-草稿 1-已发布 2-执行中 3-已归档
+    pub status: Option<u8>,
+    //生效起始时间
+    pub valid_start_date: Option<String>,
+    //生效结束时间
+    pub valid_end_date: Option<String>,
+    //生效星期掩码，如 "1,2,3,4,5" 表示周一至周五
+    pub effective_weekdays: Option<String>,
+    pub created_by: Option<String>,
+    pub remark: Option<String>,
+}
+
+impl From<PlanCurveMaster> for PlanCurveMasterSimpleResp {
+    fn from(value: PlanCurveMaster) -> Self {
+        PlanCurveMasterSimpleResp {
+            id: value.id,
+            curve_name: value.curve_name,
+            curve_type: value.curve_type,
+            priority: value.priority,
+            status: value.status,
+            valid_start_date: value.valid_start_date,
+            valid_end_date: value.valid_end_date,
+            effective_weekdays: value.effective_weekdays,
+            created_by: value.created_by,
+            remark: value.remark,
+        }
+    }
+}
 
 pub struct PlannedCurveService {
     pool: SqlitePool,
@@ -26,16 +63,20 @@ impl PlannedCurveService {
         &self,
         page: u32,
         size: u32,
-    ) -> ServiceResult<(Vec<PlanCurveMaster>, usize)> {
+    ) -> ServiceResult<(Vec<PlanCurveMasterSimpleResp>, usize)> {
         let result = PlanCurveMasterDao::find_all(&self.pool, size, (page - 1) * size).await?;
         let total = PlanCurveMasterDao::find_all_len(&self.pool).await?;
+        let result = result
+            .into_iter()
+            .map(PlanCurveMasterSimpleResp::from)
+            .collect::<Vec<_>>();
         Ok((result, total))
     }
 
-    pub async fn find_master_by_id(&self, id: u32) -> ServiceResult<PlanCurveMaster> {
+    pub async fn find_master_by_id(&self, id: u32) -> ServiceResult<PlanCurveMasterSimpleResp> {
         let master = PlanCurveMasterDao::find_by_id(&self.pool, id).await?;
         if let Some(m) = master {
-            Ok(m)
+            Ok(PlanCurveMasterSimpleResp::from(m))
         } else {
             Err(ServiceError::NotFound(format!("{id}不存在").to_string()))
         }

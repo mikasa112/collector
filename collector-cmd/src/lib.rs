@@ -10,6 +10,7 @@ use collector_core::dev::manager::DevManager;
 use collector_core::dock::modbus::ModbusServer;
 use collector_core::dock::mqtt::client::MqttClient;
 use collector_core::shutdown::ShutdownManager;
+use collector_core::utils::database::{DatabaseConfig, init_database};
 use collector_engine::emu::core::Emu;
 use collector_engine::mod_engine::ScriptManager;
 use tokio::sync::Mutex;
@@ -96,6 +97,12 @@ pub async fn cmd() {
 
             // 创建统一的关闭管理器
             let shutdown = ShutdownManager::new();
+
+            // 数据库连接池需要在设备管理器（含虚拟设备引擎）启动前初始化好，
+            // 否则引擎里依赖数据库的策略（如计划曲线）会因为连接池还未就绪而报错
+            init_database(DatabaseConfig::default())
+                .await
+                .expect("数据库初始化失败");
 
             let center: SharedPointCenter = Arc::new(DataCenter::new(32));
             let can_bus = SharedCanBus::default();
