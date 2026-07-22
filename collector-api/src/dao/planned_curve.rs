@@ -10,19 +10,21 @@ pub struct PlanCurveMasterDao;
 
 pub struct PlanCurveDetailDao;
 
+/// 新建计划曲线主表记录所需参数
+pub struct NewPlanCurveMaster<'a> {
+    pub curve_name: &'a str,
+    pub curve_type: CurveType,
+    pub priority: Option<u8>,
+    pub status: Option<u8>,
+    pub valid_start_date: Option<&'a str>,
+    pub valid_end_date: Option<&'a str>,
+    pub effective_weekdays: Option<&'a str>,
+    pub created_by: Option<&'a str>,
+    pub remark: Option<&'a str>,
+}
+
 impl PlanCurveMasterDao {
-    pub async fn create(
-        pool: &SqlitePool,
-        curve_name: &str,
-        curve_type: CurveType,
-        priority: Option<u8>,
-        status: Option<u8>,
-        valid_start_date: Option<&str>,
-        valid_end_date: Option<&str>,
-        effective_weekdays: Option<&str>,
-        created_by: Option<&str>,
-        remark: Option<&str>,
-    ) -> DaoResult<i64> {
+    pub async fn create(pool: &SqlitePool, params: NewPlanCurveMaster<'_>) -> DaoResult<i64> {
         let result = sqlx::query(
             "INSERT INTO t_plan_curve_master (
                 curve_name, curve_type, priority, status,
@@ -30,15 +32,15 @@ impl PlanCurveMasterDao {
                 created_by, remark
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )
-        .bind(curve_name)
-        .bind(curve_type)
-        .bind(priority)
-        .bind(status)
-        .bind(valid_start_date)
-        .bind(valid_end_date)
-        .bind(effective_weekdays)
-        .bind(created_by)
-        .bind(remark)
+        .bind(params.curve_name)
+        .bind(params.curve_type)
+        .bind(params.priority)
+        .bind(params.status)
+        .bind(params.valid_start_date)
+        .bind(params.valid_end_date)
+        .bind(params.effective_weekdays)
+        .bind(params.created_by)
+        .bind(params.remark)
         .execute(pool)
         .await?;
         Ok(result.last_insert_rowid())
@@ -74,6 +76,7 @@ impl PlanCurveMasterDao {
         Ok(plan_curve_master)
     }
 
+    #[allow(dead_code)]
     pub async fn find_active(pool: &SqlitePool) -> DaoResult<Vec<PlanCurveMaster>> {
         let current_active = sqlx::query_as::<_, PlanCurveMaster>(
             "SELECT * FROM t_plan_curve_master tpcm
@@ -88,6 +91,7 @@ impl PlanCurveMasterDao {
         Ok(current_active)
     }
 
+    #[allow(dead_code)]
     pub async fn find_like_name(
         pool: &SqlitePool,
         like_name: &str,
@@ -116,6 +120,7 @@ impl PlanCurveMasterDao {
 }
 
 impl PlanCurveDetailDao {
+    #[allow(dead_code)]
     pub async fn create(
         pool: &SqlitePool,
         curve_id: u32,
@@ -138,6 +143,7 @@ impl PlanCurveDetailDao {
     }
 
     /// 批量插入曲线明细，如一次性写入某条曲线的 96 个功率点
+    #[allow(dead_code)]
     pub async fn batch_create(
         pool: &SqlitePool,
         curve_id: u32,
@@ -208,6 +214,7 @@ impl PlanCurveDetailDao {
         Ok(details)
     }
 
+    #[allow(dead_code)]
     pub async fn query_non_zero_by_master_id(
         pool: &SqlitePool,
         id: u32,

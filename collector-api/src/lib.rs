@@ -1,8 +1,4 @@
-use collector_core::{
-    center::SharedPointCenter,
-    shutdown::ShutdownManager,
-    utils::database::close_database,
-};
+use collector_core::{center::SharedPointCenter, shutdown::ShutdownManager};
 use salvo::{Listener, Server, conn::TcpListener};
 use tracing::info;
 
@@ -39,7 +35,6 @@ impl ApiApp {
             shutdown.wait_for_shutdown().await;
             info!("API 服务器收到关闭信号，开始优雅关闭...");
             shutdown_handle.stop_graceful(None);
-            close_database().await;
         });
 
         server.serve(root_router(self.center)).await;

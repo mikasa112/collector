@@ -6,7 +6,7 @@ use serde::Serialize;
 use sqlx::SqlitePool;
 
 use crate::{
-    dao::planned_curve::{PlanCurveDetailDao, PlanCurveMasterDao},
+    dao::planned_curve::{NewPlanCurveMaster, PlanCurveDetailDao, PlanCurveMasterDao},
     handlers::planned_curve::{BindPlannedCurveDetailsParams, CreatePlannedCurveParams},
     models::planned_curve::{CurveType, PlanCurveDetail, PlanCurveMaster},
     services::{ServiceError, ServiceResult},
@@ -97,17 +97,19 @@ impl PlannedCurveService {
         };
         let _ = PlanCurveMasterDao::create(
             &self.pool,
-            &params.curve_name,
-            params
-                .curve_type
-                .ok_or_else(|| ServiceError::InvalidParameter("curve_type不能为空".to_string()))?,
-            Some(params.priority.unwrap_or(5)),
-            Some(params.status.unwrap_or(0)),
-            valid_start_date,
-            valid_end_date,
-            params.effective_weekdays.as_deref(),
-            params.created_by.as_deref(),
-            params.remark.as_deref(),
+            NewPlanCurveMaster {
+                curve_name: &params.curve_name,
+                curve_type: params.curve_type.ok_or_else(|| {
+                    ServiceError::InvalidParameter("curve_type不能为空".to_string())
+                })?,
+                priority: Some(params.priority.unwrap_or(5)),
+                status: Some(params.status.unwrap_or(0)),
+                valid_start_date,
+                valid_end_date,
+                effective_weekdays: params.effective_weekdays.as_deref(),
+                created_by: params.created_by.as_deref(),
+                remark: params.remark.as_deref(),
+            },
         )
         .await?;
         Ok(())

@@ -6,7 +6,7 @@ use collector_core::{
     down,
 };
 
-use crate::DataDriven;
+use crate::{DataDriven, strategy::StrategyError};
 
 pub type CommandFunc =
     Box<dyn Fn(SharedPointCenter) -> Pin<Box<dyn Future<Output = Result<(), CommandError>>>>>;
@@ -80,7 +80,7 @@ impl Command for PowerOn {
 
 #[async_trait::async_trait]
 impl DataDriven for PowerOn {
-    async fn down(&self, _points: &[DownDataPoint]) -> Result<(), DataCenterError> {
+    async fn down(&self, _points: &[DownDataPoint]) -> Result<(), StrategyError> {
         Ok(())
     }
 }

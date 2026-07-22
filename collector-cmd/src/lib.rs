@@ -9,7 +9,9 @@ use collector_core::dev::can_bus::SharedCanBus;
 use collector_core::dev::manager::DevManager;
 use collector_core::dock::modbus::ModbusServer;
 use collector_core::dock::mqtt::client::MqttClient;
+use collector_core::runtime::core::get_runtime;
 use collector_core::shutdown::ShutdownManager;
+use collector_core::utils::database::close_database;
 use collector_core::utils::database::{DatabaseConfig, init_database};
 use collector_engine::emu::core::Emu;
 use collector_engine::mod_engine::ScriptManager;
@@ -100,10 +102,12 @@ pub async fn cmd() {
 
             // 数据库连接池需要在设备管理器（含虚拟设备引擎）启动前初始化好，
             // 否则引擎里依赖数据库的策略（如计划曲线）会因为连接池还未就绪而报错
-            init_database(DatabaseConfig::default())
+            let _sql_pool = init_database(DatabaseConfig::default())
                 .await
                 .expect("数据库初始化失败");
-
+            let _runtime = get_runtime()
+                .await
+                .map_err(|e| tracing::error!("EMU运行时配置错误: {}", e));
             let center: SharedPointCenter = Arc::new(DataCenter::new(32));
             let can_bus = SharedCanBus::default();
             let mqtt_client = match MqttClient::from_project(&mut p.project, center.clone()) {
@@ -168,6 +172,7 @@ pub async fn cmd() {
 
             // 优雅关闭所有组件
             manager.stop_all().await;
+            close_database().await;
             if let Some(client) = mqtt_client.as_ref()
                 && let Err(err) = client.stop().await
             {

@@ -2,9 +2,10 @@ use std::time::Duration;
 
 use chrono::{Datelike, Timelike};
 use collector_core::{
-    center::{DataCenterError, SharedPointCenter},
-    core::point::{DownDataPoint, Val},
+    center::SharedPointCenter,
+    core::point::{DataPoint, DownDataPoint, PointRef, Val},
     down,
+    runtime::core::get_runtime,
 };
 use sqlx::{SqlitePool, prelude::FromRow};
 
@@ -12,6 +13,9 @@ use crate::{
     DataDriven,
     strategy::{Schedule, Strategy, StrategyError},
 };
+
+const PLANNED_CURVE_POINT_ID: u32 = 2;
+const PLANNED_CURVE_POINT_KEY: &str = "planned_curve";
 
 #[derive(FromRow)]
 struct PlanCurveMaster {
@@ -132,37 +136,38 @@ impl PlannedCurve {
             return;
         }
         if let Some(limit) = detail.soc_limit
-            && let Some(current_soc) = self.center.read("bcu", 32) {
-                let soc = f64::try_from(current_soc.value);
-                if let Ok(soc) = soc {
-                    //正充负放：充电时SOC达到上限、放电时SOC达到下限，均改为下发功率0
-                    let reach_limit = if detail.power_value > 0.0 {
-                        soc >= limit
-                    } else if detail.power_value < 0.0 {
-                        soc <= limit
-                    } else {
-                        false
-                    };
-                    if reach_limit {
-                        if let Err(e) = self
-                            .center
-                            .dispatch("pcs", vec![down!(id: 2003, Val::F64(0.0))])
-                            .await
-                        {
-                            tracing::error!("[计划曲线] 下发功率失败: {}", e);
-                            return;
-                        }
-                        tracing::info!(
-                            "[计划曲线] 曲线「{}」第{}段 当前SOC {}% 达到限制 {}%，下发功率0kW",
-                            active.curve_name,
-                            time_index,
-                            soc,
-                            limit
-                        );
+            && let Some(current_soc) = self.center.read("bcu", 32)
+        {
+            let soc = f64::try_from(current_soc.value);
+            if let Ok(soc) = soc {
+                //正充负放：充电时SOC达到上限、放电时SOC达到下限，均改为下发功率0
+                let reach_limit = if detail.power_value > 0.0 {
+                    soc >= limit
+                } else if detail.power_value < 0.0 {
+                    soc <= limit
+                } else {
+                    false
+                };
+                if reach_limit {
+                    if let Err(e) = self
+                        .center
+                        .dispatch("pcs", vec![down!(id: 2003, Val::F64(0.0))])
+                        .await
+                    {
+                        tracing::error!("[计划曲线] 下发功率失败: {}", e);
                         return;
                     }
+                    tracing::info!(
+                        "[计划曲线] 曲线「{}」第{}段 当前SOC {}% 达到限制 {}%，下发功率0kW",
+                        active.curve_name,
+                        time_index,
+                        soc,
+                        limit
+                    );
+                    return;
                 }
             }
+        }
         if let Err(e) = self
             .center
             .dispatch("pcs", vec![down!(id: 2003, Val::F64(detail.power_value))])
@@ -179,6 +184,20 @@ impl PlannedCurve {
         );
         self.last = Some(key);
     }
+
+    fn point(&self, bool: bool) -> DataPoint {
+        let bool = if bool { 1 } else { 0 };
+        DataPoint {
+            id: PLANNED_CURVE_POINT_ID,
+            key: PLANNED_CURVE_POINT_KEY,
+            name: "计划曲线使能",
+            value: Val::U8(bool),
+            translator: None,
+            bits: None,
+            words: None,
+            unit: None,
+        }
+    }
 }
 
 #[async_trait::async_trait]
@@ -192,11 +211,24 @@ impl Strategy for PlannedCurve {
     }
 
     async fn on_start(&mut self) -> Result<(), StrategyError> {
+        let runtime = get_runtime().await?;
+        let enable = runtime.planned_curve.get_planned_curve_enable().await;
+        self.center.ingest("emu", vec![self.point(enable)]);
+        if !enable {
+            return Ok(());
+        }
         self.apply().await;
+        self.center.ingest("emu", vec![self.point(enable)]);
         Ok(())
     }
 
     async fn on_tick(&mut self) -> Result<(), StrategyError> {
+        let runtime = get_runtime().await?;
+        let enable = runtime.planned_curve.get_planned_curve_enable().await;
+        self.center.ingest("emu", vec![self.point(enable)]);
+        if !enable {
+            return Ok(());
+        }
         self.apply().await;
         Ok(())
     }
@@ -204,7 +236,26 @@ impl Strategy for PlannedCurve {
 
 #[async_trait::async_trait]
 impl DataDriven for PlannedCurve {
-    async fn down(&self, _points: &[DownDataPoint]) -> Result<(), DataCenterError> {
+    async fn down(&self, points: &[DownDataPoint]) -> Result<(), StrategyError> {
+        for p in points.iter() {
+            if p.point == PointRef::Id(PLANNED_CURVE_POINT_ID)
+                || p.point == PointRef::Key(PLANNED_CURVE_POINT_KEY.to_string())
+            {
+                let runtime = get_runtime().await?;
+                self.center
+                    .ingest("emu", vec![self.point(p.value.as_bool()?)]);
+                runtime
+                    .planned_curve
+                    .set_planned_curve_enable(p.value.as_bool()?)
+                    .await?;
+                let text = if p.value.as_bool()? {
+                    "开启"
+                } else {
+                    "关闭"
+                };
+                tracing::info!("[计划曲线] 计划曲线功能{}", text)
+            }
+        }
         Ok(())
     }
 }

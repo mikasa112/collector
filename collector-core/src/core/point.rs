@@ -97,42 +97,44 @@ pub enum Val {
     List(Vec<Val>),
 }
 
-fn val_as_bool(value: &Val) -> Result<bool, ValError> {
-    match value {
-        Val::U8(v) => Ok(*v != 0),
-        Val::I8(v) => Ok(*v != 0),
-        Val::I16(v) => Ok(*v != 0),
-        Val::I32(v) => Ok(*v != 0),
-        Val::U16(v) => Ok(*v != 0),
-        Val::U32(v) => Ok(*v != 0),
-        Val::F64(v) => Ok(v.abs() > f64::EPSILON),
-        Val::List(_) => Err(ValError::InvalidValue),
+impl Val {
+    pub fn as_bool(&self) -> Result<bool, ValError> {
+        match self {
+            Val::U8(v) => Ok(*v != 0),
+            Val::I8(v) => Ok(*v != 0),
+            Val::I16(v) => Ok(*v != 0),
+            Val::I32(v) => Ok(*v != 0),
+            Val::U16(v) => Ok(*v != 0),
+            Val::U32(v) => Ok(*v != 0),
+            Val::F64(v) => Ok(v.abs() > f64::EPSILON),
+            Val::List(_) => Err(ValError::InvalidValue),
+        }
     }
-}
 
-fn val_as_f64(value: &Val) -> Result<f64, ValError> {
-    match value {
-        Val::U8(v) => Ok(*v as f64),
-        Val::I8(v) => Ok(*v as f64),
-        Val::I16(v) => Ok(*v as f64),
-        Val::I32(v) => Ok(*v as f64),
-        Val::U16(v) => Ok(*v as f64),
-        Val::U32(v) => Ok(*v as f64),
-        Val::F64(v) => Ok(*v),
-        Val::List(_) => Err(ValError::InvalidValue),
+    pub fn as_f64(&self) -> Result<f64, ValError> {
+        match self {
+            Val::U8(v) => Ok(*v as f64),
+            Val::I8(v) => Ok(*v as f64),
+            Val::I16(v) => Ok(*v as f64),
+            Val::I32(v) => Ok(*v as f64),
+            Val::U16(v) => Ok(*v as f64),
+            Val::U32(v) => Ok(*v as f64),
+            Val::F64(v) => Ok(*v),
+            Val::List(_) => Err(ValError::InvalidValue),
+        }
     }
-}
 
-fn val_as_u32(value: &Val) -> Result<u32, ValError> {
-    match value {
-        Val::U8(v) => Ok(*v as u32),
-        Val::I8(v) => Ok(*v as u32),
-        Val::I16(v) => Ok(*v as u32),
-        Val::I32(v) => Ok(*v as u32),
-        Val::U16(v) => Ok(*v as u32),
-        Val::U32(v) => Ok(*v),
-        Val::F64(v) => Ok(*v as u32),
-        Val::List(_) => Err(ValError::InvalidValue),
+    pub fn as_u32(&self) -> Result<u32, ValError> {
+        match self {
+            Val::U8(v) => Ok(*v as u32),
+            Val::I8(v) => Ok(*v as u32),
+            Val::I16(v) => Ok(*v as u32),
+            Val::I32(v) => Ok(*v as u32),
+            Val::U16(v) => Ok(*v as u32),
+            Val::U32(v) => Ok(*v),
+            Val::F64(v) => Ok(*v as u32),
+            Val::List(_) => Err(ValError::InvalidValue),
+        }
     }
 }
 
@@ -140,7 +142,7 @@ impl TryFrom<Val> for bool {
     type Error = ValError;
 
     fn try_from(value: Val) -> Result<Self, Self::Error> {
-        val_as_bool(&value)
+        value.as_bool()
     }
 }
 
@@ -148,7 +150,7 @@ impl TryFrom<&Val> for bool {
     type Error = ValError;
 
     fn try_from(value: &Val) -> Result<Self, Self::Error> {
-        val_as_bool(value)
+        value.as_bool()
     }
 }
 
@@ -156,7 +158,7 @@ impl TryFrom<Val> for f64 {
     type Error = ValError;
 
     fn try_from(value: Val) -> Result<Self, Self::Error> {
-        val_as_f64(&value)
+        value.as_f64()
     }
 }
 
@@ -164,7 +166,7 @@ impl TryFrom<&Val> for f64 {
     type Error = ValError;
 
     fn try_from(value: &Val) -> Result<Self, Self::Error> {
-        val_as_f64(value)
+        value.as_f64()
     }
 }
 
@@ -172,7 +174,7 @@ impl TryFrom<&Val> for u32 {
     type Error = ValError;
 
     fn try_from(value: &Val) -> Result<Self, Self::Error> {
-        val_as_u32(value)
+        value.as_u32()
     }
 }
 
@@ -180,7 +182,7 @@ impl TryFrom<Val> for u32 {
     type Error = ValError;
 
     fn try_from(value: Val) -> Result<Self, Self::Error> {
-        val_as_u32(&value)
+        value.as_u32()
     }
 }
 

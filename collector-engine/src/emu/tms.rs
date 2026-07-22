@@ -209,7 +209,7 @@ impl Tms {
 
 #[async_trait]
 impl crate::DataDriven for Tms {
-    async fn down(&self, points: &[DownDataPoint]) -> Result<(), DataCenterError> {
+    async fn down(&self, points: &[DownDataPoint]) -> Result<(), StrategyError> {
         let (id, key) = {
             let point = self.point.read();
             (point.id, point.key)

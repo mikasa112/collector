@@ -51,3 +51,27 @@ CREATE UNIQUE INDEX idx_curve_time ON t_plan_curve_detail(curve_id, time_index);
 
 -- 为提升查询效率，额外创建单列索引
 CREATE INDEX idx_curve_id ON t_plan_curve_detail(curve_id);
+
+-- EMU功能开关表：控制各项EMU功能是否启用
+CREATE TABLE t_emu_function (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    function_code VARCHAR(50) NOT NULL,   -- 功能唯一编码，如 PLAN_CURVE、ANTI_BACKFLOW
+    function_name VARCHAR(100) NOT NULL,  -- 功能名称
+    enabled TINYINT NOT NULL DEFAULT 0,   -- 0-禁用 1-启用
+    config TEXT,                          -- 功能相关配置参数(JSON，可为空)
+    sort_order INTEGER DEFAULT 0,         -- 展示排序
+    -- 创建时间：插入时自动生成
+    created_at DATETIME DEFAULT (datetime('now', 'localtime')),
+    -- 更新时间：初始与创建时间一致
+    updated_at DATETIME DEFAULT (datetime('now', 'localtime')),
+    -- 删除时间：默认为 NULL，不为 NULL 时表示该记录已被软删除
+    deleted_at DATETIME,
+    remark VARCHAR(255)
+);
+
+-- 功能编码唯一（排除软删除记录，允许历史编码在软删后复用）
+CREATE UNIQUE INDEX idx_emu_function_code ON t_emu_function(function_code) WHERE deleted_at IS NULL;
+
+-- 启用计划曲线功能
+INSERT INTO t_emu_function (function_code, function_name, enabled, sort_order, remark)
+VALUES ('PLAN_CURVE', '计划曲线控制', 1, 1, '按计划曲线执行充放电');

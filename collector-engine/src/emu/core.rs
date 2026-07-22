@@ -3,7 +3,7 @@ use std::{sync::Arc, time::Duration};
 use crate::{
     emu::{
         cmd::{self, Command},
-        planned_curve, tms,
+        fault, planned_curve, tms,
     },
     strategy::{Schedule, Strategy},
 };
@@ -37,6 +37,7 @@ impl Emu {
             Arc::new(AsyncMutex::new(vec![Box::new(cmd::PowerOn)]));
         let pool = get_database().expect("[engine] 数据库初始化失败");
         let strategies: Arc<AsyncMutex<Vec<Box<dyn Strategy>>>> = Arc::new(AsyncMutex::new(vec![
+            Box::new(fault::FaultDiagnosis::new(center.clone())),
             Box::new(tms::Tms::new(center.clone())),
             Box::new(planned_curve::PlannedCurve::new(center.clone(), pool)),
         ]));
