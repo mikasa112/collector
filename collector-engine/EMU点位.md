@@ -1,0 +1,11 @@
+EMU功能点位，点在DataCenter中流转
+|点位|key|name|
+|----|----|---|
+|1|operation_mode|EMU运行模式|
+|2|permission|EMU充放电许可|
+|3|health_status|EMU告警故障状态|
+|4|charge_soc_limit|充电SOC限制|
+|5|discharge_soc_limit|放电SOC限制|
+|6|planned_curve|计划曲线使能|
+|10|sys_tms_mode|系统热管理模式|
+|500-1000|warn_fault|告警故障|

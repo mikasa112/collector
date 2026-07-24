@@ -96,32 +96,44 @@ pub async fn cmd() {
     match config::Configuration::new(args.config).await {
         Ok(mut p) => {
             p.load_device_configs().await;
-
             // 创建统一的关闭管理器
             let shutdown = ShutdownManager::new();
 
-            // 数据库连接池需要在设备管理器（含虚拟设备引擎）启动前初始化好，
-            // 否则引擎里依赖数据库的策略（如计划曲线）会因为连接池还未就绪而报错
-            let _sql_pool = init_database(DatabaseConfig::default())
-                .await
-                .expect("数据库初始化失败");
-            let _runtime = get_runtime()
-                .await
-                .map_err(|e| tracing::error!("EMU运行时配置错误: {}", e));
+            let emu_enable = p.project.emu_enable.unwrap_or(false);
+            let mqtt_enable = p.project.mqtt_enable.unwrap_or(false);
+
             let center: SharedPointCenter = Arc::new(DataCenter::new(32));
             let can_bus = SharedCanBus::default();
-            let mqtt_client = match MqttClient::from_project(&mut p.project, center.clone()) {
-                Ok(client) => client,
-                Err(err) => {
-                    error!("failed to initialize mqtt client: {}", err);
-                    None
+
+            let mqtt_client = if mqtt_enable {
+                match MqttClient::from_project(&mut p.project, center.clone()) {
+                    Ok(client) => client,
+                    Err(err) => {
+                        error!("failed to initialize mqtt client: {}", err);
+                        None
+                    }
                 }
+            } else {
+                None
             };
+
             let mut manager = DevManager::new(p.project.devices, center.clone(), can_bus.clone());
-            let emu = Emu::new(center.clone()).await;
-            manager
-                .add_device(Arc::new(Mutex::new(Box::new(emu))))
-                .await;
+
+            if emu_enable {
+                // 数据库连接池需要在设备管理器（含虚拟设备引擎）启动前初始化好，
+                // 否则引擎里依赖数据库的策略（如计划曲线）会因为连接池还未就绪而报错
+                let _sql_pool = init_database(DatabaseConfig::default())
+                    .await
+                    .expect("数据库初始化失败");
+                if let Err(e) = get_runtime().await {
+                    tracing::error!("EMU运行时配置错误: {}", e);
+                }
+                let emu = Emu::new(center.clone()).await;
+                manager
+                    .add_device(Arc::new(Mutex::new(Box::new(emu))))
+                    .await;
+            }
+
             manager.start_all().await;
 
             // 启动北向 Modbus TCP 服务器

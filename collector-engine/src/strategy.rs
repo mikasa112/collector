@@ -11,6 +11,8 @@ pub enum StrategyError {
     RuntimeErr(#[from] RuntimeError),
     #[error("{0}")]
     ValError(#[from] ValError),
+    #[error("点`{0}`找不到")]
+    PointNotFound(String),
 }
 
 pub enum Schedule {

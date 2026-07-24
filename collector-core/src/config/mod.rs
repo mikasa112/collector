@@ -128,8 +128,10 @@ where
 pub struct Project {
     pub product_type: Option<String>,
     pub project: Option<String>,
+    pub emu_enable: Option<bool>,
     pub http_ip: Option<String>,
     pub http_port: Option<u16>,
+    pub mqtt_enable: Option<bool>,
     pub mqtt_host: Option<String>,
     pub mqtt_port: Option<u16>,
     pub mqtt_username: Option<String>,

@@ -11,11 +11,9 @@ use sqlx::{SqlitePool, prelude::FromRow};
 
 use crate::{
     DataDriven,
+    emu::{ID_PLANNED_CURVE, KEY_PLANNED_CURVE},
     strategy::{Schedule, Strategy, StrategyError},
 };
-
-const PLANNED_CURVE_POINT_ID: u32 = 2;
-const PLANNED_CURVE_POINT_KEY: &str = "planned_curve";
 
 #[derive(FromRow)]
 struct PlanCurveMaster {
@@ -188,8 +186,8 @@ impl PlannedCurve {
     fn point(&self, bool: bool) -> DataPoint {
         let bool = if bool { 1 } else { 0 };
         DataPoint {
-            id: PLANNED_CURVE_POINT_ID,
-            key: PLANNED_CURVE_POINT_KEY,
+            id: ID_PLANNED_CURVE,
+            key: KEY_PLANNED_CURVE,
             name: "计划曲线使能",
             value: Val::U8(bool),
             translator: None,
@@ -238,8 +236,8 @@ impl Strategy for PlannedCurve {
 impl DataDriven for PlannedCurve {
     async fn down(&self, points: &[DownDataPoint]) -> Result<(), StrategyError> {
         for p in points.iter() {
-            if p.point == PointRef::Id(PLANNED_CURVE_POINT_ID)
-                || p.point == PointRef::Key(PLANNED_CURVE_POINT_KEY.to_string())
+            if p.point == PointRef::Id(ID_PLANNED_CURVE)
+                || p.point == PointRef::Key(KEY_PLANNED_CURVE.to_string())
             {
                 let runtime = get_runtime().await?;
                 self.center

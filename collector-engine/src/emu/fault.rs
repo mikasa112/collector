@@ -1,7 +1,11 @@
 use std::time::Duration;
 
 use async_trait::async_trait;
-use collector_core::center::SharedPointCenter;
+use collector_core::{
+    center::SharedPointCenter,
+    core::point::WarnLevel,
+    runtime::{core::get_runtime, emu::HealthStatus},
+};
 
 use crate::strategy::{Schedule, Strategy, StrategyError};
 
@@ -42,11 +46,26 @@ impl Strategy for FaultDiagnosis {
             .flatten()
             .flat_map(|p| p.warning())
             .collect();
+        let runtime = get_runtime().await?;
         if !warnings.is_empty() {
+            //当故障告警不为空，
+            for warn in warnings.iter() {
+                //2级告警
+                if warn.level == WarnLevel::High {
+                    runtime.emu_runtime.set_health(HealthStatus::Warning);
+                }
+                //3级故障
+                if warn.level == WarnLevel::Critical {
+                    runtime.emu_runtime.set_health(HealthStatus::Alarm);
+                    break;
+                }
+            }
             tracing::warn!(
                 "[故障诊断] {}",
                 warnings.iter().map(|w| w.zh).collect::<Vec<_>>().join(", ")
             );
+        } else {
+            runtime.emu_runtime.set_health(HealthStatus::Normal);
         }
         Ok(())
     }

@@ -1,4 +1,5 @@
 pub mod core;
+pub mod emu;
 pub mod planned_curve;
 
 #[derive(Debug, thiserror::Error)]
