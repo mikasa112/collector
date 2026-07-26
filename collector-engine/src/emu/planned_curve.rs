@@ -210,7 +210,7 @@ impl Strategy for PlannedCurve {
 
     async fn on_start(&mut self) -> Result<(), StrategyError> {
         let runtime = get_runtime().await?;
-        let enable = runtime.planned_curve.get_planned_curve_enable().await;
+        let enable = runtime.planned_curve.get_planned_curve_enable();
         self.center.ingest("emu", vec![self.point(enable)]);
         if !enable {
             return Ok(());
@@ -222,7 +222,7 @@ impl Strategy for PlannedCurve {
 
     async fn on_tick(&mut self) -> Result<(), StrategyError> {
         let runtime = get_runtime().await?;
-        let enable = runtime.planned_curve.get_planned_curve_enable().await;
+        let enable = runtime.planned_curve.get_planned_curve_enable();
         self.center.ingest("emu", vec![self.point(enable)]);
         if !enable {
             return Ok(());

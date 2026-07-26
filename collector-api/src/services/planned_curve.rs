@@ -1,13 +1,17 @@
 use std::collections::HashSet;
 
-use chrono::NaiveDate;
-use collector_core::utils::database::get_database;
+use chrono::{Datelike, NaiveDate};
+use collector_core::{runtime::core::get_runtime, utils::database::get_database};
 use serde::Serialize;
 use sqlx::SqlitePool;
 
 use crate::{
-    dao::planned_curve::{NewPlanCurveMaster, PlanCurveDetailDao, PlanCurveMasterDao},
-    handlers::planned_curve::{BindPlannedCurveDetailsParams, CreatePlannedCurveParams},
+    dao::planned_curve::{
+        NewPlanCurveMaster, PlanCurveDetailDao, PlanCurveMasterDao, UpdatePlanCurveMaster,
+    },
+    handlers::planned_curve::{
+        BindPlannedCurveDetailsParams, CreatePlannedCurveParams, UpdatePlannedCurveParams,
+    },
     models::planned_curve::{CurveType, PlanCurveDetail, PlanCurveMaster},
     services::{ServiceError, ServiceResult},
 };
@@ -165,6 +169,104 @@ impl PlannedCurveService {
         }
         let list = PlanCurveDetailDao::query_by_master_id(&self.pool, curve_id).await?;
         Ok(list)
+    }
+
+    pub async fn update_planned_curve_master(
+        &self,
+        params: UpdatePlannedCurveParams,
+    ) -> ServiceResult<()> {
+        let valid_start_date = params.valid_start_date.as_deref();
+        let valid_end_date = params.valid_end_date.as_deref();
+        let start_date = validate_date(valid_start_date)?;
+        let end_date = validate_date(valid_end_date)?;
+        if start_date.is_some() && end_date.is_some() && end_date.unwrap() < start_date.unwrap() {
+            return Err(ServiceError::InvalidParameter(String::from(
+                "结束时间须在开始时间之后",
+            )));
+        };
+        let rows = PlanCurveMasterDao::update(
+            &self.pool,
+            params.id,
+            UpdatePlanCurveMaster {
+                curve_name: &params.curve_name,
+                curve_type: params.curve_type.ok_or_else(|| {
+                    ServiceError::InvalidParameter("curve_type不能为空".to_string())
+                })?,
+                priority: params.priority,
+                status: params.status,
+                valid_start_date,
+                valid_end_date,
+                effective_weekdays: params.effective_weekdays.as_deref(),
+                remark: params.remark.as_deref(),
+            },
+        )
+        .await?;
+        if rows == 0 {
+            return Err(ServiceError::NotFound(format!(
+                "{}的计划曲线不存在",
+                params.id
+            )));
+        }
+        Ok(())
+    }
+
+    pub async fn delete_planned_curve_master(&self, id: u32) -> ServiceResult<()> {
+        let rows = PlanCurveMasterDao::soft_delete(&self.pool, id).await?;
+        if rows == 0 {
+            return Err(ServiceError::NotFound(format!("{id}的计划曲线不存在")));
+        }
+        Ok(())
+    }
+
+    pub async fn set_planned_curve_enable(&self, b: bool) -> ServiceResult<()> {
+        let runtime = get_runtime()
+            .await
+            .map_err(|_| ServiceError::InternalError(String::from("EMU功能未开启")))?;
+        runtime
+            .planned_curve
+            .set_planned_curve_enable(b)
+            .await
+            .map_err(|e| ServiceError::InternalError(e.to_string()))
+    }
+
+    pub async fn planned_curve_enable(&self) -> ServiceResult<bool> {
+        let runtime = get_runtime()
+            .await
+            .map_err(|_| ServiceError::InternalError(String::from("EMU功能未开启")))?;
+        Ok(runtime.planned_curve.get_planned_curve_enable())
+    }
+
+    /// 获取当前正在生效执行的计划曲线 id，若计划曲线功能未开启或当前时间无匹配曲线则返回 None
+    pub async fn current_running_curve_id(&self) -> ServiceResult<Option<u32>> {
+        let runtime = get_runtime()
+            .await
+            .map_err(|_| ServiceError::InternalError(String::from("EMU功能未开启")))?;
+        if !runtime.planned_curve.get_planned_curve_enable() {
+            return Ok(None);
+        }
+        let candidates = PlanCurveMasterDao::find_enabled(&self.pool).await?;
+        //生效日期/星期以本地日历日为准，而非 UTC，避免临近0点时的偏移，与引擎侧判定逻辑保持一致
+        let today = chrono::Local::now().date_naive();
+        let weekday = today.weekday().number_from_monday() as u8;
+        let current = candidates.into_iter().find(|it| {
+            let start_ok = it
+                .valid_start_date
+                .as_deref()
+                .and_then(|d| NaiveDate::parse_from_str(d, "%Y-%m-%d").ok())
+                .is_none_or(|d| d <= today);
+            let end_ok = it
+                .valid_end_date
+                .as_deref()
+                .and_then(|d| NaiveDate::parse_from_str(d, "%Y-%m-%d").ok())
+                .is_none_or(|d| d >= today);
+            let weekday_ok = it.effective_weekdays.as_deref().is_none_or(|mask| {
+                mask.split(',')
+                    .filter_map(|s| s.trim().parse::<u8>().ok())
+                    .any(|d| d == weekday)
+            });
+            start_ok && end_ok && weekday_ok
+        });
+        Ok(current.map(|c| c.id))
     }
 }
 

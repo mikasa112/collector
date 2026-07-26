@@ -42,6 +42,26 @@ pub struct BindPlannedCurveDetailsParams {
     pub times: Vec<TimesDetailsParams>,
 }
 
+#[derive(serde::Deserialize, Validate)]
+pub struct EnablePlannedCurveParams {
+    pub enable: bool,
+}
+
+#[derive(Debug, serde::Deserialize, Validate)]
+pub struct UpdatePlannedCurveParams {
+    pub id: u32,
+    #[validate(length(min = 1, message = "curve_name不能为空"))]
+    pub curve_name: String,
+    #[validate(required(message = "curve_type不能为空"))]
+    pub curve_type: Option<CurveType>,
+    pub priority: Option<u8>,
+    pub status: Option<u8>,
+    pub valid_start_date: Option<String>,
+    pub valid_end_date: Option<String>,
+    pub effective_weekdays: Option<String>,
+    pub remark: Option<String>,
+}
+
 #[handler]
 pub async fn list(req: &mut Request) -> ApiResult<ListResponse<PlanCurveMasterSimpleResp>> {
     let page = req.query::<u32>("page").unwrap_or(1);
@@ -73,6 +93,25 @@ pub async fn create_planned_curve_master(req: &mut Request) -> ApiResult<ObjResp
 }
 
 #[handler]
+pub async fn update_planned_curve_master(req: &mut Request) -> ApiResult<ObjResponse<()>> {
+    let params = req.parse_json::<UpdatePlannedCurveParams>().await?;
+    params.validate()?;
+    let service = PlannedCurveService::new()?;
+    service.update_planned_curve_master(params).await?;
+    Ok(ObjResponse::ok(()))
+}
+
+#[handler]
+pub async fn delete_planned_curve_master(req: &mut Request) -> ApiResult<ObjResponse<()>> {
+    let id = RequestExtensions(req)
+        .parse_reqeust_parameter::<u32>("id")
+        .ok_or_else(|| ServiceError::InvalidParameter("id不能为空".to_string()))?;
+    let service = PlannedCurveService::new()?;
+    service.delete_planned_curve_master(id).await?;
+    Ok(ObjResponse::ok(()))
+}
+
+#[handler]
 pub async fn bind_planned_curve_details(req: &mut Request) -> ApiResult<ObjResponse<()>> {
     let params = req.parse_json::<BindPlannedCurveDetailsParams>().await?;
     params.validate()?;
@@ -90,4 +129,27 @@ pub async fn planned_curve_details(req: &mut Request) -> ApiResult<ListResponse<
     let result = service.planned_curve_details(curve_id).await?;
     let len = result.len();
     Ok(ListResponse::ok(result, len))
+}
+
+#[handler]
+pub async fn planned_curve_enable(_req: &mut Request) -> ApiResult<ObjResponse<bool>> {
+    let service = PlannedCurveService::new()?;
+    let b = service.planned_curve_enable().await?;
+    Ok(ObjResponse::ok(b))
+}
+
+#[handler]
+pub async fn set_planned_curve_enable(req: &mut Request) -> ApiResult<ObjResponse<()>> {
+    let params = req.parse_json::<EnablePlannedCurveParams>().await?;
+    params.validate()?;
+    let service = PlannedCurveService::new()?;
+    service.set_planned_curve_enable(params.enable).await?;
+    Ok(ObjResponse::ok(()))
+}
+
+#[handler]
+pub async fn current_running_curve_id(_req: &mut Request) -> ApiResult<ObjResponse<Option<u32>>> {
+    let service = PlannedCurveService::new()?;
+    let id = service.current_running_curve_id().await?;
+    Ok(ObjResponse::ok(id))
 }

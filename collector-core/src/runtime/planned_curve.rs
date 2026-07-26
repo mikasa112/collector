@@ -37,7 +37,7 @@ impl RuntimePlannedCurve {
         Ok(())
     }
 
-    pub async fn get_planned_curve_enable(&self) -> bool {
+    pub fn get_planned_curve_enable(&self) -> bool {
         self.planned_curve_enable
             .load(std::sync::atomic::Ordering::Relaxed)
     }

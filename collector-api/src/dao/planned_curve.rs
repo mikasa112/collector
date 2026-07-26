@@ -23,6 +23,18 @@ pub struct NewPlanCurveMaster<'a> {
     pub remark: Option<&'a str>,
 }
 
+/// 更新计划曲线主表记录参数
+pub struct UpdatePlanCurveMaster<'a> {
+    pub curve_name: &'a str,
+    pub curve_type: CurveType,
+    pub priority: Option<u8>,
+    pub status: Option<u8>,
+    pub valid_start_date: Option<&'a str>,
+    pub valid_end_date: Option<&'a str>,
+    pub effective_weekdays: Option<&'a str>,
+    pub remark: Option<&'a str>,
+}
+
 impl PlanCurveMasterDao {
     pub async fn create(pool: &SqlitePool, params: NewPlanCurveMaster<'_>) -> DaoResult<i64> {
         let result = sqlx::query(
@@ -76,6 +88,19 @@ impl PlanCurveMasterDao {
         Ok(plan_curve_master)
     }
 
+    /// 查询已启用(status = 1)且未删除的计划曲线，供上层按生效日期/星期筛选当前正在跑的曲线
+    pub async fn find_enabled(pool: &SqlitePool) -> DaoResult<Vec<PlanCurveMaster>> {
+        let list = sqlx::query_as::<_, PlanCurveMaster>(
+            "SELECT * FROM t_plan_curve_master tpcm
+            WHERE tpcm.status = 1
+              AND tpcm.deleted_at is NULL
+            ORDER BY tpcm.priority, tpcm.created_at",
+        )
+        .fetch_all(pool)
+        .await?;
+        Ok(list)
+    }
+
     #[allow(dead_code)]
     pub async fn find_active(pool: &SqlitePool) -> DaoResult<Vec<PlanCurveMaster>> {
         let current_active = sqlx::query_as::<_, PlanCurveMaster>(
@@ -117,6 +142,58 @@ impl PlanCurveMasterDao {
         .await?;
         Ok(plan)
     }
+
+    pub async fn update(
+        pool: &SqlitePool,
+        id: u32,
+        master: UpdatePlanCurveMaster<'_>,
+    ) -> DaoResult<u64> {
+        let result = sqlx::query(
+            "
+            UPDATE t_plan_curve_master
+            SET
+                curve_name = ?,
+                curve_type = ?,
+                priority = ?,
+                status = ?,
+                valid_start_date = ?,
+                valid_end_date = ?,
+                effective_weekdays = ?,
+                remark = ?,
+                updated_at = datetime('now', 'localtime')
+            WHERE id = ?
+              AND deleted_at IS NULL
+            ",
+        )
+        .bind(master.curve_name)
+        .bind(master.curve_type)
+        .bind(master.priority)
+        .bind(master.status)
+        .bind(master.valid_start_date)
+        .bind(master.valid_end_date)
+        .bind(master.effective_weekdays)
+        .bind(master.remark)
+        .bind(id)
+        .execute(pool)
+        .await?;
+        Ok(result.rows_affected())
+    }
+
+    /// 软删除计划曲线主表记录
+    pub async fn soft_delete(pool: &SqlitePool, id: u32) -> DaoResult<u64> {
+        let result = sqlx::query(
+            "
+            UPDATE t_plan_curve_master
+            SET deleted_at = datetime('now', 'localtime')
+            WHERE id = ?
+              AND deleted_at IS NULL
+            ",
+        )
+        .bind(id)
+        .execute(pool)
+        .await?;
+        Ok(result.rows_affected())
+    }
 }
 
 impl PlanCurveDetailDao {
@@ -138,7 +215,6 @@ impl PlanCurveDetailDao {
         .bind(soc_limit)
         .execute(pool)
         .await?;
-
         Ok(result.last_insert_rowid())
     }
 

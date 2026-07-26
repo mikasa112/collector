@@ -240,8 +240,35 @@ impl HomeDcData {
     }
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Serialize)]
+struct HomeEmuData {
+    operation_mode: u8,
+    permission: u8,
+    health_status: u8,
+}
+
+impl HomeEmuData {
+    fn new(center: &SharedPointCenter) -> Self {
+        let operation_mode = center
+            .read("emu", 1).map(|it| it.value.as_u32().unwrap_or(0))
+            .unwrap_or(0) as u8;
+        let permission = center
+            .read("emu", 2).map(|it| it.value.as_u32().unwrap_or(3))
+            .unwrap_or(3) as u8;
+        let health_status = center
+            .read("emu", 3).map(|it| it.value.as_u32().unwrap_or(2))
+            .unwrap_or(2) as u8;
+        Self {
+            operation_mode,
+            permission,
+            health_status,
+        }
+    }
+}
+
+#[derive(Serialize)]
 struct HomeCommonData {
+    emu: HomeEmuData,
     ac: HomeAcData,
     dc: HomeDcData,
 }
@@ -263,15 +290,16 @@ pub async fn home_ws_handler(
         .await
 }
 
-// 首页业务数据待定，先保持连接骨架，收到 ping 回 pong
 async fn handle_home_ws(ws: &mut WebSocket, center: SharedPointCenter) {
     let mut ticker = tokio::time::interval(Duration::from_secs(1));
     loop {
         tokio::select! {
             _ = ticker.tick() => {
+                let emu_data = HomeEmuData::new(&center);
                 let ac_data = HomeAcData::new(&center);
                 let dc_data = HomeDcData::new(&center);
                 let home_common_data = HomeCommonData {
+                    emu: emu_data,
                     ac: ac_data,
                     dc: dc_data,
                 };
