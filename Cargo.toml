@@ -39,6 +39,8 @@ futures = "0.3"
 ahash = "0.8"
 # 更优的锁
 parking_lot = "0.12.5"
+# TDEngine
+taos = { version = "*", default-features = false, features = ["ws"] }
 
 [profile.release]
 # 去除调试信息

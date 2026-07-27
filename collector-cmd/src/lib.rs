@@ -13,6 +13,7 @@ use collector_core::runtime::core::get_runtime;
 use collector_core::shutdown::ShutdownManager;
 use collector_core::utils::database::close_database;
 use collector_core::utils::database::{DatabaseConfig, init_database};
+use collector_core::utils::taos::init_taos;
 use collector_engine::emu::core::Emu;
 use collector_engine::mod_engine::ScriptManager;
 use tokio::sync::Mutex;
@@ -125,6 +126,7 @@ pub async fn cmd() {
                 let _sql_pool = init_database(DatabaseConfig::default())
                     .await
                     .expect("数据库初始化失败");
+                let _taos_pool = init_taos().await.expect("taos数据库初始化失败");
                 if let Err(e) = get_runtime().await {
                     tracing::error!("EMU运行时配置错误: {}", e);
                 }

@@ -3,7 +3,7 @@ use std::{sync::Arc, time::Duration};
 use crate::{
     emu::{
         cmd::{self, Command},
-        emu_runtime, fault, planned_curve, tms,
+        emu_runtime, fault, planned_curve, taos, tms,
     },
     strategy::{Schedule, Strategy},
 };
@@ -41,6 +41,7 @@ impl Emu {
             Box::new(fault::FaultDiagnosis::new(center.clone())),
             Box::new(tms::Tms::new(center.clone())),
             Box::new(planned_curve::PlannedCurve::new(center.clone(), pool)),
+            Box::new(taos::TaosWriter::new(center.clone())),
         ]));
         let state = SharedState::new(LifecycleState::New);
         let (stop_tx, stop_rx) = watch::channel(false);

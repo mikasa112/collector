@@ -3,6 +3,7 @@ use std::time::Duration;
 use collector_core::{
     center::SharedPointCenter,
     core::point::{DataPoint, Val, Words},
+    utils::taos::{TaosDbError, query_rows},
 };
 use salvo::{
     Depot, Request, Response, handler,
@@ -250,13 +251,16 @@ struct HomeEmuData {
 impl HomeEmuData {
     fn new(center: &SharedPointCenter) -> Self {
         let operation_mode = center
-            .read("emu", 1).map(|it| it.value.as_u32().unwrap_or(0))
+            .read("emu", 1)
+            .map(|it| it.value.as_u32().unwrap_or(0))
             .unwrap_or(0) as u8;
         let permission = center
-            .read("emu", 2).map(|it| it.value.as_u32().unwrap_or(3))
+            .read("emu", 2)
+            .map(|it| it.value.as_u32().unwrap_or(3))
             .unwrap_or(3) as u8;
         let health_status = center
-            .read("emu", 3).map(|it| it.value.as_u32().unwrap_or(2))
+            .read("emu", 3)
+            .map(|it| it.value.as_u32().unwrap_or(2))
             .unwrap_or(2) as u8;
         Self {
             operation_mode,
@@ -305,6 +309,115 @@ async fn handle_home_ws(ws: &mut WebSocket, center: SharedPointCenter) {
                 };
                 if let Ok(json) = serde_json::to_string(&home_common_data) {
                     let _ = ws.send(Message::text(json)).await;
+                }
+            }
+            msg = ws.recv() => {
+                match msg {
+                    None => break,
+                    Some(Ok(msg)) => {
+                        if msg.is_close() { break; }
+                        if msg.is_ping()
+                            && ws.send(Message::pong(msg.as_bytes().to_vec())).await.is_err() {
+                                break;
+                            }
+                    }
+                    Some(Err(_)) => break,
+                }
+            }
+        }
+    }
+}
+
+/// TDengine 按1分钟聚合查询返回的单行
+#[derive(Debug, Deserialize)]
+struct AggRow {
+    ts: i64,
+    val: Option<f64>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct HistoryPoint {
+    ts: i64,
+    value: Option<f64>,
+}
+
+#[derive(Debug, Serialize)]
+struct HistoryCurves {
+    //PCS总输出有功功率，1分钟聚合
+    pcs_power: Vec<HistoryPoint>,
+    //显示SOC，1分钟聚合
+    soc: Vec<HistoryPoint>,
+}
+
+/// 拼出按1分钟聚合的查询语句：`_wstart` 转为毫秒时间戳别名为 ts，聚合值别名为 val
+fn build_agg_sql(table: &str, column: &str, start: &str, end: &str) -> String {
+    format!(
+        "SELECT CAST(_wstart AS BIGINT) AS ts, AVG({column}) AS val FROM emu.{table} \
+         WHERE ts >= '{start}' AND ts < '{end}' INTERVAL(1m)"
+    )
+}
+
+async fn query_history() -> Result<HistoryCurves, TaosDbError> {
+    let today = chrono::Local::now().date_naive();
+    let start = today.and_hms_opt(0, 0, 0).unwrap();
+    let end = start + chrono::Duration::days(1);
+    let start = start.format("%Y-%m-%d %H:%M:%S").to_string();
+    let end = end.format("%Y-%m-%d %H:%M:%S").to_string();
+
+    let pcs_sql = build_agg_sql("pcs_data", "pcs_p_total", &start, &end);
+    let soc_sql = build_agg_sql("bcu_data", "soc", &start, &end);
+
+    let pcs_rows: Vec<AggRow> = query_rows(&pcs_sql).await?;
+    let soc_rows: Vec<AggRow> = query_rows(&soc_sql).await?;
+
+    Ok(HistoryCurves {
+        pcs_power: pcs_rows
+            .into_iter()
+            .map(|r| HistoryPoint {
+                ts: r.ts,
+                value: r.val,
+            })
+            .collect(),
+        soc: soc_rows
+            .into_iter()
+            .map(|r| HistoryPoint {
+                ts: r.ts,
+                value: r.val,
+            })
+            .collect(),
+    })
+}
+
+#[handler]
+pub async fn history_ws_handler(
+    req: &mut Request,
+    res: &mut Response,
+    _depot: &mut Depot,
+) -> Result<(), StatusError> {
+    WebSocketUpgrade::new()
+        .upgrade(req, res, |mut ws| async move {
+            handle_history_ws(&mut ws).await;
+        })
+        .await
+}
+
+async fn handle_history_ws(ws: &mut WebSocket) {
+    // 1分钟聚合窗口，无需更高频率刷新；tokio::time::interval 首次 tick 立即触发，
+    // 相当于连接建立后立即推送一次当天曲线
+    let mut ticker = tokio::time::interval(Duration::from_secs(60));
+    loop {
+        tokio::select! {
+            _ = ticker.tick() => {
+                match query_history().await {
+                    Ok(data) => {
+                        if let Ok(json) = serde_json::to_string(&data)
+                            && ws.send(Message::text(json)).await.is_err() {
+                                break;
+                            }
+                    }
+                    Err(e) => {
+                        tracing::error!("查询历史曲线数据失败: {}", e);
+                    }
                 }
             }
             msg = ws.recv() => {

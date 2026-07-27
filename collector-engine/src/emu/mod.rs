@@ -3,6 +3,7 @@ pub mod core;
 mod emu_runtime;
 mod fault;
 mod planned_curve;
+mod taos;
 mod tms;
 
 // EMU功能点位常量定义

@@ -1,7 +1,9 @@
 use std::time::Duration;
 
 use async_trait::async_trait;
-use collector_core::{center::DataCenterError, core::point::ValError, runtime::RuntimeError};
+use collector_core::{
+    center::DataCenterError, core::point::ValError, runtime::RuntimeError, utils::taos::TaosDbError,
+};
 
 #[derive(Debug, thiserror::Error)]
 pub enum StrategyError {
@@ -13,6 +15,8 @@ pub enum StrategyError {
     ValError(#[from] ValError),
     #[error("点`{0}`找不到")]
     PointNotFound(String),
+    #[error("{0}")]
+    TaosDbError(#[from] TaosDbError),
 }
 
 pub enum Schedule {
