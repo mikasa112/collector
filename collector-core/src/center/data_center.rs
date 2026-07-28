@@ -290,6 +290,25 @@ impl PointCenter for DataCenter {
             .collect()
     }
 
+    /// 读取指定 id 范围内的数据点
+    ///
+    /// 范围为闭区间 `[start_id, end_id]`，例如 `read_range(dev_id, 500, 2000)`
+    /// 会返回 id 在 500 到 2000（含两端）之间的所有数据点。
+    ///
+    /// # 性能优化
+    /// - 复用 `read_all` 的排序快照，通过二分查找定位范围边界
+    fn read_range(&self, dev_id: &str, start_id: PointId, end_id: PointId) -> Vec<DataPoint> {
+        if start_id > end_id {
+            return Vec::new();
+        }
+
+        let snapshot = self.read_all(dev_id);
+        let start_idx = snapshot.partition_point(|point| point.id < start_id);
+        let end_idx = snapshot.partition_point(|point| point.id <= end_id);
+
+        snapshot[start_idx..end_idx].to_vec()
+    }
+
     /// 读取设备的所有数据点
     ///
     /// # 性能优化
@@ -462,6 +481,31 @@ mod tests {
 
         assert!(!Arc::ptr_eq(&first, &second));
         assert_eq!(second[0].value, Val::U8(2));
+    }
+
+    #[test]
+    fn read_range_returns_points_within_inclusive_bounds() {
+        let center = DataCenter::new(1);
+        center.ingest(
+            "dev-1",
+            vec![point(1, 1), point(500, 5), point(1000, 10), point(2000, 20), point(2001, 21)],
+        );
+
+        let ids: Vec<u32> = center
+            .read_range("dev-1", 500, 2000)
+            .iter()
+            .map(|point| point.id)
+            .collect();
+
+        assert_eq!(ids, vec![500, 1000, 2000]);
+    }
+
+    #[test]
+    fn read_range_with_inverted_bounds_returns_empty() {
+        let center = DataCenter::new(1);
+        center.ingest("dev-1", vec![point(1, 1)]);
+
+        assert!(center.read_range("dev-1", 2000, 500).is_empty());
     }
 
     #[test]

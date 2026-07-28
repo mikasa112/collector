@@ -68,9 +68,12 @@ impl DownDataPoint {
 ///
 /// # 用法
 /// ```
-/// down!(id: 2001, Val::U16(0x55))
-/// down!(key: "voltage", Val::F64(220.0))
-/// down!(name: "电压", Val::F64(220.0))
+/// use collector_core::down;
+/// use collector_core::core::point::Val;
+///
+/// down!(id: 2001, Val::U16(0x55));
+/// down!(key: "voltage".to_string(), Val::F64(220.0));
+/// down!(name: "电压".to_string(), Val::F64(220.0));
 /// ```
 #[macro_export]
 macro_rules! down {
@@ -315,6 +318,7 @@ impl DataPoint {
         warn_bits
             .bits
             .iter()
+            .filter(|it| it.level != WarnLevel::None)
             .enumerate()
             .filter(|(i, _)| (v >> i) & 1 == 1)
             .map(|(_, bit)| *bit)

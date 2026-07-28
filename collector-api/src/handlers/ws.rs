@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use collector_core::{
     center::SharedPointCenter,
-    core::point::{DataPoint, Val, Words},
+    core::point::{DataPoint, PointId, Val, Words},
     utils::taos::{TaosDbError, query_rows},
 };
 use salvo::{
@@ -271,10 +271,37 @@ impl HomeEmuData {
 }
 
 #[derive(Serialize)]
+struct HomeWarnData {
+    pub id: PointId,
+    pub key: &'static str,
+    pub name: &'static str,
+}
+
+#[derive(Serialize)]
+struct HomeWarnDatas(Vec<HomeWarnData>);
+
+impl HomeWarnDatas {
+    fn new(center: &SharedPointCenter) -> Self {
+        let vec = center
+            .read_range("emu", 500, 2000)
+            .into_iter()
+            .filter(|it| it.value == Val::U8(1))
+            .map(|it| HomeWarnData {
+                id: it.id,
+                key: it.key,
+                name: it.name,
+            })
+            .collect();
+        HomeWarnDatas(vec)
+    }
+}
+
+#[derive(Serialize)]
 struct HomeCommonData {
     emu: HomeEmuData,
     ac: HomeAcData,
     dc: HomeDcData,
+    warns: HomeWarnDatas,
 }
 
 #[handler]
@@ -302,10 +329,12 @@ async fn handle_home_ws(ws: &mut WebSocket, center: SharedPointCenter) {
                 let emu_data = HomeEmuData::new(&center);
                 let ac_data = HomeAcData::new(&center);
                 let dc_data = HomeDcData::new(&center);
+                let warn_datas = HomeWarnDatas::new(&center);
                 let home_common_data = HomeCommonData {
                     emu: emu_data,
                     ac: ac_data,
                     dc: dc_data,
+                    warns: warn_datas,
                 };
                 if let Ok(json) = serde_json::to_string(&home_common_data) {
                     let _ = ws.send(Message::text(json)).await;

@@ -26,6 +26,9 @@ pub trait PointCenter: Send + Sync {
 
     fn read_many(&self, dev_id: &str, point_ids: &[PointId]) -> Vec<DataPoint>;
 
+    /// 读取指定 id 范围内（闭区间 `[start_id, end_id]`）的所有数据点
+    fn read_range(&self, dev_id: &str, start_id: PointId, end_id: PointId) -> Vec<DataPoint>;
+
     fn read_all(&self, dev_id: &str) -> Arc<[DataPoint]>;
 
     fn dev_ids(&self) -> Vec<String>;
