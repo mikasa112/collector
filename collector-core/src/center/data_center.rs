@@ -31,7 +31,7 @@
 //! - **零拷贝**：使用 Arc 共享数据
 //! - **变化检测**：只在数据实际变化时更新版本号和推送通知
 
-use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
+use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard, atomic::AtomicBool};
 
 use ahash::AHashMap;
 
@@ -41,7 +41,8 @@ use tracing::warn;
 
 use crate::{
     center::{DataCenterError, DownlinkSender, PointCenter},
-    core::point::{DataPoint, DownDataPoint, PointId},
+    core::point::{DataPoint, DownDataPoint, PointId, PointRef, Val},
+    runtime::emu::EmuPermission,
 };
 
 /// 数据中心主结构
@@ -55,6 +56,9 @@ pub struct DataCenter {
     /// 设备缓存映射：设备ID -> 设备缓存
     /// 使用 Arc<RwLock> 实现多线程安全的读写访问
     devices: DashMap<String, Arc<RwLock<DeviceCache>>>,
+
+    /// 是否启用EMU的功能, 默认不启用
+    emu_enable: AtomicBool,
 }
 
 impl DataCenter {
@@ -66,6 +70,7 @@ impl DataCenter {
         Self {
             downlinks: DashMap::with_capacity(dev_len),
             devices: DashMap::with_capacity(dev_len),
+            emu_enable: AtomicBool::new(false),
         }
     }
 
@@ -77,6 +82,11 @@ impl DataCenter {
             .entry(dev_id.to_owned())
             .or_insert_with(|| Arc::new(RwLock::new(DeviceCache::default())))
             .clone()
+    }
+
+    pub fn set_emu_enable(&self, enable: bool) {
+        self.emu_enable
+            .store(enable, std::sync::atomic::Ordering::Relaxed);
     }
 
     /// 获取所有设备ID列表
@@ -245,8 +255,42 @@ impl PointCenter for DataCenter {
     async fn dispatch(
         &self,
         dev_id: &str,
-        points: Vec<DownDataPoint>,
+        mut points: Vec<DownDataPoint>,
     ) -> Result<(), DataCenterError> {
+        let emu_enable = self.emu_enable.load(std::sync::atomic::Ordering::Relaxed);
+        if emu_enable {
+            //并网有功功率
+            if let Some(power) = points.iter_mut().find(|it| it.point == PointRef::Id(2003)) {
+                let mut power_val = power.value.as_f64().unwrap_or(0.0);
+                //EMU充放电许可
+                let permission = self
+                    .read("emu", 2)
+                    .and_then(|it| {
+                        EmuPermission::try_from(it.value.as_u32().unwrap_or(3) as u8).ok()
+                    })
+                    .unwrap_or(EmuPermission::TotalStop);
+                match permission {
+                    EmuPermission::ChargeDisabled => {
+                        if power_val > 0.0 {
+                            tracing::warn!("[EMU] 系统禁充, 钳制下送{power_val}电压到0");
+                            power_val = 0.0;
+                        }
+                    }
+                    EmuPermission::DischargeDisabled => {
+                        if power_val < 0.0 {
+                            tracing::warn!("[EMU] 系统禁放, 钳制下送{power_val}电压到0");
+                            power_val = 0.0
+                        }
+                    }
+                    EmuPermission::TotalStop => {
+                        tracing::warn!("[EMU] 系统禁充禁放, 钳制下送{power_val}电压到0");
+                        power_val = 0.0
+                    }
+                    _ => {}
+                }
+                power.value = Val::F64(power_val)
+            }
+        }
         let sender = self
             .downlinks
             .get(dev_id)
@@ -488,7 +532,13 @@ mod tests {
         let center = DataCenter::new(1);
         center.ingest(
             "dev-1",
-            vec![point(1, 1), point(500, 5), point(1000, 10), point(2000, 20), point(2001, 21)],
+            vec![
+                point(1, 1),
+                point(500, 5),
+                point(1000, 10),
+                point(2000, 20),
+                point(2001, 21),
+            ],
         );
 
         let ids: Vec<u32> = center

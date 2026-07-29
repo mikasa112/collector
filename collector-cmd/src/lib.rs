@@ -103,7 +103,8 @@ pub async fn cmd() {
             let emu_enable = p.project.emu_enable.unwrap_or(false);
             let mqtt_enable = p.project.mqtt_enable.unwrap_or(false);
 
-            let center: SharedPointCenter = Arc::new(DataCenter::new(32));
+            let data_center = Arc::new(DataCenter::new(32));
+            let center: SharedPointCenter = data_center.clone();
             let can_bus = SharedCanBus::default();
 
             let mqtt_client = if mqtt_enable {
@@ -121,6 +122,7 @@ pub async fn cmd() {
             let mut manager = DevManager::new(p.project.devices, center.clone(), can_bus.clone());
 
             if emu_enable {
+                data_center.set_emu_enable(true);
                 // 数据库连接池需要在设备管理器（含虚拟设备引擎）启动前初始化好，
                 // 否则引擎里依赖数据库的策略（如计划曲线）会因为连接池还未就绪而报错
                 let _sql_pool = init_database(DatabaseConfig::default())
