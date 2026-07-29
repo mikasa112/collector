@@ -34,7 +34,9 @@ pub struct Emu {
 impl Emu {
     pub async fn new(center: SharedPointCenter) -> Self {
         let commands: Arc<AsyncMutex<Vec<Box<dyn Command>>>> =
-            Arc::new(AsyncMutex::new(vec![Box::new(cmd::PowerOn)]));
+            Arc::new(AsyncMutex::new(vec![Box::new(cmd::EmuPower::new(
+                center.clone(),
+            ))]));
         let pool = get_database().expect("[engine] 数据库初始化失败");
         let strategies: Arc<AsyncMutex<Vec<Box<dyn Strategy>>>> = Arc::new(AsyncMutex::new(vec![
             Box::new(emu_runtime::EmuRuntime::new(center.clone())),

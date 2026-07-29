@@ -26,5 +26,8 @@ pub(crate) const KEY_DISCHARGE_SOC_LIMIT: &str = "discharge_soc_limit";
 pub(crate) const ID_PLANNED_CURVE: u32 = 6;
 pub(crate) const KEY_PLANNED_CURVE: &str = "planned_curve";
 
+pub(crate) const ID_EMU_POWER: u32 = 7;
+pub(crate) const KEY_EMU_POWER: &str = "emu_power";
+
 pub(crate) const ID_SYS_TMS_MODE: u32 = 10;
 pub(crate) const KEY_SYS_TMS_MODE: &str = "sys_tms_mode";
