@@ -16,7 +16,6 @@ use crate::dev::modbus_dev::Protocol;
 use crate::dev::modbus_dev::block::{BlockRead, Blocks};
 use crate::dev::modbus_dev::downlink::{
     WriteOutcome, WritePlan, build_cfg_map, build_key_map, build_name_map, stop_requested,
-    wait_interval,
 };
 use crate::dev::{LifecycleState, state::SharedState};
 
@@ -31,18 +30,6 @@ struct PointMaps<'a> {
     cfg_map: &'a HashMap<PointId, ModbusConfig>,
     key_map: &'a HashMap<&'static str, PointId>,
     name_map: &'a HashMap<&'static str, PointId>,
-}
-
-/// `drain_writes` 的结果
-enum DrainOutcome {
-    /// 写队列已排空；`true` 表示本轮确实下发过至少一次写入
-    Idle(bool),
-    /// 写入失败，需要断线重连
-    WriteFailed,
-    /// 上游 channel 已关闭，设备应停止运行
-    ChannelClosed,
-    /// 写间隔等待期间收到停止信号
-    Stopped,
 }
 
 /// round-robin 读取一圈 block 的结果
@@ -162,10 +149,37 @@ impl ModbusRunner {
         }
     }
 
+    /// 单个block请求后间隔
     fn request_interval(&self) -> Duration {
         match &self.protocol {
             Protocol::Tcp(cfg) => Duration::from_millis(cfg.request_interval),
             Protocol::Rtu(cfg) => Duration::from_millis(cfg.request_interval),
+        }
+    }
+
+    /// 每次大循环轮询间隔
+    fn interval(&self) -> Duration {
+        match &self.protocol {
+            Protocol::Tcp(cfg) => Duration::from_millis(cfg.interval),
+            Protocol::Rtu(cfg) => Duration::from_millis(cfg.interval),
+        }
+    }
+
+    /// 写相关等待使用的固定间隔：`request_interval`，下限 1ms，不随块数增长。
+    fn write_interval(&self) -> Duration {
+        self.request_interval().max(Duration::from_millis(1))
+    }
+
+    /// 读取的块间等待间隔：`interval == 0` 时沿用 `write_interval`；否则将
+    /// `interval` 按 `block_count` 均分（下限 1ms），使一整轮读取的总耗时
+    /// 贴近配置值，而不是随 block 数线性放大。
+    fn read_interval(&self, block_count: usize) -> Duration {
+        let interval = self.interval();
+        if interval.is_zero() {
+            self.write_interval()
+        } else {
+            let block_count = block_count.max(1) as u32;
+            (interval / block_count).max(Duration::from_millis(1))
         }
     }
 
@@ -213,11 +227,20 @@ impl ModbusRunner {
         }
     }
 
-    /// 单请求调度器：每次节拍先排空写队列，再按 round-robin 读下一个块。
+    /// 单请求调度器：读、写共用同一条连接，通过一个 `tokio::select!` 循环仲裁，
+    /// 每次循环只处理一个到位的事件（停止信号 / 一批下行写命令 / 一次读 tick）。
     ///
-    /// 写延迟 ≤ request_interval，不随块数增长。
-    /// 写入之后、以及每次读取之后都会等待一个 request_interval，
-    /// 避免写完立刻读、或读请求过于密集导致从站/网关来不及响应。
+    /// 三路按 `biased` 顺序仲裁优先级：停止 > 写 > 读，与之前“先排空写队列、
+    /// 再读一个 block”的语义一致——写命令一旦到达即被立即处理，不会被读节拍
+    /// 挡住，写延迟始终 ≤ `write_interval`（即 `request_interval`，下限 1ms，
+    /// 不随块数增长）。[`WritePlan::apply`] 在每次实际写入后（含最后一次）都会
+    /// 等待一个 `write_interval`，天然让从站/网关喘一口气，因此这里无需再额外等待。
+    ///
+    /// 读节拍由 `ticker`（周期 `read_interval`）驱动：`interval == 0` 时
+    /// `read_interval` 退化为 `write_interval`（下限 1ms，防止忙等占满单核）；
+    /// `interval != 0` 时按 block 数均分，使一整轮读取的总耗时贴近配置值，而不是
+    /// 随 block 数线性放大，从而降低整体 CPU 占用。`ticker` 使用
+    /// `MissedTickBehavior::Delay`，避免某次写入耗时较长时后续读取“追帧”爆发。
     async fn run_connected(
         &mut self,
         ctx: &mut Context,
@@ -227,105 +250,86 @@ impl ModbusRunner {
     ) {
         self.state.store(&self.id, LifecycleState::Running);
         let timeout = self.timeout();
-        let effective_interval = self.request_interval().max(Duration::from_millis(1));
+        let write_interval = self.write_interval();
+        let read_interval = self.read_interval(blocks.block_count());
 
         let mut reader = ReadCursor::new(blocks.block_count());
+        let mut ticker = time::interval(read_interval);
+        ticker.set_missed_tick_behavior(time::MissedTickBehavior::Delay);
 
         loop {
-            if stop_requested(stop_rx) {
-                self.set_comm_fault(true);
-                return;
-            }
+            tokio::select! {
+                biased;
 
-            match self
-                .drain_writes(ctx, &maps, stop_rx, effective_interval)
-                .await
-            {
-                DrainOutcome::Idle(wrote_any) => {
-                    // 写后至少让从站/网关喘一口气，避免写完立刻读导致超时
-                    if wrote_any && wait_interval(stop_rx, effective_interval).await {
+                _ = stop_rx.changed() => {
+                    if stop_requested(stop_rx) {
                         self.set_comm_fault(true);
                         return;
                     }
                 }
-                DrainOutcome::WriteFailed => {
-                    self.set_comm_fault(true);
-                    return;
-                }
-                DrainOutcome::ChannelClosed => return,
-                DrainOutcome::Stopped => {
-                    self.set_comm_fault(true);
-                    return;
-                }
-            }
 
-            match reader.advance(ctx, blocks, timeout, &self.id).await {
-                ReadOutcome::Published(entries) => {
-                    if !entries.is_empty() {
-                        self.center.ingest(&self.id, entries);
+                maybe = self.rx.recv() => {
+                    match maybe {
+                        Some(entries) => {
+                            match self
+                                .apply_write_batch(ctx, &maps, stop_rx, entries, write_interval)
+                                .await
+                            {
+                                Ok(WriteOutcome::Completed) => {}
+                                Ok(WriteOutcome::Stopped) => {
+                                    self.set_comm_fault(true);
+                                    return;
+                                }
+                                Err(err) => {
+                                    warn!("[{}] 下发失败, 准备重连: {}", self.id, err);
+                                    self.set_comm_fault(true);
+                                    return;
+                                }
+                            }
+                        }
+                        None => {
+                            self.set_comm_fault(true);
+                            self.state.store(&self.id, LifecycleState::Stopped);
+                            return;
+                        }
                     }
                 }
-                ReadOutcome::Pending => {}
-                ReadOutcome::FailureThresholdReached => {
-                    self.set_comm_fault(true);
-                    return;
-                }
-            }
 
-            // 块间间隔：至少 1ms，防止 request_interval=0 时循环不挂起导致单核 100%
-            if wait_interval(stop_rx, effective_interval).await {
-                self.set_comm_fault(true);
-                return;
+                _ = ticker.tick() => {
+                    match reader.advance(ctx, blocks, timeout, &self.id).await {
+                        ReadOutcome::Published(entries) => {
+                            if !entries.is_empty() {
+                                self.center.ingest(&self.id, entries);
+                            }
+                        }
+                        ReadOutcome::Pending => {}
+                        ReadOutcome::FailureThresholdReached => {
+                            self.set_comm_fault(true);
+                            return;
+                        }
+                    }
+                }
             }
         }
     }
 
-    /// 非阻塞排空写队列：处理所有已到达的写命令，队列空时立即返回。
-    ///
-    /// 每次下发（每个 coil/register block 的写操作）之后都会等待一个
-    /// `interval`，避免连续写入过于密集导致从站/网关来不及响应。
-    async fn drain_writes(
-        &mut self,
+    /// 构建并下发一批下行写命令：记录日志、构建 [`WritePlan`] 并调用
+    /// [`WritePlan::apply`]。
+    async fn apply_write_batch(
+        &self,
         ctx: &mut Context,
         maps: &PointMaps<'_>,
         stop_rx: &mut watch::Receiver<bool>,
+        entries: Vec<DownDataPoint>,
         interval: Duration,
-    ) -> DrainOutcome {
-        let timeout = self.timeout();
-        let mut wrote_any = false;
-        loop {
-            match self.rx.try_recv() {
-                Ok(entries) => {
-                    let items: Vec<String> = entries
-                        .iter()
-                        .map(|e| format!("{}: {}", resolve_name(&e.point, maps.cfg_map), e.value))
-                        .collect();
-                    info!("[{}] ↓: {}", self.id, items.join(", "));
-                    let plan = WritePlan::build(
-                        entries,
-                        maps.cfg_map,
-                        maps.key_map,
-                        maps.name_map,
-                        &self.id,
-                    );
-                    match plan.apply(ctx, timeout, stop_rx, interval).await {
-                        Ok(WriteOutcome::Completed) => {}
-                        Ok(WriteOutcome::Stopped) => return DrainOutcome::Stopped,
-                        Err(err) => {
-                            warn!("[{}] 下发失败, 准备重连: {}", self.id, err);
-                            return DrainOutcome::WriteFailed;
-                        }
-                    }
-                    wrote_any = true;
-                }
-                Err(mpsc::error::TryRecvError::Empty) => return DrainOutcome::Idle(wrote_any),
-                Err(mpsc::error::TryRecvError::Disconnected) => {
-                    self.set_comm_fault(true);
-                    self.state.store(&self.id, LifecycleState::Stopped);
-                    return DrainOutcome::ChannelClosed;
-                }
-            }
-        }
+    ) -> Result<WriteOutcome, ModbusDevError> {
+        let items: Vec<String> = entries
+            .iter()
+            .map(|e| format!("{}: {}", resolve_name(&e.point, maps.cfg_map), e.value))
+            .collect();
+        info!("[{}] ↓: {}", self.id, items.join(", "));
+        let plan = WritePlan::build(entries, maps.cfg_map, maps.key_map, maps.name_map, &self.id);
+        plan.apply(ctx, self.timeout(), stop_rx, interval).await
     }
 
     pub(super) async fn run(mut self) {
