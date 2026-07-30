@@ -125,14 +125,16 @@ impl Lifecycle for GpioDev {
         // 重置停止信号
         let _ = self.stop_tx.send(false);
 
-        // 清理旧任务
+        // 清理旧任务，等待其真正退出后再释放 GPIO line，避免重新 request 时 EBUSY
         let mut di_task_guard = self.di_task.lock().await;
         if let Some(handle) = di_task_guard.take() {
             handle.abort();
+            let _ = handle.await;
         }
         let mut do_task_guard = self.do_task.lock().await;
         if let Some(handle) = do_task_guard.take() {
             handle.abort();
+            let _ = handle.await;
         }
 
         // 启动 DI 监听任务
