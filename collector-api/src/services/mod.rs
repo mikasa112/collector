@@ -1,5 +1,6 @@
 pub mod data;
 pub mod error;
+pub mod history;
 #[cfg(target_os = "linux")]
 pub mod network;
 pub mod planned_curve;

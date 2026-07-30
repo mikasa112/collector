@@ -14,6 +14,10 @@ pub enum ServiceError {
     #[error("数据库连接错误: {0}")]
     Database(#[from] DatabaseError),
 
+    /// 时序数据库(TDengine)错误
+    #[error("时序数据库错误: {0}")]
+    TaosDb(#[from] collector_core::utils::taos::TaosDbError),
+
     /// 业务逻辑错误
     #[error("{0}")]
     BusinessLogic(String),
