@@ -270,7 +270,7 @@ impl Strategy for Tms {
     }
 
     fn schedule(&self) -> Schedule {
-        Schedule::Interval(Duration::from_secs(30))
+        Schedule::Interval(Duration::from_secs(60))
     }
 
     async fn on_tick(&mut self) -> Result<(), StrategyError> {

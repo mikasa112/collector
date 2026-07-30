@@ -128,7 +128,7 @@ pub async fn cmd() {
                 let _sql_pool = init_database(DatabaseConfig::default())
                     .await
                     .expect("数据库初始化失败");
-                let _taos_pool = init_taos().await.expect("taos数据库初始化失败");
+                init_taos().await.expect("taos数据库初始化失败");
                 if let Err(e) = get_runtime().await {
                     tracing::error!("EMU运行时配置错误: {}", e);
                 }

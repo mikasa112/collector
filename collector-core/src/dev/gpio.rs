@@ -66,26 +66,14 @@ impl GpioDev {
         })
     }
 
-    /// 获取设备的生命周期状态
-    /// # 返回值
-    /// - `LifecycleState`: 设备的生命周期状态
     fn load_state(&self) -> LifecycleState {
         self.state.load()
     }
 
-    /// 改变设备的生命周期状态
-    /// # 参数
-    /// - `from`: 当前状态
-    /// - `to`: 目标状态
-    /// # 返回值
-    /// - `bool`: 是否成功改变状态
     fn cas_state(&self, from: LifecycleState, to: LifecycleState) -> bool {
         self.state.cas(from, to)
     }
 
-    /// 存储设备的生命周期状态
-    /// # 参数
-    /// - `to`: 目标状态
     fn store_state(&self, to: LifecycleState) {
         self.state.store(&self.id, to);
     }
@@ -131,7 +119,7 @@ impl Lifecycle for GpioDev {
                 return Ok(());
             }
         }
-        let gpio_conf_devs = create_gpio_devs(self.configs.clone())
+        let conf_devs = create_gpio_devs(self.configs.clone())
             .map_err(|e| DeviceError::DevRuntimeError(Box::new(e)))?;
 
         // 重置停止信号
@@ -149,12 +137,12 @@ impl Lifecycle for GpioDev {
 
         // 启动 DI 监听任务
         let di_handle = {
-            let center_clone = self.center.clone();
+            let center = self.center.clone();
             let id = self.id.clone();
-            let devs = gpio_conf_devs.clone();
+            let devs = conf_devs.clone();
             let stop_rx = self.stop_rx.clone();
             tokio::spawn(async move {
-                if let Err(e) = handle_di(id.clone(), devs, center_clone, stop_rx).await {
+                if let Err(e) = handle_di(id.clone(), devs, center, stop_rx).await {
                     tracing::error!("[{}] DI处理错误: {}", id, e);
                 }
             })
@@ -167,7 +155,7 @@ impl Lifecycle for GpioDev {
             let id = self.id.clone();
             let stop_rx = self.stop_rx.clone();
             tokio::spawn(async move {
-                if let Err(e) = handle_do(id.clone(), gpio_conf_devs, rx, stop_rx).await {
+                if let Err(e) = handle_do(id.clone(), conf_devs, rx, stop_rx).await {
                     tracing::error!("[{}] DO处理错误: {}", id, e);
                 }
             })
@@ -247,40 +235,42 @@ struct GpioConfDev {
 }
 
 fn create_gpio_devs(configs: GpioConfigs) -> Result<Vec<GpioConfDev>, gpio_cdev::Error> {
-    let mut map = HashMap::with_capacity(2);
-    let mut gpio_devs = Vec::new();
+    let mut by_chip: HashMap<&'static str, Vec<GpioConfig>> = HashMap::with_capacity(2);
     for conf in configs {
-        map.entry(conf.chip).or_insert(Vec::new()).push(conf);
+        by_chip.entry(conf.chip).or_default().push(conf);
     }
-    for (c, confs) in map {
-        let mut chip = Chip::new(c)?;
-        for it in confs {
-            let line = chip.get_line(it.line as u32)?;
-            gpio_devs.push(GpioConfDev { config: it, line });
+    let mut devs = Vec::new();
+    for (chip_path, confs) in by_chip {
+        let mut chip = Chip::new(chip_path)?;
+        for cfg in confs {
+            let line = chip.get_line(cfg.line as u32)?;
+            devs.push(GpioConfDev { config: cfg, line });
         }
     }
-    Ok(gpio_devs)
+    Ok(devs)
 }
 
 /// 处理数字输入 (DI) - 监听 GPIO 事件并上报
 async fn handle_di(
     id: String,
-    vec: Vec<GpioConfDev>,
+    devs: Vec<GpioConfDev>,
     center: SharedPointCenter,
     mut stop_rx: watch::Receiver<bool>,
 ) -> Result<(), gpio_cdev::Error> {
-    let handles = vec
+    let handles = devs
         .iter()
-        .filter(|it| it.config.direction == Direction::DI)
+        .filter(|dev| dev.config.direction == Direction::DI)
         .map(
-            |it| -> Result<(GpioConfig, AsyncLineEventHandle), gpio_cdev::Error> {
-                let events = it.line.events(
-                    LineRequestFlags::INPUT,
+            |dev| -> Result<(GpioConfig, AsyncLineEventHandle), gpio_cdev::Error> {
+                // 光耦隔离的开关输入电路里，输入触发时通常是把 GPIO 拉低，而未触发时是高电平，
+                // 这里需要加上 `LineRequestFlags::ACTIVE_LOW` 让电平语义和实际工况一致
+                let events = dev.line.events(
+                    LineRequestFlags::INPUT | LineRequestFlags::ACTIVE_LOW,
                     EventRequestFlags::BOTH_EDGES,
-                    it.config.key,
+                    dev.config.key,
                 )?;
                 let handle = AsyncLineEventHandle::new(events)?;
-                Ok((it.config, handle))
+                Ok((dev.config, handle))
             },
         )
         .collect::<Result<Vec<(GpioConfig, AsyncLineEventHandle)>, gpio_cdev::Error>>()?;
@@ -296,6 +286,13 @@ async fn handle_di(
         let center = center.clone();
         let id = id.clone();
         let mut stop_rx_clone = stop_rx.clone();
+
+        // 启动时先读一次当前电平并上送，避免下游在首次变位前拿不到该点位的值
+        match handle.as_ref().get_value() {
+            Ok(value) => center.ingest(id.as_str(), vec![config.to_data_point(value)]),
+            Err(err) => tracing::warn!("[{}] 读取GPIO[{}]初始值失败: {}", id, config.key, err),
+        }
+
         task::spawn(async move {
             loop {
                 tokio::select! {
@@ -331,7 +328,14 @@ async fn handle_di(
     }
 
     // 等待停止信号
-    let _ = stop_rx.changed().await;
+    loop {
+        if stop_rx.changed().await.is_err() {
+            break;
+        }
+        if *stop_rx.borrow() {
+            break;
+        }
+    }
     tracing::info!("[{}] DI监听任务退出", id);
     Ok(())
 }
@@ -339,16 +343,17 @@ async fn handle_di(
 /// 处理数字输出 (DO) - 接收控制命令并设置 GPIO 输出
 async fn handle_do(
     id: String,
-    vec: Vec<GpioConfDev>,
+    devs: Vec<GpioConfDev>,
     mut rx: tokio::sync::mpsc::Receiver<Vec<DownDataPoint>>,
     mut stop_rx: watch::Receiver<bool>,
 ) -> Result<(), gpio_cdev::Error> {
-    use std::collections::HashMap;
-
     // 初始化所有 DO 类型的 GPIO 输出句柄
     let mut output_handles: HashMap<&'static str, gpio_cdev::LineHandle> = HashMap::new();
 
-    for dev in vec.iter().filter(|it| it.config.direction == Direction::DO) {
+    for dev in devs
+        .iter()
+        .filter(|dev| dev.config.direction == Direction::DO)
+    {
         // 请求输出模式，初始值为 0
         match dev
             .line
@@ -404,48 +409,12 @@ async fn handle_do(
                             if let Some(handle) = output_handles.get_mut(key.as_str()) {
                                 let value = match dp.value {
                                     Val::U8(v) => v,
-                                    Val::I8(v) => {
-                                        if v != 0 {
-                                            1
-                                        } else {
-                                            0
-                                        }
-                                    }
-                                    Val::I16(v) => {
-                                        if v != 0 {
-                                            1
-                                        } else {
-                                            0
-                                        }
-                                    }
-                                    Val::I32(v) => {
-                                        if v != 0 {
-                                            1
-                                        } else {
-                                            0
-                                        }
-                                    }
-                                    Val::U16(v) => {
-                                        if v != 0 {
-                                            1
-                                        } else {
-                                            0
-                                        }
-                                    }
-                                    Val::U32(v) => {
-                                        if v != 0 {
-                                            1
-                                        } else {
-                                            0
-                                        }
-                                    }
-                                    Val::F64(v) => {
-                                        if v.abs() > f64::EPSILON {
-                                            1
-                                        } else {
-                                            0
-                                        }
-                                    }
+                                    Val::I8(v) => (v != 0) as u8,
+                                    Val::I16(v) => (v != 0) as u8,
+                                    Val::I32(v) => (v != 0) as u8,
+                                    Val::U16(v) => (v != 0) as u8,
+                                    Val::U32(v) => (v != 0) as u8,
+                                    Val::F64(v) => (v.abs() > f64::EPSILON) as u8,
                                     Val::List(_) => {
                                         tracing::warn!("[{}] GPIO[{}] 不支持List类型", id, key);
                                         continue;

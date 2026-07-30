@@ -31,7 +31,5 @@ pub(crate) fn router() -> Router {
                         .post(handlers::planned_curve::set_planned_curve_enable),
                 ),
         )
-        .push(
-            Router::with_path("current").get(handlers::planned_curve::current_running_curve_id),
-        )
+        .push(Router::with_path("current").get(handlers::planned_curve::current_running_curve_id))
 }

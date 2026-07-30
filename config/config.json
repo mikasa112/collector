@@ -134,6 +134,30 @@
         "request_interval": null,
         "max_gap": null
       }
+    },
+    "gpio": {
+      "id": "gpio",
+      "type": "GPIO",
+      "desc": "DIDO",
+      "config": {
+        "type": "GPIO",
+        "com_type": "GPIO",
+        "register_file": "./config/GPIO.xlsx",
+        "interval": 2000,
+        "timeout": 2000,
+        "ip": null,
+        "port": null,
+        "slave": null,
+        "serial_tty": null,
+        "baud_rate": null,
+        "data_bits": null,
+        "parity": null,
+        "stop_bits": null,
+        "interface": null,
+        "desc": null,
+        "request_interval": null,
+        "max_gap": null
+      }
     }
   }
 }
