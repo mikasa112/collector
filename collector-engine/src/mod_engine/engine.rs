@@ -1,5 +1,5 @@
 use std::{
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, atomic::AtomicU64},
     time::Duration,
 };
 
@@ -15,8 +15,10 @@ use crate::mod_engine::{
     api::{
         can::create_can_table,
         dc::create_dc_table,
+        json::create_json_table,
         log::create_log_table,
         mqtt::create_mqtt_table,
+        mqtt_client::{ConnEntry, MqttConns, MqttSubs, create_mqtt_conn_table, topic_matches},
         store::{LuaStore, create_store_table},
     },
     errors::Error,
@@ -42,6 +44,11 @@ pub enum EngineCmd {
     },
     AddCoroutine {
         thread: mlua::Thread,
+    },
+    MqttMessage {
+        conn_id: u64,
+        topic: String,
+        payload: Vec<u8>,
     },
     Shutdown,
 }
@@ -94,6 +101,20 @@ pub struct ModEngine {
     scheduler: Scheduler,
     rx: mpsc::UnboundedReceiver<EngineCmd>,
     dc_changed_rx: mpsc::UnboundedReceiver<(String, Arc<[DataPoint]>)>,
+    mqtt_subs: MqttSubs,
+    mqtt_conns: MqttConns,
+    mqtt_next_id: Arc<AtomicU64>,
+}
+
+/// `register_api` 入参打包，避免函数参数过多（clippy::too_many_arguments）
+struct RegisterApiArgs {
+    center: SharedPointCenter,
+    override_store: Option<MqttOverrideStore>,
+    owned_topics: Arc<Mutex<Vec<String>>>,
+    store: LuaStore,
+    watch_tx: mpsc::UnboundedSender<(String, Arc<[DataPoint]>)>,
+    can_bus: Option<SharedCanBus>,
+    cmd_tx: mpsc::UnboundedSender<EngineCmd>,
 }
 
 impl ModEngine {
@@ -112,15 +133,19 @@ impl ModEngine {
             scheduler: Scheduler::new(),
             rx,
             dc_changed_rx,
+            mqtt_subs: Arc::new(Mutex::new(Vec::new())),
+            mqtt_conns: Arc::new(Mutex::new(Vec::new())),
+            mqtt_next_id: Arc::new(AtomicU64::new(1)),
         };
-        engine.register_api(
+        engine.register_api(RegisterApiArgs {
             center,
             override_store,
             owned_topics,
             store,
             watch_tx,
             can_bus,
-        )?;
+            cmd_tx: tx.clone(),
+        })?;
         engine.register_event()?;
         engine.register_timer(tx.clone())?;
         engine.register_task(tx.clone())?;
@@ -128,17 +153,19 @@ impl ModEngine {
         Ok((engine, handle))
     }
 
-    fn register_api(
-        &self,
-        center: SharedPointCenter,
-        override_store: Option<MqttOverrideStore>,
-        owned_topics: Arc<Mutex<Vec<String>>>,
-        store: LuaStore,
-        watch_tx: mpsc::UnboundedSender<(String, Arc<[DataPoint]>)>,
-        can_bus: Option<SharedCanBus>,
-    ) -> mod_engine::Result<()> {
+    fn register_api(&self, args: RegisterApiArgs) -> mod_engine::Result<()> {
+        let RegisterApiArgs {
+            center,
+            override_store,
+            owned_topics,
+            store,
+            watch_tx,
+            can_bus,
+            cmd_tx,
+        } = args;
         let globals = self.lua.globals();
         globals.set("log", create_log_table(&self.lua)?)?;
+        globals.set("json", create_json_table(&self.lua)?)?;
         globals.set("dc", create_dc_table(&self.lua, center, watch_tx)?)?;
         globals.set("store", create_store_table(&self.lua, store)?)?;
         if let Some(mqtt_store) = override_store {
@@ -150,6 +177,17 @@ impl ModEngine {
         if let Some(bus) = can_bus {
             globals.set("can", create_can_table(&self.lua, bus)?)?;
         }
+        // mqtt：脚本自行发起独立连接，始终可用，不依赖 project 的 mqtt 配置
+        globals.set(
+            "mqtt",
+            create_mqtt_conn_table(
+                &self.lua,
+                cmd_tx,
+                self.mqtt_subs.clone(),
+                self.mqtt_conns.clone(),
+                self.mqtt_next_id.clone(),
+            )?,
+        )?;
         Ok(())
     }
 
@@ -269,7 +307,17 @@ impl ModEngine {
             EngineCmd::AddCoroutine { thread } => {
                 self.scheduler.add_coroutine(thread);
             }
-            EngineCmd::Shutdown => return Ok(true),
+            EngineCmd::MqttMessage {
+                conn_id,
+                topic,
+                payload,
+            } => {
+                self.emit_mqtt_message(conn_id, &topic, &payload).await?;
+            }
+            EngineCmd::Shutdown => {
+                self.shutdown_mqtt_conns().await;
+                return Ok(true);
+            }
         }
         Ok(false)
     }
@@ -339,6 +387,40 @@ impl ModEngine {
             func.call_async::<()>(lua_val.clone()).await?;
         }
         Ok(())
+    }
+
+    async fn emit_mqtt_message(
+        &self,
+        conn_id: u64,
+        topic: &str,
+        payload: &[u8],
+    ) -> mod_engine::Result<()> {
+        let funcs: Vec<mlua::Function> = {
+            let subs = self.mqtt_subs.lock().unwrap();
+            subs.iter()
+                .filter(|s| s.conn_id == conn_id && topic_matches(&s.filter, topic))
+                .filter_map(|s| self.lua.registry_value::<mlua::Function>(&s.callback).ok())
+                .collect()
+        };
+        if funcs.is_empty() {
+            return Ok(());
+        }
+        let topic_val = self.lua.create_string(topic)?;
+        let payload_val = self.lua.create_string(payload)?;
+        for func in funcs {
+            func.call_async::<()>((topic_val.clone(), payload_val.clone()))
+                .await?;
+        }
+        Ok(())
+    }
+
+    /// 引擎关闭时统一断开该脚本开出的所有 MQTT 连接，避免热更新/卸载脚本后连接和后台轮询任务残留
+    async fn shutdown_mqtt_conns(&self) {
+        let entries: Vec<ConnEntry> = std::mem::take(&mut *self.mqtt_conns.lock().unwrap());
+        for entry in entries {
+            let _ = tokio::time::timeout(Duration::from_secs(2), entry.client.disconnect()).await;
+            entry.task.abort();
+        }
     }
 
     async fn drain_dc_changes(&mut self) -> mod_engine::Result<()> {

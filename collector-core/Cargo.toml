@@ -19,8 +19,8 @@ futures = { workspace = true }
 ahash = { workspace = true }
 parking_lot = { workspace = true}
 taos = { workspace = true }
+rumqttc = { workspace =true }
 zstd = "0.13.3"
-rumqttc = "0.25.1"
 dashmap = "6.1.0"
 tokio-modbus = { version = "0.16.1", features = ["rtu", "tcp", "server", "rtu-server", "tcp-server"] }
 tokio-serial = "5.4.5"

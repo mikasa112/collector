@@ -85,6 +85,23 @@ function log.warn(msg) end
 function log.error(msg) end
 
 -----------------------------------------------------------------------
+-- json - JSON 编解码 API
+-----------------------------------------------------------------------
+
+---@class JsonApi
+json = {}
+
+--- 将 JSON 字符串解析为 Lua 值（table/number/string/boolean/nil）
+---@param s string
+---@return any
+function json.decode(s) end
+
+--- 将 Lua 值编码为 JSON 字符串
+---@param value any
+---@return string
+function json.encode(value) end
+
+-----------------------------------------------------------------------
 -- task - 协程任务 API
 -----------------------------------------------------------------------
 
@@ -190,3 +207,54 @@ function override.set(topic, value) end
 --- 取消覆盖，恢复原始采集值
 ---@param topic string  MQTT topic
 function override.clear(topic) end
+
+-----------------------------------------------------------------------
+-- mqtt - 通用 MQTT 客户端 API（脚本自行发起连接，与 override 表完全独立）
+-----------------------------------------------------------------------
+
+---@class MqttConnectOpts
+---@field host      string  broker 地址
+---@field port      integer? 端口，默认 1883
+---@field client_id string?  客户端 ID，缺省自动生成
+---@field username  string?  用户名（可选）
+---@field password  string?  密码（可选）
+---@field keepalive integer? 心跳间隔（秒），默认 30
+---@field max_packet_size integer? 收发包体大小上限（字节），默认 262144（256KB）
+
+---@class MqttPubSubOpts
+---@field qos    integer? QoS 等级 0/1/2，默认 0
+---@field retain boolean? 是否 retain（仅 publish 有效），默认 false
+
+---@class MqttConn
+local MqttConn = {}
+
+--- 发布消息。payload 为字符串时按原始字节发送；为 table 时自动编码为 JSON；
+--- 为 number/boolean 时转为字符串发送。
+---@param topic   string
+---@param payload string|table|number|boolean
+---@param opts    MqttPubSubOpts?
+function MqttConn:publish(topic, payload, opts) end
+
+--- 订阅 topic（支持标准通配符 +/#），收到消息时以 (topic, payload) 触发回调，
+--- payload 是原始字符串（二进制安全），需要 JSON 时自行解析。
+---@param topic_filter string
+---@param callback     fun(topic: string, payload: string)
+---@param opts         MqttPubSubOpts?
+function MqttConn:subscribe(topic_filter, callback, opts) end
+
+--- 取消订阅
+---@param topic_filter string
+function MqttConn:unsubscribe(topic_filter) end
+
+--- 主动断开连接。脚本卸载/热更新时引擎也会自动断开所有未关闭的连接。
+function MqttConn:disconnect() end
+
+---@class MqttApi
+mqtt = {}
+
+--- 发起一个独立的 MQTT 连接。连接失败（超时或被拒绝）时返回 nil, err，
+--- 因此需要用两个返回值接收。
+---@param opts MqttConnectOpts
+---@return MqttConn|nil conn
+---@return string|nil   err
+function mqtt.connect(opts) end

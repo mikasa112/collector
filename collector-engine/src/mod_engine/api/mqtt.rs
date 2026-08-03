@@ -4,7 +4,7 @@ use collector_core::dock::mqtt::MqttOverrideStore;
 use mlua::{Lua, Table, Value};
 
 /// 将 mlua::Value 转为 serde_json::Value
-fn lua_to_json(value: Value) -> mlua::Result<serde_json::Value> {
+pub(crate) fn lua_to_json(value: Value) -> mlua::Result<serde_json::Value> {
     match value {
         Value::Nil => Ok(serde_json::Value::Null),
         Value::Boolean(b) => Ok(serde_json::Value::Bool(b)),
@@ -67,7 +67,7 @@ fn lua_to_json(value: Value) -> mlua::Result<serde_json::Value> {
             }
         }
         other => Err(mlua::Error::runtime(format!(
-            "mqtt.publish 不支持 {} 类型的 payload",
+            "不支持将 {} 类型转换为 JSON",
             other.type_name()
         ))),
     }

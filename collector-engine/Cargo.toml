@@ -19,6 +19,8 @@ parking_lot = { workspace = true }
 futures-util = { workspace = true }
 sqlx = { workspace = true }
 taos = { workspace = true }
+rumqttc = { workspace =true }
+bytes = { workspace = true }
 mlua = { version = "0.11.6", features = ["async", "lua54", "vendored", "send","serialize"] }
 notify = { version = "7", features = ["macos_fsevent"] }
 cron = "0.13"
