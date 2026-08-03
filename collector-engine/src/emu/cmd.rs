@@ -40,7 +40,7 @@ impl EmuPower {
             .await?;
         //等待PCS上电，建立通信
         let mut ticker = tokio::time::interval(std::time::Duration::from_secs(1));
-        const MAX_TRIES: usize = 10;
+        const MAX_TRIES: usize = 30;
         let mut tries = 0;
         loop {
             ticker.tick().await;
@@ -56,17 +56,16 @@ impl EmuPower {
             }
         }
         // 1. 设置远程
+        self.center
+            .dispatch("pcs", vec![down!(id: 3006, Val::U8(1))])
+            .await?;
         // 2. 清除故障
+        self.center
+            .dispatch("pcs", vec![down!(id: 3000, Val::U8(1))])
+            .await?;
         // 3. 开机指令
         self.center
-            .dispatch(
-                "pcs",
-                vec![
-                    down!(id: 3000, Val::U8(1)),
-                    down!(id: 3001, Val::U8(1)),
-                    down!(id: 3006, Val::U8(1)),
-                ],
-            )
+            .dispatch("pcs", vec![down!(id: 3001, Val::U8(1))])
             .await?;
         tracing::info!("[系统并网上电] 成功");
         Ok(())
