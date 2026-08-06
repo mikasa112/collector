@@ -157,24 +157,46 @@ struct HomeAcData {
 
 impl HomeAcData {
     fn new(center: &SharedPointCenter) -> Self {
-        //PCS 输入电压
-        let pcs_v = center
-            .read("pcs", 25)
+        let pcs_va = center
+            .read("pcs", 1)
             .and_then(|it| f64::try_from(it.value).ok());
-        //PCS 输入功率
+
+        let pcs_vb = center
+            .read("pcs", 2)
+            .and_then(|it| f64::try_from(it.value).ok());
+
+        let pcs_vc = center
+            .read("pcs", 3)
+            .and_then(|it| f64::try_from(it.value).ok());
+        let pcs_v = match (pcs_va, pcs_vb, pcs_vc) {
+            (Some(a), Some(b), Some(c)) => Some((a + b + c) / 3.0),
+            _ => None,
+        };
+        // 计算线电压
+        let pcs_line_voltage = pcs_v.map(|v| v * 3_f64.sqrt());
+        //PCS 总输出有功功率
         let pcs_power = center
-            .read("pcs", 24)
+            .read("pcs", 11)
             .and_then(|it| f64::try_from(it.value).ok());
-        //PCS 输入电流
-        let pcs_current = center
-            .read("pcs", 26)
+        let pcs_ia = center
+            .read("pcs", 4)
             .and_then(|it| f64::try_from(it.value).ok());
+        let pcs_ib = center
+            .read("pcs", 5)
+            .and_then(|it| f64::try_from(it.value).ok());
+        let pcs_ic = center
+            .read("pcs", 6)
+            .and_then(|it| f64::try_from(it.value).ok());
+        let pcs_current = match (pcs_ia, pcs_ib, pcs_ic) {
+            (Some(a), Some(b), Some(c)) => Some((a + b + c) / 3.0),
+            _ => None,
+        };
         //电网频率
         let pcs_frequency = center
             .read("pcs", 7)
             .and_then(|it| f64::try_from(it.value).ok());
         HomeAcData {
-            voltage: pcs_v,
+            voltage: pcs_line_voltage,
             current: pcs_current,
             power: pcs_power,
             frequency: pcs_frequency,
