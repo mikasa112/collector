@@ -1,0 +1,13 @@
+[package]
+name = "collector-iec60870"
+version = "0.1.0"
+edition = "2024"
+build = "src/build.rs"
+
+[dependencies]
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+
+[build-dependencies]
+bindgen = "0.72.1"
+cc = "1.4.0"
