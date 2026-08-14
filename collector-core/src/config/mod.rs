@@ -39,7 +39,7 @@ impl Configuration {
     }
 
     pub async fn load_device_configs(&mut self) {
-        for (_, dev) in self.project.devices.iter_mut() {
+        for dev in self.project.devices.values_mut() {
             dev.protocol_configs = Some(load_protocol_configs(dev).await);
         }
     }

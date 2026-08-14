@@ -11,6 +11,8 @@ pub(crate) mod can_dev;
 pub(crate) mod dev_config;
 #[cfg(target_os = "linux")]
 pub(crate) mod gpio;
+#[cfg(target_os = "linux")]
+pub(crate) mod iec60870_dev;
 pub mod manager;
 pub(crate) mod modbus_dev;
 pub mod state;

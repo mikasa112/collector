@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+collector-iec60870 = { path = "../collector-iec60870" }
 tokio = { workspace = true }
 tokio-util = { workspace = true }
 thiserror = { workspace = true }

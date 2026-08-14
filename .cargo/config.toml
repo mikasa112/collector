@@ -1,0 +1,42 @@
+# The system musl-aarch64 cross toolchain (`aarch64-linux-musl-gcc`, package
+# `musl-aarch64`) only ships musl's own libc headers under
+# /usr/aarch64-linux-musl/lib/musl/include — it does *not* bundle the Linux
+# kernel UAPI headers (linux/*.h, asm/*.h, asm-generic/*.h) that
+# musl-cross-make toolchains normally include. vendor/lib60870-C needs
+# <linux/version.h>, so the plain `cc` build fails with:
+#   fatal error: linux/version.h: No such file or directory
+#
+# Fix: fall back to the (architecture-correct, libc-agnostic) kernel headers
+# from the `aarch64-linux-gnu-linux-api-headers` package via -idirafter, so
+# they're only used for headers musl doesn't provide itself (musl's own
+# stdio.h/stdarg.h/etc. are still found first via its own -isystem path baked
+# into musl-gcc.specs, so there's no glibc/musl symbol clash).
+#
+# bindgen (used to generate the lib60870 FFI bindings) uses libclang
+# directly and, because it targets aarch64-unknown-linux-musl, otherwise
+# falls back to the host's own /usr/include (x86_64 glibc), which trips over
+# `__float128 is not supported on this target`. Point it at the musl sysroot
+# + the same kernel headers instead.
+#
+# Same story for the native x86_64 musl toolchain (`x86_64-linux-musl-gcc`,
+# package `musl`): /usr/lib/musl/include only has musl's own libc headers, no
+# Linux UAPI headers, so it hits the same `linux/version.h` failure. Fixed
+# the same way, falling back to the host's `linux-api-headers` package
+# (/usr/include/{linux,asm,asm-generic,...}) via -idirafter.
+[env]
+CFLAGS_aarch64_unknown_linux_musl = "-idirafter /usr/aarch64-linux-gnu/include"
+BINDGEN_EXTRA_CLANG_ARGS_aarch64_unknown_linux_musl = "-nostdinc -isystem /usr/aarch64-linux-musl/lib/musl/include -idirafter /usr/aarch64-linux-gnu/include"
+CFLAGS_x86_64_unknown_linux_musl = "-idirafter /usr/include"
+BINDGEN_EXTRA_CLANG_ARGS_x86_64_unknown_linux_musl = "-nostdinc -isystem /usr/lib/musl/include -idirafter /usr/include"
+
+# The final link step for x86_64-unknown-linux-musl otherwise falls back to
+# plain `cc` (the host's glibc gcc), which resolves `-lm`/`-lc` against the
+# *host's static glibc* libs (/usr/lib/libm-2.44.a) instead of musl's -
+# producing a flood of "undefined reference to `_dl_x86_cpu_features`/`errno`"
+# link errors, since glibc's static libm expects glibc-internal symbols.
+# `x86_64-linux-musl-gcc` (the `musl` package's musl-gcc wrapper) carries its
+# own specs file pointing at musl's real lib dir (/usr/lib/musl/lib), so use
+# it as the linker explicitly - matching the aarch64-linux-musl-gcc override
+# already set globally in ~/.cargo/config.toml for the aarch64 musl target.
+[target.x86_64-unknown-linux-musl]
+linker = "x86_64-linux-musl-gcc"

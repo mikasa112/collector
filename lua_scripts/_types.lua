@@ -44,12 +44,16 @@ dc = {}
 
 --- 返回所有设备 ID 列表
 ---@return string[]
-function dc.dev_ids() end
+function dc.dev_ids()
+    return {}
+end
 
 --- 读取某设备所有数据点
 ---@param dev_id string 设备 ID
 ---@return DataPoint[]
-function dc.read_all(dev_id) end
+function dc.read_all(dev_id)
+    return {}
+end
 
 --- 读取单个数据点，不存在时返回 nil
 ---@param dev_id   string          设备 ID
@@ -116,6 +120,7 @@ function task.spawn(fn) end
 -- wait - 协程挂起
 -----------------------------------------------------------------------
 
+---@diagnostic disable-next-line: lowercase-global
 --- 在 task.spawn 的协程内挂起指定毫秒，不阻塞其他协程
 ---@param ms integer 毫秒数
 function wait(ms) end
