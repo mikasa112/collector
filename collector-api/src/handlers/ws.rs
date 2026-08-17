@@ -3,7 +3,10 @@ use std::time::Duration;
 use collector_core::{
     center::SharedPointCenter,
     core::point::{DataPoint, PointId, Val, Words},
-    utils::taos::{TaosDbError, query_rows},
+    utils::{
+        eg25::Eg25Info,
+        taos::{TaosDbError, query_rows},
+    },
 };
 use salvo::{
     Depot, Request, Response, handler,
@@ -12,6 +15,7 @@ use salvo::{
     websocket::{Message, WebSocket},
 };
 use serde::{Deserialize, Serialize};
+use tokio::sync::watch;
 use tokio::time::{self, Instant};
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
@@ -437,6 +441,60 @@ async fn query_history() -> Result<HistoryCurves, TaosDbError> {
             })
             .collect(),
     })
+}
+
+#[handler]
+pub async fn eg25_ws_handler(
+    req: &mut Request,
+    res: &mut Response,
+    depot: &mut Depot,
+) -> Result<(), StatusError> {
+    let rx = depot
+        .get::<watch::Receiver<Eg25Info>>("eg25")
+        .map_err(|_| StatusError::service_unavailable())?
+        .clone();
+
+    WebSocketUpgrade::new()
+        .upgrade(req, res, move |mut ws| async move {
+            handle_eg25_ws(&mut ws, rx).await;
+        })
+        .await
+}
+
+async fn handle_eg25_ws(ws: &mut WebSocket, mut rx: watch::Receiver<Eg25Info>) {
+    // 建立连接后立即推送当前状态
+    let initial = rx.borrow().clone();
+    if let Ok(json) = serde_json::to_string(&initial)
+        && ws.send(Message::text(json)).await.is_err()
+    {
+        return;
+    }
+
+    loop {
+        tokio::select! {
+            result = rx.changed() => {
+                if result.is_err() { break; }
+                let data = rx.borrow().clone();
+                if let Ok(json) = serde_json::to_string(&data)
+                    && ws.send(Message::text(json)).await.is_err() {
+                        break;
+                    }
+            }
+            msg = ws.recv() => {
+                match msg {
+                    None => break,
+                    Some(Ok(msg)) => {
+                        if msg.is_close() { break; }
+                        if msg.is_ping()
+                            && ws.send(Message::pong(msg.as_bytes().to_vec())).await.is_err() {
+                                break;
+                            }
+                    }
+                    Some(Err(_)) => break,
+                }
+            }
+        }
+    }
 }
 
 #[handler]
