@@ -199,7 +199,17 @@ impl ScriptManager {
                 tracing::info!("[mod] 热更新: {}", path.display());
                 match script_loader::load_script(&path).await {
                     Ok(meta) => self.load(meta).await,
-                    Err(e) => tracing::warn!("[mod] 热更新失败 {}: {}", path.display(), e),
+                    Err(e) => {
+                        // 重命名/移动会被 notify 合并为一个事件，其中旧路径仍带 .lua
+                        // 后缀，被误判为 Upsert；此时文件已不存在，应视为卸载，
+                        // 否则旧脚本实例会永远残留在 self.scripts 中
+                        if !tokio::fs::try_exists(&path).await.unwrap_or(true) {
+                            tracing::info!("[mod] 文件已不存在，视为卸载: {}", path.display());
+                            self.unload(&path).await;
+                        } else {
+                            tracing::warn!("[mod] 热更新失败 {}: {}", path.display(), e);
+                        }
+                    }
                 }
             }
             FileEvent::Remove(path) => {
