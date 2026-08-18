@@ -2,6 +2,7 @@ use salvo::Request;
 use serde::Deserialize;
 
 pub(crate) mod data;
+pub(crate) mod emu;
 pub(crate) mod history;
 #[cfg(target_os = "linux")]
 pub(crate) mod network;

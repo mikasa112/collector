@@ -1,4 +1,5 @@
 mod data;
+mod emu;
 mod history;
 #[cfg(target_os = "linux")]
 mod network;
@@ -22,7 +23,8 @@ pub(crate) fn root_router(
         .push(data::router())
         .push(planned_curve::router())
         .push(history::router())
-        .push(ws::router());
+        .push(ws::router())
+        .push(emu::router());
     if let Some(rx) = eg25_rx {
         v1 = v1.hoop(InjectEg25::new(rx));
     }

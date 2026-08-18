@@ -3,6 +3,11 @@ use std::sync::atomic::{
     Ordering::{self, Relaxed},
 };
 
+use serde::{Deserialize, Serialize};
+use tokio::{fs::OpenOptions, io::AsyncReadExt};
+
+const EMU_RUNTIME_CONFIG: &str = "./config/emu_runtime_config.json";
+
 #[repr(u8)]
 #[derive(Clone, Copy)]
 pub enum OperationMode {
@@ -93,6 +98,7 @@ impl TryFrom<u8> for EmuPermission {
     }
 }
 
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub struct SocProtect {
     charge_limit: AtomicF64,
     discharge_limit: AtomicF64,
@@ -120,29 +126,56 @@ impl SocProtect {
     pub fn set_discharge_limit(&self, limit: f64) {
         self.discharge_limit.store(limit, Relaxed);
     }
+
+    pub async fn save(&self) -> std::io::Result<()> {
+        let json = serde_json::to_string_pretty(self).map_err(std::io::Error::other)?;
+        tokio::fs::write(EMU_RUNTIME_CONFIG, json).await
+    }
 }
 
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub struct RuntimeEmu {
+    #[serde(skip)]
     permission: AtomicU8,
+    #[serde(skip)]
     operation_mode: AtomicU8,
+    #[serde(skip)]
     health: AtomicU8,
     pub soc_protect: SocProtect,
 }
 
-impl Default for RuntimeEmu {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl RuntimeEmu {
-    pub fn new() -> Self {
-        Self {
+    pub async fn new() -> std::io::Result<Self> {
+        let mut file = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .open(EMU_RUNTIME_CONFIG)
+            .await?;
+        let mut content = String::new();
+        file.read_to_string(&mut content).await?;
+
+        let soc_protect = if content.trim().is_empty() {
+            SocProtect::new()
+        } else {
+            match serde_json::from_str::<SocProtect>(&content) {
+                Ok(soc_protect) => soc_protect,
+                Err(err) => {
+                    tracing::warn!("[EMU] 解析SOC保护配置失败, 使用默认配置: {}", err);
+                    SocProtect::new()
+                }
+            }
+        };
+
+        let runtime = Self {
             permission: AtomicU8::new(3),
             operation_mode: AtomicU8::new(0),
             health: AtomicU8::new(2),
-            soc_protect: SocProtect::new(),
-        }
+            soc_protect,
+        };
+        runtime.soc_protect.save().await?;
+        Ok(runtime)
     }
 
     pub fn permission(&self) -> Result<EmuPermission, RuntimeEmuError> {
@@ -176,6 +209,7 @@ impl RuntimeEmu {
     }
 }
 
+#[derive(Debug)]
 pub struct AtomicF64 {
     inner: AtomicU64,
 }
@@ -193,5 +227,24 @@ impl AtomicF64 {
 
     pub fn store(&self, value: f64, order: Ordering) {
         self.inner.store(value.to_bits(), order);
+    }
+}
+
+impl Serialize for AtomicF64 {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_f64(self.load(Ordering::Relaxed))
+    }
+}
+
+impl<'de> Deserialize<'de> for AtomicF64 {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let value = f64::deserialize(deserializer)?;
+        Ok(Self::new(value))
     }
 }

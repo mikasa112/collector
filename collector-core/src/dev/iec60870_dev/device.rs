@@ -7,8 +7,9 @@ pub struct Iec60870Dev {
 }
 
 impl Iec60870Dev {
+    #[allow(dead_code)]
     pub fn new() -> Result<Self, DeviceError> {
-        todo!()
+        unimplemented!("尚未实现")
     }
 }
 

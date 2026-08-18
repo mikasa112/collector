@@ -111,6 +111,7 @@ impl Strategy for EmuRuntime {
 impl DataDriven for EmuRuntime {
     async fn down(&self, points: &[DownDataPoint]) -> Result<(), StrategyError> {
         let runtime = get_runtime().await?;
+        let mut changed = false;
         for p in points.iter() {
             if p.point == PointRef::Id(ID_CHARGE_SOC_LIMIT)
                 || p.point == PointRef::Key(KEY_CHARGE_SOC_LIMIT.to_string())
@@ -119,7 +120,8 @@ impl DataDriven for EmuRuntime {
                     .emu_runtime
                     .soc_protect
                     .set_charge_limit(p.value.as_f64()?);
-                tracing::info!("[EMU] 充电SOC限制修改为{}", p.value)
+                tracing::info!("[EMU] 充电SOC限制修改为{}", p.value);
+                changed = true;
             }
             if p.point == PointRef::Id(ID_DISCHARGE_SOC_LIMIT)
                 || p.point == PointRef::Key(KEY_DISCHARGE_SOC_LIMIT.to_string())
@@ -128,8 +130,12 @@ impl DataDriven for EmuRuntime {
                     .emu_runtime
                     .soc_protect
                     .set_discharge_limit(p.value.as_f64()?);
-                tracing::info!("[EMU] 放电SOC限制修改为{}", p.value)
+                tracing::info!("[EMU] 放电SOC限制修改为{}", p.value);
+                changed = true;
             }
+        }
+        if changed && let Err(err) = runtime.emu_runtime.soc_protect.save().await {
+            tracing::error!("[EMU] 保存SOC保护配置失败: {}", err);
         }
         Ok(())
     }

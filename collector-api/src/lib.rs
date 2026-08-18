@@ -1,6 +1,4 @@
-use collector_core::{
-    center::SharedPointCenter, shutdown::ShutdownManager, utils::eg25::Eg25Info,
-};
+use collector_core::{center::SharedPointCenter, shutdown::ShutdownManager, utils::eg25::Eg25Info};
 use salvo::{Listener, Server, conn::TcpListener};
 use tokio::sync::watch;
 use tracing::info;

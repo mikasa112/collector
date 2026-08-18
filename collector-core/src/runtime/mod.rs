@@ -8,4 +8,6 @@ pub enum RuntimeError {
     DbError(#[from] sqlx::Error),
     #[error("找不到表`{0}`")]
     TableNotFound(String),
+    #[error("IO错误: {0}")]
+    IoError(#[from] std::io::Error),
 }

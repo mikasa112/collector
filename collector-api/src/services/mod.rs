@@ -1,4 +1,5 @@
 pub mod data;
+pub mod emu;
 pub mod error;
 pub mod history;
 #[cfg(target_os = "linux")]

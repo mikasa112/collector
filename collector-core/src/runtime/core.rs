@@ -16,7 +16,7 @@ impl Runtime {
     async fn new() -> Result<Self, RuntimeError> {
         let pool = get_database().expect("初始化数据库失败");
         let planned_curve = RuntimePlannedCurve::new(pool.clone()).await?;
-        let emu_runtime = RuntimeEmu::new();
+        let emu_runtime = RuntimeEmu::new().await?;
         Ok(Self {
             planned_curve,
             emu_runtime,
