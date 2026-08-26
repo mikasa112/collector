@@ -1,4 +1,5 @@
 use std::{
+    path::PathBuf,
     sync::{Arc, Mutex, atomic::AtomicU64},
     time::Duration,
 };
@@ -124,6 +125,7 @@ impl ModEngine {
         owned_topics: Arc<Mutex<Vec<String>>>,
         store: LuaStore,
         can_bus: Option<SharedCanBus>,
+        script_dir: PathBuf,
     ) -> mod_engine::Result<(Self, ModEngineHandle)> {
         let (tx, rx) = mpsc::unbounded_channel();
         let (watch_tx, dc_changed_rx) = mpsc::unbounded_channel();
@@ -137,6 +139,7 @@ impl ModEngine {
             mqtt_conns: Arc::new(Mutex::new(Vec::new())),
             mqtt_next_id: Arc::new(AtomicU64::new(1)),
         };
+        engine.register_require(&script_dir)?;
         engine.register_api(RegisterApiArgs {
             center,
             override_store,
@@ -151,6 +154,15 @@ impl ModEngine {
         engine.register_task(tx.clone())?;
         let handle = ModEngineHandle { tx };
         Ok((engine, handle))
+    }
+
+    /// 将 `require` 的搜索路径限定到脚本目录本身，使脚本可通过
+    /// `require("_utils")` 之类的方式引入同目录下的公共 .lua 模块。
+    /// 被 require 的模块运行在与调用脚本相同的 Lua VM 中，可直接使用 dc/log 等全局 API。
+    fn register_require(&self, script_dir: &std::path::Path) -> mod_engine::Result<()> {
+        let package: mlua::Table = self.lua.globals().get("package")?;
+        package.set("path", format!("{}/?.lua", script_dir.display()))?;
+        Ok(())
     }
 
     fn register_api(&self, args: RegisterApiArgs) -> mod_engine::Result<()> {

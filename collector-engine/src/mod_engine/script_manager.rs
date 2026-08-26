@@ -34,6 +34,7 @@ impl ScriptInstance {
         override_store: Option<MqttOverrideStore>,
         store: LuaStore,
         can_bus: Option<SharedCanBus>,
+        script_dir: PathBuf,
     ) -> Option<Self> {
         let owned_topics: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
         let (engine, handle) = match ModEngine::create(
@@ -42,6 +43,7 @@ impl ScriptInstance {
             owned_topics.clone(),
             store,
             can_bus,
+            script_dir,
         ) {
             Ok(pair) => pair,
             Err(e) => {
@@ -87,6 +89,8 @@ pub struct ScriptManager {
     override_store: Option<MqttOverrideStore>,
     store: LuaStore,
     can_bus: Option<SharedCanBus>,
+    /// 脚本目录，用于给各脚本 VM 配置 `require` 搜索路径
+    script_dir: PathBuf,
     scripts: HashMap<PathBuf, ScriptInstance>,
     /// 记录每个路径最近一次处理时间，用于热更新去抖
     last_reload: HashMap<PathBuf, Instant>,
@@ -103,6 +107,7 @@ impl ScriptManager {
             override_store,
             store: new_store(),
             can_bus,
+            script_dir: PathBuf::new(),
             scripts: HashMap::new(),
             last_reload: HashMap::new(),
         }
@@ -120,6 +125,7 @@ impl ScriptManager {
             self.override_store.clone(),
             self.store.clone(),
             self.can_bus.clone(),
+            self.script_dir.clone(),
         )
         .await
         {
@@ -151,6 +157,7 @@ impl ScriptManager {
         let script_dir = script_dir
             .canonicalize()
             .map_err(|e| crate::mod_engine::script_loader::LoadError::Io(e.to_string()))?;
+        self.script_dir = script_dir.clone();
 
         // 先启动 watcher，再扫描，避免扫描期间的文件变化事件丢失
         let (watcher, mut notify_rx) = watch_dir(&script_dir)
