@@ -15,6 +15,7 @@ local TOPIC_YK = "/pds/emu/2/yk"
 
 local utils = require("_utils")
 
+---@type MqttConn
 local conn = nil
 
 -- 遥调/遥控的“虚拟id -> {dev, id}”反查表，由 collect_points() 每轮刷新，

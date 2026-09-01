@@ -846,6 +846,7 @@ dependencies = [
  "tokio-util",
  "tracing",
  "tracing-subscriber",
+ "zstd",
 ]
 
 [[package]]

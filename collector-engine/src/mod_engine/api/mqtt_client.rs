@@ -107,6 +107,25 @@ impl UserData for MqttConnHandle {
         );
 
         methods.add_async_method(
+            "compressed_publish",
+            |_, this, (topic, payload, opts, level): (String, Value, Option<Table>, i32)| async move {
+                let qos = qos_from_u8(opt_u8(&opts, "qos", 0));
+                let retain = opt_bool(&opts, "retain", false);
+                let bytes = lua_value_to_payload(payload)?;
+                let compressed = tokio::task::spawn_blocking(move || {
+                    zstd::encode_all(bytes.as_slice(), level)
+                })
+                .await
+                .map_err(|e| mlua::Error::runtime(e.to_string()))?
+                .map_err(|e| mlua::Error::runtime(e.to_string()))?;
+                this.client
+                    .publish(topic, qos, retain, compressed)
+                    .await
+                    .map_err(|e| mlua::Error::runtime(e.to_string()))
+            },
+        );
+
+        methods.add_async_method(
             "subscribe",
             |lua, this, (filter, callback, opts): (String, Function, Option<Table>)| async move {
                 let qos = qos_from_u8(opt_u8(&opts, "qos", 0));

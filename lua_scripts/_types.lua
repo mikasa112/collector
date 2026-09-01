@@ -240,6 +240,13 @@ local MqttConn = {}
 ---@param opts    MqttPubSubOpts?
 function MqttConn:publish(topic, payload, opts) end
 
+--- 压缩发布：payload 编码规则与 publish 相同，编码后的字节用 zstd 压缩后再发送。
+---@param topic   string
+---@param payload string|table|number|boolean
+---@param opts    MqttPubSubOpts?
+---@param level   integer zstd 压缩等级（1~22，越大压缩率越高但耗时越长）
+function MqttConn:compressed_publish(topic, payload, opts, level) end
+
 --- 订阅 topic（支持标准通配符 +/#），收到消息时以 (topic, payload) 触发回调，
 --- payload 是原始字符串（二进制安全），需要 JSON 时自行解析。
 ---@param topic_filter string

@@ -24,3 +24,4 @@ bytes = { workspace = true }
 mlua = { version = "0.11.6", features = ["async", "lua54", "vendored", "send", "serialize"] }
 notify = { version = "7", features = ["macos_fsevent"] }
 cron = "0.13"
+zstd = "0.13.3"
