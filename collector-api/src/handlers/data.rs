@@ -1,5 +1,5 @@
 use collector_core::core::point::{PointId, Val};
-use salvo::{Depot, Request, handler};
+use salvo::{Request, handler};
 use validator::Validate;
 
 use crate::{
@@ -22,10 +22,10 @@ pub struct RequestDataParam {
 }
 
 #[handler]
-pub async fn set(req: &mut Request, depot: &mut Depot) -> ApiResult<ObjResponse<()>> {
+pub async fn set(req: &mut Request) -> ApiResult<ObjResponse<()>> {
     let params = req.parse_json::<RequestDataParams>().await?;
     params.validate()?;
     let service = DataService::new()?;
-    service.set(depot, params).await?;
+    service.set(params).await?;
     Ok(ObjResponse::ok(()))
 }

@@ -3,7 +3,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use socketcan::{CanFrame, EmbeddedFrame, ExtendedId, Id, StandardId};
 use tracing::warn;
 
-use crate::center::PointCenter;
+use crate::center::data_center;
 use crate::config::can_conf::{
     ByteOrder, CanConfig, CanDataType, CanFrameConfig, CanSignal, IdType,
 };
@@ -20,7 +20,6 @@ impl WritePlan {
         point_map: &HashMap<PointId, CanPointConfig>,
         name_map: &HashMap<&'static str, PointId>,
         frame_map: &HashMap<u32, FrameBinding>,
-        center: &dyn PointCenter,
         dev_id: &str,
     ) -> Self {
         let mut payloads: BTreeMap<u32, FramePayload> = BTreeMap::new();
@@ -43,7 +42,7 @@ impl WritePlan {
                 continue;
             };
             if initialized_bindings.insert(binding.frame.frame_id) {
-                preload_frame_payloads(center, &mut payloads, binding, point_map, dev_id);
+                preload_frame_payloads(&mut payloads, binding, point_map, dev_id);
             }
         }
 
@@ -192,12 +191,12 @@ pub(super) fn build_frame_map(configs: &[CanConfig]) -> HashMap<u32, FrameBindin
 }
 
 fn preload_frame_payloads(
-    center: &dyn PointCenter,
     payloads: &mut BTreeMap<u32, FramePayload>,
     binding: &FrameBinding,
     point_map: &HashMap<PointId, CanPointConfig>,
     dev_id: &str,
 ) {
+    let center = data_center();
     for point_id in &binding.point_ids {
         let Some(entry) = center.read(dev_id, *point_id) else {
             continue;

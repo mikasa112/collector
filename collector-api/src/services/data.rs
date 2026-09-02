@@ -1,27 +1,25 @@
+use collector_core::center::data_center;
 use collector_core::down;
-use salvo::Depot;
 
 use crate::{
     handlers::data::RequestDataParams,
-    services::{Service, ServiceError, ServiceResult},
+    services::{ServiceError, ServiceResult},
 };
 
 pub struct DataService {}
-
-impl Service for DataService {}
 
 impl DataService {
     pub fn new() -> ServiceResult<Self> {
         Ok(Self {})
     }
 
-    pub async fn set(&self, depot: &mut Depot, params: RequestDataParams) -> ServiceResult<()> {
+    pub async fn set(&self, params: RequestDataParams) -> ServiceResult<()> {
         if params.points.is_empty() {
             return Err(ServiceError::InvalidParameter(String::from(
                 "points不能为空",
             )));
         }
-        let center = self.center(depot)?;
+        let center = data_center();
         let ids = center.dev_ids();
         let json = serde_json::to_string(&params)
             .map_err(|e| ServiceError::InternalError(e.to_string()))?;

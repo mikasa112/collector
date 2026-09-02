@@ -7,17 +7,13 @@ mod planned_curve;
 mod user;
 mod ws;
 
-use crate::middleware::inject::{InjectCenter, InjectEg25};
-use collector_core::{center::SharedPointCenter, utils::eg25::Eg25Info};
+use crate::middleware::inject::InjectEg25;
+use collector_core::utils::eg25::Eg25Info;
 use salvo::Router;
 use tokio::sync::watch;
 
-pub(crate) fn root_router(
-    center: SharedPointCenter,
-    eg25_rx: Option<watch::Receiver<Eg25Info>>,
-) -> Router {
+pub(crate) fn root_router(eg25_rx: Option<watch::Receiver<Eg25Info>>) -> Router {
     let mut v1 = Router::new()
-        .hoop(InjectCenter::new(center))
         .path("v1")
         .push(user::router())
         .push(data::router())

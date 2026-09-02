@@ -5,8 +5,7 @@ use std::{
 };
 
 use collector_core::{
-    center::SharedPointCenter, core::point::DataPoint, dev::can_bus::SharedCanBus,
-    dock::mqtt::MqttOverrideStore,
+    core::point::DataPoint, dev::can_bus::SharedCanBus, dock::mqtt::MqttOverrideStore,
 };
 use mlua::{Lua, LuaSerdeExt};
 use tokio::sync::{mpsc, oneshot};
@@ -109,7 +108,6 @@ pub struct ModEngine {
 
 /// `register_api` 入参打包，避免函数参数过多（clippy::too_many_arguments）
 struct RegisterApiArgs {
-    center: SharedPointCenter,
     override_store: Option<MqttOverrideStore>,
     owned_topics: Arc<Mutex<Vec<String>>>,
     store: LuaStore,
@@ -120,7 +118,6 @@ struct RegisterApiArgs {
 
 impl ModEngine {
     pub fn create(
-        center: SharedPointCenter,
         override_store: Option<MqttOverrideStore>,
         owned_topics: Arc<Mutex<Vec<String>>>,
         store: LuaStore,
@@ -141,7 +138,6 @@ impl ModEngine {
         };
         engine.register_require(&script_dir)?;
         engine.register_api(RegisterApiArgs {
-            center,
             override_store,
             owned_topics,
             store,
@@ -167,7 +163,6 @@ impl ModEngine {
 
     fn register_api(&self, args: RegisterApiArgs) -> mod_engine::Result<()> {
         let RegisterApiArgs {
-            center,
             override_store,
             owned_topics,
             store,
@@ -178,7 +173,7 @@ impl ModEngine {
         let globals = self.lua.globals();
         globals.set("log", create_log_table(&self.lua)?)?;
         globals.set("json", create_json_table(&self.lua)?)?;
-        globals.set("dc", create_dc_table(&self.lua, center, watch_tx)?)?;
+        globals.set("dc", create_dc_table(&self.lua, watch_tx)?)?;
         globals.set("store", create_store_table(&self.lua, store)?)?;
         if let Some(mqtt_store) = override_store {
             globals.set(

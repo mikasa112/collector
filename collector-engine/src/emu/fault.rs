@@ -2,20 +2,18 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use collector_core::{
-    center::SharedPointCenter,
+    center::data_center,
     core::point::{DataPoint, Val, WarnLevel},
     runtime::{core::get_runtime, emu::HealthStatus},
 };
 
 use crate::strategy::{Schedule, Strategy, StrategyError};
 
-pub struct FaultDiagnosis {
-    center: SharedPointCenter,
-}
+pub struct FaultDiagnosis {}
 
 impl FaultDiagnosis {
-    pub fn new(center: SharedPointCenter) -> Self {
-        Self { center }
+    pub fn new() -> Self {
+        Self {}
     }
 
     /// 将一个带 bits 定义的寄存器展开为若干个单独的告警 DataPoint，
@@ -56,17 +54,16 @@ impl Strategy for FaultDiagnosis {
     }
 
     async fn on_tick(&mut self) -> Result<(), StrategyError> {
-        let pcs = self
-            .center
-            .read_many("pcs", &[156, 157, 158, 159, 160, 164, 165]);
-        let bcu = self.center.read_many(
+        let center = data_center();
+        let pcs = center.read_many("pcs", &[156, 157, 158, 159, 160, 164, 165]);
+        let bcu = center.read_many(
             "bcu",
             &[
                 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115,
                 116, 117, 118, 119, 120, 121,
             ],
         );
-        let tms = self.center.read_many("tms", &[20, 21, 22, 23]);
+        let tms = center.read_many("tms", &[20, 21, 22, 23]);
         let mut bit_points: Vec<DataPoint> = pcs
             .iter()
             .chain(bcu.iter())
@@ -76,7 +73,7 @@ impl Strategy for FaultDiagnosis {
         for (i, p) in bit_points.iter_mut().enumerate() {
             p.id = 500 + i as u32;
         }
-        self.center.ingest("emu", bit_points);
+        center.ingest("emu", bit_points);
         let warnings: Vec<_> = [pcs, bcu, tms]
             .into_iter()
             .flatten()

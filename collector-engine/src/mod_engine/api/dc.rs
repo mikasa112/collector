@@ -4,7 +4,7 @@ use std::{
 };
 
 use collector_core::{
-    center::SharedPointCenter,
+    center::data_center,
     core::point::{DataPoint, PointId, Val},
 };
 use mlua::{Lua, Table, Value};
@@ -90,14 +90,13 @@ fn append_status_and_faults(lua: &Lua, t: &Table, point: &DataPoint) -> mlua::Re
 
 pub fn create_dc_table(
     lua: &Lua,
-    center: SharedPointCenter,
     watch_tx: mpsc::UnboundedSender<(String, Arc<[DataPoint]>)>,
 ) -> mlua::Result<Table> {
     let dc_table = lua.create_table()?;
 
     // dc.read_all(dev_id) -> [{id, key, name, value}, ...]
     {
-        let c = center.clone();
+        let c = data_center();
         dc_table.set(
             "read_all",
             lua.create_function(move |lua, dev_id: String| {
@@ -119,7 +118,7 @@ pub fn create_dc_table(
 
     // dc.read(dev_id, point_id) -> {id, key, name, value} | nil
     {
-        let c = center.clone();
+        let c = data_center();
         dc_table.set(
             "read",
             lua.create_function(move |lua, (dev_id, point_mark): (String, Value)| {
@@ -149,7 +148,7 @@ pub fn create_dc_table(
 
     // dc.dev_ids() -> [string, ...]
     {
-        let c = center.clone();
+        let c = data_center();
         dc_table.set(
             "dev_ids",
             lua.create_function(move |lua, ()| {
@@ -165,32 +164,29 @@ pub fn create_dc_table(
 
     // dc.dispatch(dev_id, point_mark, value)
     {
-        let c = center.clone();
+        let c = data_center();
         dc_table.set(
             "dispatch",
             lua.create_async_function(
-                move |_, (dev_id, point_mark, value): (String, Value, Value)| {
-                    let c = c.clone();
-                    async move {
-                        let val = lua_to_val(value)?;
-                        let down = match point_mark {
-                            Value::Integer(point_id) => {
-                                collector_core::core::point::DownDataPoint::by_id(
-                                    point_id as PointId,
-                                    val,
-                                )
-                            }
-                            Value::String(point_key) => {
-                                let k = point_key.to_string_lossy();
-                                collector_core::core::point::DownDataPoint::by_key(k, val)
-                            }
-                            _ => return Err(mlua::Error::runtime("point_mark 必须是整数或字符串")),
-                        };
-                        c.dispatch(&dev_id, vec![down])
-                            .await
-                            .map_err(|e| mlua::Error::runtime(e.to_string()))?;
-                        Ok(())
-                    }
+                move |_, (dev_id, point_mark, value): (String, Value, Value)| async move {
+                    let val = lua_to_val(value)?;
+                    let down = match point_mark {
+                        Value::Integer(point_id) => {
+                            collector_core::core::point::DownDataPoint::by_id(
+                                point_id as PointId,
+                                val,
+                            )
+                        }
+                        Value::String(point_key) => {
+                            let k = point_key.to_string_lossy();
+                            collector_core::core::point::DownDataPoint::by_key(k, val)
+                        }
+                        _ => return Err(mlua::Error::runtime("point_mark 必须是整数或字符串")),
+                    };
+                    c.dispatch(&dev_id, vec![down])
+                        .await
+                        .map_err(|e| mlua::Error::runtime(e.to_string()))?;
+                    Ok(())
                 },
             )?,
         )?;
@@ -198,7 +194,7 @@ pub fn create_dc_table(
 
     // dc.watch(dev_id) — 订阅设备数据变化，变化时触发 "dc:changed" 事件
     {
-        let c = center.clone();
+        let c = data_center();
         let watched: Arc<Mutex<HashSet<String>>> = Arc::new(Mutex::new(HashSet::new()));
         dc_table.set(
             "watch",

@@ -2,7 +2,7 @@ use chrono::{DateTime, Duration, Local, Months};
 use collector_core::utils::taos::query_rows;
 use serde::{Deserialize, Serialize};
 
-use crate::services::{Service, ServiceError, ServiceResult};
+use crate::services::{ServiceError, ServiceResult};
 
 /// pcs_data 可选查询字段白名单
 const PCS_FIELDS: &[&str] = &[
@@ -77,8 +77,6 @@ struct AggRow {
 }
 
 pub struct HistoryService {}
-
-impl Service for HistoryService {}
 
 impl HistoryService {
     pub fn new() -> ServiceResult<Self> {

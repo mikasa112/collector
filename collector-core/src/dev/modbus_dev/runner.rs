@@ -9,7 +9,7 @@ use tokio_modbus::prelude::SlaveContext;
 use tokio_serial::{DataBits, Parity};
 use tracing::{info, warn};
 
-use crate::center::SharedPointCenter;
+use crate::center::data_center;
 use crate::config::modbus_conf::{ModbusConfig, ModbusConfigs};
 use crate::core::point::{DataPoint, DownDataPoint, PointId, PointRef, Val};
 use crate::dev::modbus_dev::Protocol;
@@ -121,13 +121,12 @@ pub(super) struct ModbusRunner {
     pub(super) state: SharedState,
     pub(super) stop_rx: watch::Receiver<bool>,
     pub(super) rx: mpsc::Receiver<Vec<DownDataPoint>>,
-    pub(super) center: SharedPointCenter,
 }
 
 impl ModbusRunner {
     /// 上报通讯故障位：false = 有通讯，true = 无通讯。
     fn set_comm_fault(&self, fault: bool) {
-        self.center.ingest(
+        data_center().ingest(
             &self.id,
             vec![DataPoint {
                 id: 0xFFFF,
@@ -299,7 +298,7 @@ impl ModbusRunner {
                     match reader.advance(ctx, blocks, timeout, &self.id).await {
                         ReadOutcome::Published(entries) => {
                             if !entries.is_empty() {
-                                self.center.ingest(&self.id, entries);
+                               data_center().ingest(&self.id, entries);
                             }
                         }
                         ReadOutcome::Pending => {}

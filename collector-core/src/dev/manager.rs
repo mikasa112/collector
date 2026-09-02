@@ -5,7 +5,6 @@ use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
 use tracing::error;
 
-use crate::center::SharedPointCenter;
 use crate::config::{ComType, Device};
 
 use crate::dev::can_bus::SharedCanBus;
@@ -25,17 +24,13 @@ pub struct DevManager {
 }
 
 impl DevManager {
-    pub fn new(
-        map: HashMap<String, Device>,
-        center: SharedPointCenter,
-        can_bus: SharedCanBus,
-    ) -> Self {
+    pub fn new(map: HashMap<String, Device>, can_bus: SharedCanBus) -> Self {
         let mut devices: Vec<Arc<Mutex<Box<dyn Executable>>>> = Vec::new();
         for (_, dev) in map.into_iter() {
             let Some(com_type) = dev.config.com_type else {
                 continue;
             };
-            match init_device(dev, com_type, center.clone(), can_bus.clone()) {
+            match init_device(dev, com_type, can_bus.clone()) {
                 Ok(dev) => {
                     devices.push(dev);
                 }
@@ -106,15 +101,12 @@ impl DevManager {
 fn init_device(
     dev: Device,
     com_type: ComType,
-    center: SharedPointCenter,
     can_bus: SharedCanBus,
 ) -> Result<Arc<Mutex<Box<dyn Executable>>>, DeviceError> {
     let my_dev: Box<dyn Executable> = match com_type {
-        config::ComType::ModbusTCP | config::ComType::ModbusRTU => {
-            Box::new(ModbusDev::new(dev, center)?)
-        }
+        config::ComType::ModbusTCP | config::ComType::ModbusRTU => Box::new(ModbusDev::new(dev)?),
         #[cfg(target_os = "linux")]
-        config::ComType::CAN => Box::new(CanDev::new(dev, center, can_bus)?),
+        config::ComType::CAN => Box::new(CanDev::new(dev, can_bus)?),
         #[cfg(not(target_os = "linux"))]
         config::ComType::CAN => {
             let _ = can_bus;
@@ -123,7 +115,7 @@ fn init_device(
         config::ComType::IEC104 => return Err(DeviceError::UnSupportedComType),
         config::ComType::IEC61850 => return Err(DeviceError::UnSupportedComType),
         #[cfg(target_os = "linux")]
-        config::ComType::GPIO => Box::new(GpioDev::new(dev, center)?),
+        config::ComType::GPIO => Box::new(GpioDev::new(dev)?),
         #[cfg(not(target_os = "linux"))]
         config::ComType::GPIO => return Err(DeviceError::UnSupportedComType),
     };

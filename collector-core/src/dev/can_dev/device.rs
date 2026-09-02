@@ -5,7 +5,7 @@ use tokio::task::JoinHandle;
 use tokio::time;
 use tracing::{info, warn};
 
-use crate::center::SharedPointCenter;
+use crate::center::data_center;
 use crate::{
     center::DataCenterError,
     config::{self, Device, can_conf::CanConfigs},
@@ -27,16 +27,11 @@ pub struct CanDev {
     stop_tx: watch::Sender<bool>,
     stop_rx: watch::Receiver<bool>,
     task: Mutex<Option<JoinHandle<()>>>,
-    center: SharedPointCenter,
     can_bus: SharedCanBus,
 }
 
 impl CanDev {
-    pub fn new(
-        dev: Device,
-        center: SharedPointCenter,
-        can_bus: SharedCanBus,
-    ) -> Result<Self, DeviceError> {
+    pub fn new(dev: Device, can_bus: SharedCanBus) -> Result<Self, DeviceError> {
         let Some(id) = dev.id else {
             return Err(DeviceError::InvalidId);
         };
@@ -64,7 +59,6 @@ impl CanDev {
             stop_tx,
             stop_rx,
             task: Mutex::new(None),
-            center,
             can_bus,
         })
     }
@@ -106,11 +100,11 @@ impl Lifecycle for CanDev {
         }
 
         let (tx, rx) = tokio::sync::mpsc::channel::<Vec<DownDataPoint>>(16);
-        match self.center.attach_downlink(&self.id, tx.clone()) {
+        match data_center().attach_downlink(&self.id, tx.clone()) {
             Ok(()) => {}
             Err(DataCenterError::DevHasRegister(_)) => {
-                self.center.detach_downlink(&self.id);
-                if let Err(err) = self.center.attach_downlink(&self.id, tx) {
+                data_center().detach_downlink(&self.id);
+                if let Err(err) = data_center().attach_downlink(&self.id, tx) {
                     warn!("[{}] 重新注册数据中心失败: {}", self.id, err);
                     return Ok(());
                 }
@@ -138,7 +132,6 @@ impl Lifecycle for CanDev {
             stop_rx: self.stop_rx.clone(),
             rx,
             raw_rx,
-            center: self.center.clone(),
         };
         let handle = tokio::spawn(async move {
             runner.run().await;
@@ -155,7 +148,7 @@ impl Lifecycle for CanDev {
             LifecycleState::Stopped => return Ok(()),
             LifecycleState::New | LifecycleState::Ready => {
                 self.store_state(LifecycleState::Stopped);
-                self.center.detach_downlink(&self.id);
+                data_center().detach_downlink(&self.id);
                 return Ok(());
             }
             LifecycleState::Stopping => {}
@@ -164,7 +157,7 @@ impl Lifecycle for CanDev {
             }
         }
 
-        self.center.detach_downlink(&self.id);
+        data_center().detach_downlink(&self.id);
         let mut task_guard = self.task.lock().await;
         if let Some(mut handle) = task_guard.take() {
             tokio::select! {

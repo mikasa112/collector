@@ -1,5 +1,5 @@
 use collector_core::{
-    center::{DataCenterError, SharedPointCenter},
+    center::{DataCenterError, data_center},
     core::point::{DownDataPoint, PointRef, Val},
     down,
 };
@@ -22,20 +22,19 @@ pub trait Command: crate::DataDriven + Send + Sync + 'static {
     fn name(&self) -> &str;
 }
 
-pub struct EmuPower {
-    center: SharedPointCenter,
-}
+pub struct EmuPower {}
 
 impl EmuPower {
-    pub fn new(center: SharedPointCenter) -> Self {
-        Self { center }
+    pub fn new() -> Self {
+        Self {}
     }
 }
 
 impl EmuPower {
     async fn grid_on_start(&self) -> Result<(), CommandError> {
+        let center = data_center();
         // bcu 启动
-        self.center
+        center
             .dispatch("bcu", vec![down!(id: 3, Val::U8(0x1))])
             .await?;
         //等待PCS上电，建立通信
@@ -44,7 +43,7 @@ impl EmuPower {
         let mut tries = 0;
         loop {
             ticker.tick().await;
-            if let Some(comm) = self.center.read("pcs", 0xFFFF)
+            if let Some(comm) = center.read("pcs", 0xFFFF)
                 && comm.value == Val::U8(0)
             {
                 break;
@@ -56,23 +55,24 @@ impl EmuPower {
             }
         }
         // 1. 设置远程
-        self.center
+        center
             .dispatch("pcs", vec![down!(id: 3006, Val::U8(1))])
             .await?;
         // 2. 清除故障
-        self.center
+        center
             .dispatch("pcs", vec![down!(id: 3000, Val::U8(1))])
             .await?;
         // 3. 开机指令
-        self.center
+        center
             .dispatch("pcs", vec![down!(id: 3001, Val::U8(1))])
             .await?;
         tracing::info!("[系统并网上电] 成功");
         Ok(())
     }
     async fn grid_off_start(&self) -> Result<(), CommandError> {
+        let center = data_center();
         // bcu 启动
-        self.center
+        center
             .dispatch("bcu", vec![down!(id: 3, Val::U8(0x1))])
             .await?;
         //等待PCS上电，建立通信
@@ -81,7 +81,7 @@ impl EmuPower {
         let mut tries = 0;
         loop {
             ticker.tick().await;
-            if let Some(comm) = self.center.read("pcs", 0xFFFF)
+            if let Some(comm) = center.read("pcs", 0xFFFF)
                 && comm.value == Val::U8(0)
             {
                 break;
@@ -97,7 +97,7 @@ impl EmuPower {
         // 3. 设置为VF离网模式
         // 4. 设置离网输出给定电压
         // 5. 开机指令
-        self.center
+        center
             .dispatch(
                 "pcs",
                 vec![

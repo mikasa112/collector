@@ -11,7 +11,7 @@ use tokio::{
 use tracing::{error, info};
 
 use crate::{
-    center::SharedPointCenter,
+    center::data_center,
     config::{MqttRoute, Project},
     core::point::{DownDataPoint, Val},
     dock::mqtt::MqttOverrideStore,
@@ -51,17 +51,14 @@ struct MqttClientConf {
 }
 
 impl MqttClient {
-    pub fn from_project(
-        project: &mut Project,
-        center: SharedPointCenter,
-    ) -> Result<Option<Self>, MqttClientError> {
+    pub fn from_project(project: &mut Project) -> Result<Option<Self>, MqttClientError> {
         let Some(conf) = MqttClientConf::from_project(project) else {
             return Ok(None);
         };
-        Self::new(conf, center).map(Some)
+        Self::new(conf).map(Some)
     }
 
-    fn new(conf: MqttClientConf, center: SharedPointCenter) -> Result<Self, MqttClientError> {
+    fn new(conf: MqttClientConf) -> Result<Self, MqttClientError> {
         let MqttClientConf {
             mqtt_host,
             mqtt_port,
@@ -82,12 +79,10 @@ impl MqttClient {
             mqtt_yk,
             client.clone(),
             watch_rx,
-            center.clone(),
             eventloop,
         ));
         let publish_task = tokio::spawn(publisher(
             watch_tx.subscribe(),
-            center.clone(),
             client.clone(),
             mqtt_routes.clone(),
             override_store.clone(),
@@ -133,7 +128,6 @@ impl MqttClientConf {
 
 async fn publisher(
     mut publish_stop_rx: watch::Receiver<bool>,
-    center: SharedPointCenter,
     client: AsyncClient,
     publish_routes: Vec<MqttRoute>,
     override_store: MqttOverrideStore,
@@ -149,7 +143,7 @@ async fn publisher(
                 }
             }
             _ = ticker.tick() => {
-                publish_routes_task(center.as_ref(), &client, &publish_routes, &override_store)
+                publish_routes_task(&client, &publish_routes, &override_store)
                     .await;
             }
         }
@@ -161,7 +155,6 @@ async fn receiver(
     mqtt_yk: String,
     event_client: AsyncClient,
     mut watch_rx: watch::Receiver<bool>,
-    event_center: SharedPointCenter,
     mut eventloop: EventLoop,
 ) {
     if !mqtt_yt.is_empty()
@@ -192,7 +185,6 @@ async fn receiver(
                 match event {
                     Ok(Event::Incoming(Packet::Publish(p))) => {
                         if let Err(e) = handle_incoming_publish(
-                            event_center.as_ref(),
                             p.topic.as_str(),
                             &p.payload,
                         ).await {
@@ -210,11 +202,7 @@ async fn receiver(
     }
 }
 
-async fn handle_incoming_publish(
-    center: &dyn crate::center::PointCenter,
-    topic: &str,
-    payload: &Bytes,
-) -> Result<(), MqttReceiveError> {
+async fn handle_incoming_publish(topic: &str, payload: &Bytes) -> Result<(), MqttReceiveError> {
     let text = std::str::from_utf8(payload.as_ref()).unwrap_or_default();
     let raw: serde_json::Value = serde_json::from_str(text)?;
     let device_id = parse_device_id_from_topic(topic)?;
@@ -222,7 +210,7 @@ async fn handle_incoming_publish(
     if points.is_empty() {
         return Ok(());
     }
-    if let Err(e) = center.dispatch(&device_id, points).await {
+    if let Err(e) = data_center().dispatch(&device_id, points).await {
         error!("mqtt dispatch error on topic {}: {}", topic, e);
     }
     Ok(())
@@ -311,7 +299,6 @@ fn i64_to_val(value: i64) -> Val {
 }
 
 async fn publish_routes_task(
-    center: &dyn crate::center::PointCenter,
     client: &AsyncClient,
     routes: &[MqttRoute],
     override_store: &MqttOverrideStore,
@@ -322,7 +309,7 @@ async fn publish_routes_task(
             let payload = if let Some(override_val) = override_store.get(&rule.topic) {
                 serde_json::to_vec(&override_val).ok()
             } else {
-                let points = center.read_many(route.device_id.as_str(), &rule.point_ids);
+                let points = data_center().read_many(route.device_id.as_str(), &rule.point_ids);
                 let mut map = serde_json::Map::with_capacity(points.len());
                 for point in points {
                     if let Ok(value) = serde_json::to_value(&point.value) {

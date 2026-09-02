@@ -8,7 +8,7 @@ use crate::{
     strategy::{Schedule, Strategy},
 };
 use collector_core::{
-    center::{DataCenterError, SharedPointCenter},
+    center::{DataCenterError, data_center},
     core::point::DownDataPoint,
     dev::{DeviceError, Executable, Identifiable, Lifecycle, LifecycleState, state::SharedState},
     utils::database::get_database,
@@ -28,22 +28,19 @@ pub struct Emu {
     stop_tx: watch::Sender<bool>,
     stop_rx: watch::Receiver<bool>,
     handles: Mutex<Vec<JoinHandle<()>>>,
-    center: SharedPointCenter,
 }
 
 impl Emu {
-    pub async fn new(center: SharedPointCenter) -> Self {
+    pub async fn new() -> Self {
         let commands: Arc<AsyncMutex<Vec<Box<dyn Command>>>> =
-            Arc::new(AsyncMutex::new(vec![Box::new(cmd::EmuPower::new(
-                center.clone(),
-            ))]));
+            Arc::new(AsyncMutex::new(vec![Box::new(cmd::EmuPower::new())]));
         let pool = get_database().expect("[engine] 数据库初始化失败");
         let strategies: Arc<AsyncMutex<Vec<Box<dyn Strategy>>>> = Arc::new(AsyncMutex::new(vec![
-            Box::new(emu_runtime::EmuRuntime::new(center.clone())),
-            Box::new(fault::FaultDiagnosis::new(center.clone())),
-            Box::new(tms::Tms::new(center.clone())),
-            Box::new(planned_curve::PlannedCurve::new(center.clone(), pool)),
-            Box::new(taos::TaosWriter::new(center.clone())),
+            Box::new(emu_runtime::EmuRuntime::new()),
+            Box::new(fault::FaultDiagnosis::new()),
+            Box::new(tms::Tms::new()),
+            Box::new(planned_curve::PlannedCurve::new(pool)),
+            Box::new(taos::TaosWriter::new()),
         ]));
         let state = SharedState::new(LifecycleState::New);
         let (stop_tx, stop_rx) = watch::channel(false);
@@ -55,7 +52,6 @@ impl Emu {
             stop_tx,
             stop_rx,
             handles: Mutex::new(Vec::new()),
-            center,
         }
     }
 
@@ -91,11 +87,11 @@ impl Lifecycle for Emu {
         }
         let (tx, rx) = tokio::sync::mpsc::channel::<Vec<DownDataPoint>>(16);
         //将设备注册到消息中心
-        match self.center.attach_downlink(&self.id, tx.clone()) {
+        match data_center().attach_downlink(&self.id, tx.clone()) {
             Ok(()) => {}
             Err(DataCenterError::DevHasRegister(_)) => {
-                self.center.detach_downlink(&self.id);
-                if let Err(err) = self.center.attach_downlink(&self.id, tx) {
+                data_center().detach_downlink(&self.id);
+                if let Err(err) = data_center().attach_downlink(&self.id, tx) {
                     tracing::warn!("[{}] 重新注册数据中心失败: {}", self.id, err);
                     self.store_state(LifecycleState::Failed);
                     return Ok(());
@@ -138,7 +134,7 @@ impl Lifecycle for Emu {
             LifecycleState::Stopped => return Ok(()),
             LifecycleState::New | LifecycleState::Ready => {
                 self.store_state(LifecycleState::Stopped);
-                self.center.detach_downlink(&self.id);
+                data_center().detach_downlink(&self.id);
                 return Ok(());
             }
             LifecycleState::Stopping => {}
@@ -147,7 +143,7 @@ impl Lifecycle for Emu {
             }
         }
         //注销设备
-        self.center.detach_downlink(&self.id);
+        data_center().detach_downlink(&self.id);
         let handles: Vec<JoinHandle<()>> = {
             let mut handles = self.handles.lock();
             handles.drain(..).collect()

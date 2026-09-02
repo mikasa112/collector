@@ -40,7 +40,7 @@ use tokio::sync::watch;
 use tracing::warn;
 
 use crate::{
-    center::{DataCenterError, DownlinkSender, PointCenter},
+    center::{DataCenterError, DownlinkSender},
     core::point::{DataPoint, DownDataPoint, PointId, PointRef, Val},
     runtime::emu::EmuPermission,
 };
@@ -125,57 +125,7 @@ impl DataCenter {
             }
         }
     }
-}
 
-/// 设备缓存结构
-///
-/// 存储单个设备的所有数据点，使用双层缓存策略优化性能
-struct DeviceCache {
-    /// 数据点索引：PointId -> DataPoint
-    /// 用于快速查询单个或多个数据点
-    latest_by_id: AHashMap<PointId, DataPoint>,
-
-    /// Key 到 PointId 的索引
-    /// 用于通过 key 快速查找数据点
-    by_key: AHashMap<&'static str, PointId>,
-
-    /// Name 到 PointId 的索引
-    /// 用于通过 name 快速查找数据点
-    by_name: AHashMap<&'static str, PointId>,
-
-    /// 排序后的数据点快照（按 PointId 排序）
-    /// 使用 Arc 实现零拷贝共享
-    snapshot: Arc<[DataPoint]>,
-
-    /// 数据版本号
-    /// 每次数据变化时递增，用于检测数据是否更新
-    version: u64,
-
-    /// 快照版本号
-    /// 记录快照对应的数据版本，用于判断快照是否需要重建
-    snapshot_version: u64,
-
-    /// 数据更新通知发送器
-    /// 用于向订阅者推送数据变化通知
-    update_tx: Option<watch::Sender<Arc<[DataPoint]>>>,
-}
-
-impl Default for DeviceCache {
-    fn default() -> Self {
-        Self {
-            latest_by_id: AHashMap::new(),
-            by_key: AHashMap::new(),
-            by_name: AHashMap::new(),
-            snapshot: Arc::from([]),
-            version: 0,
-            snapshot_version: 0,
-            update_tx: None,
-        }
-    }
-}
-
-#[async_trait::async_trait]
-impl PointCenter for DataCenter {
     /// 摄入数据点
     ///
     /// 接收来自设备的数据点，更新缓存并通知订阅者
@@ -184,7 +134,7 @@ impl PointCenter for DataCenter {
     /// - 只在数据实际变化时更新版本号
     /// - 只在有订阅者时才构建快照
     /// - 使用值比较避免无效更新
-    fn ingest(&self, dev_id: &str, points: Vec<DataPoint>) {
+    pub fn ingest(&self, dev_id: &str, points: Vec<DataPoint>) {
         let device = self.get_or_create_device(dev_id);
         let mut cache = Self::write_cache(&device, dev_id);
 
@@ -252,7 +202,7 @@ impl PointCenter for DataCenter {
     /// 下发数据点到设备
     ///
     /// 将控制指令通过下行通道直接转发给设备驱动，由驱动负责解析 PointRef。
-    async fn dispatch(
+    pub async fn dispatch(
         &self,
         dev_id: &str,
         mut points: Vec<DownDataPoint>,
@@ -304,13 +254,13 @@ impl PointCenter for DataCenter {
     /// # 返回
     /// - `Some(DataPoint)` - 如果数据点存在
     /// - `None` - 如果设备或数据点不存在
-    fn read(&self, dev_id: &str, point_id: PointId) -> Option<DataPoint> {
+    pub fn read(&self, dev_id: &str, point_id: PointId) -> Option<DataPoint> {
         let device = self.devices.get(dev_id)?;
         let cache = Self::read_cache(&device, dev_id);
         cache.latest_by_id.get(&point_id).cloned()
     }
 
-    fn read_by_key(&self, dev_id: &str, key: &str) -> Option<DataPoint> {
+    pub fn read_by_key(&self, dev_id: &str, key: &str) -> Option<DataPoint> {
         let device = self.devices.get(dev_id)?;
         let cache = Self::read_cache(&device, dev_id);
         let point_id = cache.by_key.get(key).copied()?;
@@ -321,7 +271,7 @@ impl PointCenter for DataCenter {
     ///
     /// # 返回
     /// 存在的数据点列表（不存在的点会被过滤掉）
-    fn read_many(&self, dev_id: &str, point_ids: &[PointId]) -> Vec<DataPoint> {
+    pub fn read_many(&self, dev_id: &str, point_ids: &[PointId]) -> Vec<DataPoint> {
         let Some(device) = self.devices.get(dev_id) else {
             return Vec::new();
         };
@@ -341,7 +291,7 @@ impl PointCenter for DataCenter {
     ///
     /// # 性能优化
     /// - 复用 `read_all` 的排序快照，通过二分查找定位范围边界
-    fn read_range(&self, dev_id: &str, start_id: PointId, end_id: PointId) -> Vec<DataPoint> {
+    pub fn read_range(&self, dev_id: &str, start_id: PointId, end_id: PointId) -> Vec<DataPoint> {
         if start_id > end_id {
             return Vec::new();
         }
@@ -362,7 +312,7 @@ impl PointCenter for DataCenter {
     ///
     /// # 返回
     /// 按 PointId 排序的数据点快照
-    fn read_all(&self, dev_id: &str) -> Arc<[DataPoint]> {
+    pub fn read_all(&self, dev_id: &str) -> Arc<[DataPoint]> {
         let Some(device) = self.devices.get(dev_id) else {
             return Arc::from([]);
         };
@@ -388,13 +338,8 @@ impl PointCenter for DataCenter {
         cache.snapshot.clone()
     }
 
-    /// 获取所有设备ID列表
-    fn dev_ids(&self) -> Vec<String> {
-        self.devices.iter().map(|it| it.key().to_owned()).collect()
-    }
-
     /// 判断设备是否已注册下行通道
-    fn has_downlink(&self, dev_id: &str) -> bool {
+    pub fn has_downlink(&self, dev_id: &str) -> bool {
         self.downlinks.contains_key(dev_id)
     }
 
@@ -404,7 +349,7 @@ impl PointCenter for DataCenter {
     ///
     /// # 错误
     /// - `DevHasRegister` - 如果设备已经注册了下行通道
-    fn attach_downlink(&self, dev_id: &str, tx: DownlinkSender) -> Result<(), DataCenterError> {
+    pub fn attach_downlink(&self, dev_id: &str, tx: DownlinkSender) -> Result<(), DataCenterError> {
         use dashmap::mapref::entry::Entry as DashEntry;
 
         match self.downlinks.entry(dev_id.to_owned()) {
@@ -419,7 +364,7 @@ impl PointCenter for DataCenter {
     /// 分离下行通道
     ///
     /// 移除设备的下行数据发送器
-    fn detach_downlink(&self, dev_id: &str) {
+    pub fn detach_downlink(&self, dev_id: &str) {
         self.downlinks.remove(dev_id);
     }
 
@@ -445,7 +390,7 @@ impl PointCenter for DataCenter {
     ///     // 处理更新的数据
     /// }
     /// ```
-    fn subscribe(&self, dev_id: &str) -> Option<watch::Receiver<Arc<[DataPoint]>>> {
+    pub fn subscribe(&self, dev_id: &str) -> Option<watch::Receiver<Arc<[DataPoint]>>> {
         let device = self.devices.get(dev_id)?;
         let mut cache = Self::write_cache(&device, dev_id);
 
@@ -467,15 +412,59 @@ impl PointCenter for DataCenter {
     }
 }
 
+/// 设备缓存结构
+///
+/// 存储单个设备的所有数据点，使用双层缓存策略优化性能
+struct DeviceCache {
+    /// 数据点索引：PointId -> DataPoint
+    /// 用于快速查询单个或多个数据点
+    latest_by_id: AHashMap<PointId, DataPoint>,
+
+    /// Key 到 PointId 的索引
+    /// 用于通过 key 快速查找数据点
+    by_key: AHashMap<&'static str, PointId>,
+
+    /// Name 到 PointId 的索引
+    /// 用于通过 name 快速查找数据点
+    by_name: AHashMap<&'static str, PointId>,
+
+    /// 排序后的数据点快照（按 PointId 排序）
+    /// 使用 Arc 实现零拷贝共享
+    snapshot: Arc<[DataPoint]>,
+
+    /// 数据版本号
+    /// 每次数据变化时递增，用于检测数据是否更新
+    version: u64,
+
+    /// 快照版本号
+    /// 记录快照对应的数据版本，用于判断快照是否需要重建
+    snapshot_version: u64,
+
+    /// 数据更新通知发送器
+    /// 用于向订阅者推送数据变化通知
+    update_tx: Option<watch::Sender<Arc<[DataPoint]>>>,
+}
+
+impl Default for DeviceCache {
+    fn default() -> Self {
+        Self {
+            latest_by_id: AHashMap::new(),
+            by_key: AHashMap::new(),
+            by_name: AHashMap::new(),
+            snapshot: Arc::from([]),
+            version: 0,
+            snapshot_version: 0,
+            update_tx: None,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
 
     use super::DataCenter;
-    use crate::{
-        center::PointCenter,
-        core::point::{DataPoint, Val},
-    };
+    use crate::core::point::{DataPoint, Val};
 
     fn point(id: u32, value: u8) -> DataPoint {
         DataPoint {

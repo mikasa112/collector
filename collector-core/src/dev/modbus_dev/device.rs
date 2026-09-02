@@ -5,7 +5,7 @@ use tokio::task::JoinHandle;
 use tokio::time;
 use tracing::{info, warn};
 
-use crate::center::{DataCenterError, SharedPointCenter};
+use crate::center::{DataCenterError, data_center};
 use crate::config::modbus_conf::ModbusConfigs;
 use crate::config::{self, Device};
 use crate::core::point::DownDataPoint;
@@ -26,7 +26,6 @@ pub struct ModbusDev {
     stop_tx: watch::Sender<bool>,
     stop_rx: watch::Receiver<bool>,
     task: Mutex<Option<JoinHandle<()>>>,
-    center: SharedPointCenter,
 }
 
 impl ModbusDev {
@@ -35,7 +34,7 @@ impl ModbusDev {
     /// - `dev`: 设备配置信息
     /// # 返回值
     /// - `Result<Self, DeviceError>`: 新建的设备实例或错误信息
-    pub fn new(dev: Device, center: SharedPointCenter) -> Result<Self, DeviceError> {
+    pub fn new(dev: Device) -> Result<Self, DeviceError> {
         let Some(id) = dev.id else {
             return Err(DeviceError::InvalidId);
         };
@@ -81,7 +80,6 @@ impl ModbusDev {
             stop_tx,
             stop_rx,
             task: Mutex::new(None),
-            center,
         })
     }
 
@@ -138,11 +136,11 @@ impl Lifecycle for ModbusDev {
         }
         let (tx, rx) = tokio::sync::mpsc::channel::<Vec<DownDataPoint>>(16);
         //将设备注册到消息中心
-        match self.center.attach_downlink(&self.id, tx.clone()) {
+        match data_center().attach_downlink(&self.id, tx.clone()) {
             Ok(()) => {}
             Err(DataCenterError::DevHasRegister(_)) => {
-                self.center.detach_downlink(&self.id);
-                if let Err(err) = self.center.attach_downlink(&self.id, tx) {
+                data_center().detach_downlink(&self.id);
+                if let Err(err) = data_center().attach_downlink(&self.id, tx) {
                     warn!("[{}] 重新注册数据中心失败: {}", self.id, err);
                     return Ok(());
                 }
@@ -165,7 +163,6 @@ impl Lifecycle for ModbusDev {
             state: self.state.clone(),
             stop_rx: self.stop_rx.clone(),
             rx,
-            center: self.center.clone(),
         };
         //启动任务
         let handle = tokio::spawn(async move {
@@ -184,7 +181,7 @@ impl Lifecycle for ModbusDev {
             LifecycleState::Stopped => return Ok(()),
             LifecycleState::New | LifecycleState::Ready => {
                 self.store_state(LifecycleState::Stopped);
-                self.center.detach_downlink(&self.id);
+                data_center().detach_downlink(&self.id);
                 return Ok(());
             }
             LifecycleState::Stopping => {}
@@ -193,7 +190,7 @@ impl Lifecycle for ModbusDev {
             }
         }
         //注销设备
-        self.center.detach_downlink(&self.id);
+        data_center().detach_downlink(&self.id);
         let mut task_guard = self.task.lock().await;
         if let Some(mut handle) = task_guard.take() {
             //等待任务结束

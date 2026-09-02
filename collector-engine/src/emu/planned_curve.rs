@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use chrono::{Datelike, Timelike};
 use collector_core::{
-    center::SharedPointCenter,
+    center::data_center,
     core::point::{DataPoint, DownDataPoint, PointRef, Val},
     down,
     runtime::core::get_runtime,
@@ -44,19 +44,14 @@ enum PlannedCurveError {
 }
 
 pub struct PlannedCurve {
-    center: SharedPointCenter,
     pool: SqlitePool,
     //最近一次下发的 (curve_id, time_index)，避免同一时段重复下发
     last: Option<(u32, u8)>,
 }
 
 impl PlannedCurve {
-    pub fn new(center: SharedPointCenter, pool: SqlitePool) -> Self {
-        Self {
-            center,
-            pool,
-            last: None,
-        }
+    pub fn new(pool: SqlitePool) -> Self {
+        Self { pool, last: None }
     }
 
     async fn active(&self) -> Result<Option<PlanCurveMaster>, PlannedCurveError> {
@@ -112,6 +107,7 @@ impl PlannedCurve {
 
     /// 根据当前生效曲线与时间段，下发对应的有功功率设定
     async fn apply(&mut self) {
+        let center = data_center();
         let Ok(active) = self.active().await else {
             tracing::debug!("[计划曲线] 查询生效曲线失败");
             return;
@@ -134,7 +130,7 @@ impl PlannedCurve {
             return;
         }
         if let Some(limit) = detail.soc_limit
-            && let Some(current_soc) = self.center.read("bcu", 32)
+            && let Some(current_soc) = center.read("bcu", 32)
         {
             let soc = f64::try_from(current_soc.value);
             if let Ok(soc) = soc {
@@ -147,8 +143,7 @@ impl PlannedCurve {
                     false
                 };
                 if reach_limit {
-                    if let Err(e) = self
-                        .center
+                    if let Err(e) = center
                         .dispatch("pcs", vec![down!(id: 2003, Val::F64(0.0))])
                         .await
                     {
@@ -166,8 +161,7 @@ impl PlannedCurve {
                 }
             }
         }
-        if let Err(e) = self
-            .center
+        if let Err(e) = center
             .dispatch("pcs", vec![down!(id: 2003, Val::F64(detail.power_value))])
             .await
         {
@@ -211,19 +205,19 @@ impl Strategy for PlannedCurve {
     async fn on_start(&mut self) -> Result<(), StrategyError> {
         let runtime = get_runtime().await?;
         let enable = runtime.planned_curve.get_planned_curve_enable();
-        self.center.ingest("emu", vec![self.point(enable)]);
+        data_center().ingest("emu", vec![self.point(enable)]);
         if !enable {
             return Ok(());
         }
         self.apply().await;
-        self.center.ingest("emu", vec![self.point(enable)]);
+        data_center().ingest("emu", vec![self.point(enable)]);
         Ok(())
     }
 
     async fn on_tick(&mut self) -> Result<(), StrategyError> {
         let runtime = get_runtime().await?;
         let enable = runtime.planned_curve.get_planned_curve_enable();
-        self.center.ingest("emu", vec![self.point(enable)]);
+        data_center().ingest("emu", vec![self.point(enable)]);
         if !enable {
             return Ok(());
         }
@@ -240,8 +234,7 @@ impl DataDriven for PlannedCurve {
                 || p.point == PointRef::Key(KEY_PLANNED_CURVE.to_string())
             {
                 let runtime = get_runtime().await?;
-                self.center
-                    .ingest("emu", vec![self.point(p.value.as_bool()?)]);
+                data_center().ingest("emu", vec![self.point(p.value.as_bool()?)]);
                 runtime
                     .planned_curve
                     .set_planned_curve_enable(p.value.as_bool()?)

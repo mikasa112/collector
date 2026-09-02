@@ -1,45 +1,17 @@
-use std::sync::Arc;
+use std::sync::LazyLock;
 
-use crate::core::point::{DataPoint, DownDataPoint, PointId};
+use crate::core::point::DownDataPoint;
 
 pub mod data_center;
 
 pub use data_center::DataCenter;
-use tokio::sync::watch;
 
 pub type DownlinkSender = tokio::sync::mpsc::Sender<Vec<DownDataPoint>>;
-pub type SharedPointCenter = Arc<dyn PointCenter>;
 
-#[async_trait::async_trait]
-pub trait PointCenter: Send + Sync {
-    fn ingest(&self, dev_id: &str, points: Vec<DataPoint>);
+static DATA_CENTER: LazyLock<DataCenter> = LazyLock::new(|| DataCenter::new(64));
 
-    async fn dispatch(
-        &self,
-        dev_id: &str,
-        points: Vec<DownDataPoint>,
-    ) -> Result<(), DataCenterError>;
-
-    fn read(&self, dev_id: &str, point_id: PointId) -> Option<DataPoint>;
-
-    fn read_by_key(&self, dev_id: &str, key: &str) -> Option<DataPoint>;
-
-    fn read_many(&self, dev_id: &str, point_ids: &[PointId]) -> Vec<DataPoint>;
-
-    /// 读取指定 id 范围内（闭区间 `[start_id, end_id]`）的所有数据点
-    fn read_range(&self, dev_id: &str, start_id: PointId, end_id: PointId) -> Vec<DataPoint>;
-
-    fn read_all(&self, dev_id: &str) -> Arc<[DataPoint]>;
-
-    fn dev_ids(&self) -> Vec<String>;
-
-    fn has_downlink(&self, dev_id: &str) -> bool;
-
-    fn attach_downlink(&self, dev_id: &str, tx: DownlinkSender) -> Result<(), DataCenterError>;
-
-    fn detach_downlink(&self, dev_id: &str);
-
-    fn subscribe(&self, dev_id: &str) -> Option<watch::Receiver<Arc<[DataPoint]>>>;
+pub fn data_center() -> &'static DataCenter {
+    &DATA_CENTER
 }
 
 #[derive(Debug, thiserror::Error)]

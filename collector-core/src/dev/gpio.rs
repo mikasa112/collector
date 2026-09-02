@@ -7,8 +7,9 @@ use tokio::sync::{Mutex, watch};
 use tokio::task::{self, JoinHandle};
 use tokio::time;
 
+use crate::center::data_center;
 use crate::{
-    center::{DataCenterError, SharedPointCenter},
+    center::DataCenterError,
     config::{
         self, Device,
         gpio_conf::{Direction, GpioConfig, GpioConfigs},
@@ -19,7 +20,6 @@ use crate::{
 
 pub struct GpioDev {
     id: String,
-    center: SharedPointCenter,
     state: SharedState,
     configs: GpioConfigs,
     stop_tx: watch::Sender<bool>,
@@ -29,7 +29,7 @@ pub struct GpioDev {
 }
 
 impl GpioDev {
-    pub fn new(dev: Device, center: SharedPointCenter) -> Result<Self, DeviceError> {
+    pub fn new(dev: Device) -> Result<Self, DeviceError> {
         let Some(id) = dev.id else {
             return Err(DeviceError::InvalidId);
         };
@@ -56,7 +56,6 @@ impl GpioDev {
         tracing::info!("加载{}配置成功!", id);
         Ok(Self {
             id,
-            center,
             state,
             configs,
             stop_tx,
@@ -105,11 +104,11 @@ impl Lifecycle for GpioDev {
         }
         let (tx, rx) = tokio::sync::mpsc::channel::<Vec<DownDataPoint>>(8);
         //将设备注册到消息中心
-        match self.center.attach_downlink(&self.id, tx.clone()) {
+        match data_center().attach_downlink(&self.id, tx.clone()) {
             Ok(()) => {}
             Err(DataCenterError::DevHasRegister(_)) => {
-                self.center.detach_downlink(&self.id);
-                if let Err(err) = self.center.attach_downlink(&self.id, tx) {
+                data_center().detach_downlink(&self.id);
+                if let Err(err) = data_center().attach_downlink(&self.id, tx) {
                     tracing::warn!("[{}] 重新注册数据中心失败: {}", self.id, err);
                     return Ok(());
                 }
@@ -139,12 +138,11 @@ impl Lifecycle for GpioDev {
 
         // 启动 DI 监听任务
         let di_handle = {
-            let center = self.center.clone();
             let id = self.id.clone();
             let devs = conf_devs.clone();
             let stop_rx = self.stop_rx.clone();
             tokio::spawn(async move {
-                if let Err(e) = handle_di(id.clone(), devs, center, stop_rx).await {
+                if let Err(e) = handle_di(id.clone(), devs, stop_rx).await {
                     tracing::error!("[{}] DI处理错误: {}", id, e);
                 }
             })
@@ -178,7 +176,7 @@ impl Lifecycle for GpioDev {
             LifecycleState::Stopped => return Ok(()),
             LifecycleState::New | LifecycleState::Ready => {
                 self.store_state(LifecycleState::Stopped);
-                self.center.detach_downlink(&self.id);
+                data_center().detach_downlink(&self.id);
                 return Ok(());
             }
             LifecycleState::Stopping => {}
@@ -188,7 +186,7 @@ impl Lifecycle for GpioDev {
         }
 
         // 从数据中心注销
-        self.center.detach_downlink(&self.id);
+        data_center().detach_downlink(&self.id);
 
         // 停止 DI 任务
         let mut di_task_guard = self.di_task.lock().await;
@@ -256,7 +254,6 @@ fn create_gpio_devs(configs: GpioConfigs) -> Result<Vec<GpioConfDev>, gpio_cdev:
 async fn handle_di(
     id: String,
     devs: Vec<GpioConfDev>,
-    center: SharedPointCenter,
     mut stop_rx: watch::Receiver<bool>,
 ) -> Result<(), gpio_cdev::Error> {
     let handles = devs
@@ -285,13 +282,12 @@ async fn handle_di(
     tracing::info!("[{}] DI监听任务启动，监听{}个输入", id, handles.len());
 
     for (config, mut handle) in handles {
-        let center = center.clone();
         let id = id.clone();
         let mut stop_rx_clone = stop_rx.clone();
 
         // 启动时先读一次当前电平并上送，避免下游在首次变位前拿不到该点位的值
         match handle.as_ref().get_value() {
-            Ok(value) => center.ingest(id.as_str(), vec![config.to_data_point(value)]),
+            Ok(value) => data_center().ingest(id.as_str(), vec![config.to_data_point(value)]),
             Err(err) => tracing::warn!("[{}] 读取GPIO[{}]初始值失败: {}", id, config.key, err),
         }
 
@@ -308,10 +304,10 @@ async fn handle_di(
                         match event {
                             Some(Ok(event)) => match event.event_type() {
                                 gpio_cdev::EventType::RisingEdge => {
-                                    center.ingest(id.as_str(), vec![config.to_data_point(1)]);
+                                    data_center().ingest(id.as_str(), vec![config.to_data_point(1)]);
                                 }
                                 gpio_cdev::EventType::FallingEdge => {
-                                    center.ingest(id.as_str(), vec![config.to_data_point(0)]);
+                                    data_center().ingest(id.as_str(), vec![config.to_data_point(0)]);
                                 }
                             },
                             Some(Err(err)) => {

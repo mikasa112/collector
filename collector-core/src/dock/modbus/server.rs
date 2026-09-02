@@ -7,8 +7,8 @@ use tokio::sync::mpsc;
 use tokio_modbus::server::tcp::{Server, accept_tcp_connection};
 use tokio_modbus::{ExceptionCode, Response, SlaveRequest};
 
+use crate::center::data_center;
 use crate::{
-    center::SharedPointCenter,
     config::{
         modbus_conf::RegisterType,
         north_modbus_conf::{
@@ -111,20 +111,14 @@ pub enum ModbusServerError {
 
 pub struct ModbusServer {
     configs: Arc<NorthboundConfigs>,
-    center: SharedPointCenter,
     addr: SocketAddr,
 }
 
 impl ModbusServer {
-    pub fn new<P: AsRef<Path>>(
-        path: P,
-        addr: SocketAddr,
-        center: SharedPointCenter,
-    ) -> Result<Self, ModbusServerError> {
+    pub fn new<P: AsRef<Path>>(path: P, addr: SocketAddr) -> Result<Self, ModbusServerError> {
         let configs = build_configs(path)?;
         Ok(Self {
             configs: Arc::new(configs),
-            center,
             addr,
         })
     }
@@ -170,11 +164,10 @@ impl ModbusServer {
             let state = state.clone();
             let configs = self.configs.clone();
             let shutdown = shutdown.clone();
-            let center = self.center.clone();
             tokio::spawn(async move {
                 // 等待设备注册到 DataCenter，期间每 500ms 重试一次
                 let mut rx = loop {
-                    if let Some(rx) = center.subscribe(&dev) {
+                    if let Some(rx) = data_center().subscribe(&dev) {
                         break rx;
                     }
                     tokio::select! {
@@ -212,7 +205,6 @@ impl ModbusServer {
 
         // 写操作派发任务：接收写请求，异步下发到 DataCenter
         {
-            let center = self.center.clone();
             let configs = self.configs.clone();
             let shutdown = shutdown.clone();
             tokio::spawn(async move {
@@ -221,7 +213,7 @@ impl ModbusServer {
                     tokio::select! {
                         _ = shutdown.wait_for_shutdown() => break,
                         Some(req) = rx.recv() => {
-                            dispatch_write(&center, &configs, &coil_index, &holding_index, req).await;
+                            dispatch_write(&configs, &coil_index, &holding_index, req).await;
                         }
                     }
                 }
@@ -261,7 +253,6 @@ impl ModbusServer {
 }
 
 async fn dispatch_write(
-    center: &SharedPointCenter,
     configs: &[NorthboundConfig],
     coil_index: &HashMap<u16, usize>,
     holding_index: &HashMap<u16, usize>,
@@ -272,7 +263,7 @@ async fn dispatch_write(
             if let Some(&ci) = holding_index.get(&addr) {
                 let cfg = &configs[ci];
                 tracing::info!("[北向Modbus] ↓ {}", cfg.name);
-                let _ = center
+                let _ = data_center()
                     .dispatch(
                         &cfg.point_source.source,
                         vec![down!(id: cfg.point_source.point_id, cfg.restore_val(value))],
@@ -284,7 +275,7 @@ async fn dispatch_write(
             if let Some(&ci) = coil_index.get(&addr) {
                 let cfg = &configs[ci];
                 tracing::info!("[北向Modbus] ↓ {}", cfg.name);
-                let _ = center
+                let _ = data_center()
                     .dispatch(
                         &cfg.point_source.source,
                         vec![
@@ -300,7 +291,7 @@ async fn dispatch_write(
                 if let Some(&ci) = holding_index.get(&a) {
                     let cfg = &configs[ci];
                     tracing::info!("[北向Modbus] ↓ {}", cfg.name);
-                    let _ = center
+                    let _ = data_center()
                         .dispatch(
                             &cfg.point_source.source,
                             vec![down!(id: cfg.point_source.point_id, cfg.restore_val(value))],
@@ -315,7 +306,7 @@ async fn dispatch_write(
                 if let Some(&ci) = coil_index.get(&a) {
                     let cfg = &configs[ci];
                     tracing::info!("[北向Modbus] ↓ {}", cfg.name);
-                    let _ = center
+                    let _ = data_center()
                         .dispatch(&cfg.point_source.source, vec![down!(id: cfg.point_source.point_id, cfg.restore_val(u16::from(value)))])
                         .await;
                 }

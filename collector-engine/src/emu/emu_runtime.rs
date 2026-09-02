@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use collector_core::{
-    center::SharedPointCenter,
+    center::data_center,
     core::point::{DataPoint, DownDataPoint, PointRef, Val},
     down,
     runtime::{
@@ -19,13 +19,11 @@ use crate::{
     },
     strategy::{Schedule, Strategy, StrategyError},
 };
-pub struct EmuRuntime {
-    center: SharedPointCenter,
-}
+pub struct EmuRuntime {}
 
 impl EmuRuntime {
-    pub fn new(center: SharedPointCenter) -> Self {
-        Self { center }
+    pub fn new() -> Self {
+        Self {}
     }
 }
 
@@ -44,15 +42,14 @@ impl Strategy for EmuRuntime {
     }
 
     async fn on_tick(&mut self) -> Result<(), StrategyError> {
-        let state = self.center.read("bcu", 34);
-        let soc = self
-            .center
+        let center = data_center();
+        let state = center.read("bcu", 34);
+        let soc = center
             .read("bcu", 32)
             .map(|it| it.value.as_f64().unwrap_or(0.0))
             .unwrap_or(0.0);
         //电流负充正放
-        let bcu_current = self
-            .center
+        let bcu_current = center
             .read("bcu", 46)
             .map(|it| it.value.as_f64().unwrap_or(0.0))
             .unwrap_or(0.0);
@@ -69,8 +66,7 @@ impl Strategy for EmuRuntime {
         let discharge_limit = runtime.emu_runtime.soc_protect.discharge_limit();
         let per = if soc >= charge_limit {
             if bcu_current < 0.0 {
-                let _ = self
-                    .center
+                let _ = center
                     .dispatch("pcs", vec![down!(id: 2003, Val::F64(0.0))])
                     .await;
                 tracing::warn!("[EMU] 系统禁充, 修正有功功率为0")
@@ -78,8 +74,7 @@ impl Strategy for EmuRuntime {
             EmuPermission::ChargeDisabled
         } else if soc <= discharge_limit {
             if bcu_current > 0.0 {
-                let _ = self
-                    .center
+                let _ = center
                     .dispatch("pcs", vec![down!(id: 2003, Val::F64(0.0))])
                     .await;
                 tracing::warn!("[EMU] 系统禁放, 修正有功功率为0")
@@ -93,7 +88,7 @@ impl Strategy for EmuRuntime {
             .emu_runtime
             .health()
             .unwrap_or(collector_core::runtime::emu::HealthStatus::Alarm);
-        self.center.ingest(
+        center.ingest(
             "emu",
             vec![
                 operation_mode(s as u8),

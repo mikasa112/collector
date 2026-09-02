@@ -1,4 +1,4 @@
-use collector_core::{center::SharedPointCenter, shutdown::ShutdownManager, utils::eg25::Eg25Info};
+use collector_core::{shutdown::ShutdownManager, utils::eg25::Eg25Info};
 use salvo::{Listener, Server, conn::TcpListener};
 use tokio::sync::watch;
 use tracing::info;
@@ -16,23 +16,12 @@ pub(crate) mod services;
 pub struct ApiApp {
     ip: String,
     port: u16,
-    center: SharedPointCenter,
     eg25_rx: Option<watch::Receiver<Eg25Info>>,
 }
 
 impl ApiApp {
-    pub fn new(
-        ip: String,
-        port: u16,
-        center: SharedPointCenter,
-        eg25_rx: Option<watch::Receiver<Eg25Info>>,
-    ) -> Self {
-        Self {
-            ip,
-            port,
-            center,
-            eg25_rx,
-        }
+    pub fn new(ip: String, port: u16, eg25_rx: Option<watch::Receiver<Eg25Info>>) -> Self {
+        Self { ip, port, eg25_rx }
     }
 
     pub async fn start(self, shutdown: ShutdownManager) {
@@ -49,7 +38,7 @@ impl ApiApp {
             shutdown_handle.stop_graceful(None);
         });
 
-        server.serve(root_router(self.center, self.eg25_rx)).await;
+        server.serve(root_router(self.eg25_rx)).await;
         info!("API 服务器已关闭");
     }
 }

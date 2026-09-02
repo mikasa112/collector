@@ -4,8 +4,7 @@ use std::time::Duration;
 
 use clap::Parser;
 use collector_api::ApiApp;
-use collector_core::center::DataCenter;
-use collector_core::center::SharedPointCenter;
+use collector_core::center::data_center;
 use collector_core::config;
 use collector_core::dev::can_bus::SharedCanBus;
 use collector_core::dev::manager::DevManager;
@@ -100,14 +99,11 @@ const EG25_BAUD_RATE: u32 = 115200;
 const EG25_POLL_INTERVAL: Duration = Duration::from_secs(30);
 
 /// 按配置初始化 MQTT 客户端，未启用或初始化失败时返回 `None`
-fn init_mqtt_client(
-    project: &mut config::Project,
-    center: SharedPointCenter,
-) -> Option<MqttClient> {
+fn init_mqtt_client(project: &mut config::Project) -> Option<MqttClient> {
     if !project.mqtt_enable.unwrap_or(false) {
         return None;
     }
-    match MqttClient::from_project(project, center) {
+    match MqttClient::from_project(project) {
         Ok(client) => client,
         Err(err) => {
             error!("failed to initialize mqtt client: {}", err);
@@ -119,15 +115,13 @@ fn init_mqtt_client(
 /// 构建设备管理器；若启用虚拟设备引擎（EMU），额外初始化数据库并挂载虚拟设备
 async fn build_dev_manager(
     devices: HashMap<String, config::Device>,
-    center: SharedPointCenter,
-    data_center: &Arc<DataCenter>,
     can_bus: SharedCanBus,
     emu_enable: bool,
 ) -> DevManager {
-    let mut manager = DevManager::new(devices, center.clone(), can_bus);
+    let mut manager = DevManager::new(devices, can_bus);
 
     if emu_enable {
-        data_center.set_emu_enable(true);
+        data_center().set_emu_enable(true);
         // 数据库连接池需要在设备管理器（含虚拟设备引擎）启动前初始化好，
         // 否则引擎里依赖数据库的策略（如计划曲线）会因为连接池还未就绪而报错
         let _sql_pool = init_database(DatabaseConfig::default())
@@ -137,7 +131,7 @@ async fn build_dev_manager(
         if let Err(e) = get_runtime().await {
             tracing::error!("EMU运行时配置错误: {}", e);
         }
-        let emu = Emu::new(center.clone()).await;
+        let emu = Emu::new().await;
         manager
             .add_device(Arc::new(Mutex::new(Box::new(emu))))
             .await;
@@ -161,7 +155,6 @@ fn start_north_modbus_server(
     host: Option<&str>,
     port: Option<u16>,
     conf: Option<&str>,
-    center: SharedPointCenter,
     shutdown: ShutdownManager,
 ) {
     let (Some(host), Some(port), Some(conf)) = (host, port, conf) else {
@@ -169,7 +162,7 @@ fn start_north_modbus_server(
     };
     let addr = format!("{}:{}", host, port);
     match addr.parse() {
-        Ok(addr) => match ModbusServer::new(conf, addr, center) {
+        Ok(addr) => match ModbusServer::new(conf, addr) {
             Ok(server) => {
                 tokio::spawn(server.start(shutdown));
             }
@@ -183,23 +176,21 @@ fn start_north_modbus_server(
 fn start_api_server(
     ip: String,
     port: u16,
-    center: SharedPointCenter,
     eg25_rx: Option<watch::Receiver<Eg25Info>>,
     shutdown: ShutdownManager,
 ) {
-    let api_server = ApiApp::new(ip, port, center, eg25_rx);
+    let api_server = ApiApp::new(ip, port, eg25_rx);
     tokio::spawn(api_server.start(shutdown));
 }
 
 /// 启动 Lua 脚本模组引擎
 fn start_script_engine(
-    center: SharedPointCenter,
     mqtt_client: Option<&MqttClient>,
     can_bus: SharedCanBus,
     shutdown: &ShutdownManager,
 ) {
     let override_store = mqtt_client.map(|c| c.override_store.clone());
-    let script_manager = ScriptManager::new(center, override_store, Some(can_bus));
+    let script_manager = ScriptManager::new(override_store, Some(can_bus));
     let script_token = shutdown.child_token();
     tokio::spawn(async move {
         if let Err(err) = script_manager.run("lua_scripts", script_token).await {
@@ -244,21 +235,12 @@ pub async fn cmd() {
     let north_modbus_port = project.project.north_modbus_port;
     let north_modbus_conf = project.project.north_modbus_conf.clone();
 
-    let data_center = Arc::new(DataCenter::new(32));
-    let center: SharedPointCenter = data_center.clone();
     let can_bus = SharedCanBus::default();
 
-    let mqtt_client = init_mqtt_client(&mut project.project, center.clone());
+    let mqtt_client = init_mqtt_client(&mut project.project);
 
     let devices = std::mem::take(&mut project.project.devices);
-    let mut manager = build_dev_manager(
-        devices,
-        center.clone(),
-        &data_center,
-        can_bus.clone(),
-        emu_enable,
-    )
-    .await;
+    let mut manager = build_dev_manager(devices, can_bus.clone(), emu_enable).await;
     manager.start_all().await;
 
     let eg25_rx = start_eg25_poller(&shutdown);
@@ -267,19 +249,12 @@ pub async fn cmd() {
         north_modbus_host.as_deref(),
         north_modbus_port,
         north_modbus_conf.as_deref(),
-        center.clone(),
         shutdown.clone(),
     );
 
-    start_api_server(
-        http_ip,
-        http_port,
-        center.clone(),
-        Some(eg25_rx),
-        shutdown.clone(),
-    );
+    start_api_server(http_ip, http_port, Some(eg25_rx), shutdown.clone());
 
-    start_script_engine(center.clone(), mqtt_client.as_ref(), can_bus, &shutdown);
+    start_script_engine(mqtt_client.as_ref(), can_bus, &shutdown);
 
     // 在后台监听关闭信号
     tokio::spawn(shutdown.clone().listen_shutdown_signal());

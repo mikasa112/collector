@@ -8,7 +8,7 @@ use tokio::sync::{mpsc, watch};
 use tokio::time;
 use tracing::{debug, info, warn};
 
-use crate::center::SharedPointCenter;
+use crate::center::data_center;
 use crate::config::can_conf::{
     ByteOrder, CanConfig, CanDataType, CanSignal, CanSignalConfig, CanSignalExtConfig, IdType,
 };
@@ -28,7 +28,6 @@ pub(super) struct CanRunner {
     pub(super) stop_rx: watch::Receiver<bool>,
     pub(super) rx: mpsc::Receiver<Vec<DownDataPoint>>,
     pub(super) raw_rx: RawFrameRx,
-    pub(super) center: SharedPointCenter,
 }
 
 #[derive(Default)]
@@ -44,7 +43,7 @@ struct ExtSignalState {
 impl CanRunner {
     /// 上报通讯故障位：false = 有通讯，true = 无通讯。
     fn set_comm_fault(&self, fault: bool) {
-        self.center.ingest(
+        data_center().ingest(
             &self.id,
             vec![DataPoint {
                 id: 0xFFFF,
@@ -226,7 +225,7 @@ impl CanRunner {
                     let items: Vec<String> = entries.iter().map(|e| format!("{}: {}", resolve_signal_name(&e.point, point_map), e.value)).collect();
                     info!("[{}] ↓: {}", self.id, items.join(", "));
                     let plan =
-                        WritePlan::build(entries, point_map, name_map, frame_map, self.center.as_ref(), &self.id);
+                        WritePlan::build(entries, point_map, name_map, frame_map, &self.id);
                     if plan.is_empty() {
                         continue;
                     }
@@ -271,7 +270,7 @@ impl CanRunner {
                             Err(e) if e.kind() == io::ErrorKind::WouldBlock => break,
                             Err(e) => {
                                 if !batch.is_empty() {
-                                    self.center.ingest(&self.id, batch);
+                                   data_center().ingest(&self.id, batch);
                                 }
                                 return Err(CanDevError::ReadFrame(e));
                             }
@@ -279,7 +278,7 @@ impl CanRunner {
                     }
 
                     if !batch.is_empty() {
-                        self.center.ingest(&self.id, batch);
+                        data_center().ingest(&self.id, batch);
                     }
                 }
             }

@@ -5,9 +5,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use collector_core::{
-    center::SharedPointCenter, dev::can_bus::SharedCanBus, dock::mqtt::MqttOverrideStore,
-};
+use collector_core::{dev::can_bus::SharedCanBus, dock::mqtt::MqttOverrideStore};
 use tokio_util::sync::CancellationToken;
 
 use crate::mod_engine::{
@@ -30,7 +28,6 @@ struct ScriptInstance {
 impl ScriptInstance {
     async fn spawn(
         meta: &ScriptMeta,
-        center: SharedPointCenter,
         override_store: Option<MqttOverrideStore>,
         store: LuaStore,
         can_bus: Option<SharedCanBus>,
@@ -38,7 +35,6 @@ impl ScriptInstance {
     ) -> Option<Self> {
         let owned_topics: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
         let (engine, handle) = match ModEngine::create(
-            center,
             override_store.clone(),
             owned_topics.clone(),
             store,
@@ -85,7 +81,6 @@ impl ScriptInstance {
 }
 
 pub struct ScriptManager {
-    center: SharedPointCenter,
     override_store: Option<MqttOverrideStore>,
     store: LuaStore,
     can_bus: Option<SharedCanBus>,
@@ -97,13 +92,8 @@ pub struct ScriptManager {
 }
 
 impl ScriptManager {
-    pub fn new(
-        center: SharedPointCenter,
-        override_store: Option<MqttOverrideStore>,
-        can_bus: Option<SharedCanBus>,
-    ) -> Self {
+    pub fn new(override_store: Option<MqttOverrideStore>, can_bus: Option<SharedCanBus>) -> Self {
         Self {
-            center,
             override_store,
             store: new_store(),
             can_bus,
@@ -121,7 +111,6 @@ impl ScriptManager {
         let name = meta.name.clone();
         if let Some(instance) = ScriptInstance::spawn(
             &meta,
-            self.center.clone(),
             self.override_store.clone(),
             self.store.clone(),
             self.can_bus.clone(),

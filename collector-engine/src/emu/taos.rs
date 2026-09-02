@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use collector_core::{
-    center::SharedPointCenter,
+    center::data_center,
     core::point::{DownDataPoint, PointId},
     utils::taos::{TaosDbError, get_taos},
 };
@@ -101,13 +101,11 @@ const TMS_COLUMNS: &[(PointId, &str, &str)] = &[
     (5, "supply_liquid_pressure", "供液压力"),
 ];
 
-pub(crate) struct TaosWriter {
-    center: SharedPointCenter,
-}
+pub(crate) struct TaosWriter {}
 
 impl TaosWriter {
-    pub fn new(center: SharedPointCenter) -> Self {
-        Self { center }
+    pub fn new() -> Self {
+        Self {}
     }
 
     /// 拼出 `CREATE TABLE IF NOT EXISTS emu.<table> (ts TIMESTAMP, col1 DOUBLE, ...)`
@@ -126,7 +124,7 @@ impl TaosWriter {
         let values = columns
             .iter()
             .map(|(id, _, _)| {
-                self.center
+                data_center()
                     .read(dev, *id)
                     .and_then(|p| p.value.as_f64().ok())
                     .map(|v| v.to_string())

@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use collector_core::{
-    center::SharedPointCenter,
+    center::data_center,
     core::point::{DataPoint, PointId, Val, Words},
     utils::{
         eg25::Eg25Info,
@@ -32,23 +32,14 @@ struct DevQueryParams {
 }
 
 #[handler]
-pub async fn data_ws_handler(
-    req: &mut Request,
-    res: &mut Response,
-    depot: &mut Depot,
-) -> Result<(), StatusError> {
+pub async fn data_ws_handler(req: &mut Request, res: &mut Response) -> Result<(), StatusError> {
     let query = req
         .parse_queries::<DevQueryParams>()
         .map_err(|_| StatusError::bad_request())?;
 
-    let center = depot
-        .get::<SharedPointCenter>("center")
-        .map_err(|_| StatusError::service_unavailable())?
-        .clone();
-
     WebSocketUpgrade::new()
         .upgrade(req, res, move |mut ws| async move {
-            handle_ws(&mut ws, center, query).await;
+            handle_ws(&mut ws, query).await;
         })
         .await
 }
@@ -95,8 +86,8 @@ async fn push_points(ws: &mut WebSocket, data: &[DataPoint], lang: DevQueryLang)
     true
 }
 
-async fn handle_ws(ws: &mut WebSocket, center: SharedPointCenter, query: DevQueryParams) {
-    let Some(mut rx) = center.subscribe(&query.dev) else {
+async fn handle_ws(ws: &mut WebSocket, query: DevQueryParams) {
+    let Some(mut rx) = data_center().subscribe(&query.dev) else {
         return;
     };
 
@@ -160,7 +151,8 @@ struct HomeAcData {
 }
 
 impl HomeAcData {
-    fn new(center: &SharedPointCenter) -> Self {
+    fn new() -> Self {
+        let center = data_center();
         let pcs_va = center
             .read("pcs", 1)
             .and_then(|it| f64::try_from(it.value).ok());
@@ -223,7 +215,8 @@ struct HomeDcData {
 }
 
 impl HomeDcData {
-    fn new(center: &SharedPointCenter) -> Self {
+    fn new() -> Self {
+        let center = data_center();
         let soc = center
             .read("bcu", 32)
             .and_then(|it| f64::try_from(it.value).ok());
@@ -275,7 +268,8 @@ struct HomeEmuData {
 }
 
 impl HomeEmuData {
-    fn new(center: &SharedPointCenter) -> Self {
+    fn new() -> Self {
+        let center = data_center();
         let operation_mode = center
             .read("emu", 1)
             .map(|it| it.value.as_u32().unwrap_or(0))
@@ -307,7 +301,8 @@ struct HomeWarnData {
 struct HomeWarnDatas(Vec<HomeWarnData>);
 
 impl HomeWarnDatas {
-    fn new(center: &SharedPointCenter) -> Self {
+    fn new() -> Self {
+        let center = data_center();
         let vec = center
             .read_range("emu", 500, 2000)
             .into_iter()
@@ -331,31 +326,23 @@ struct HomeCommonData {
 }
 
 #[handler]
-pub async fn home_ws_handler(
-    req: &mut Request,
-    res: &mut Response,
-    depot: &mut Depot,
-) -> Result<(), StatusError> {
-    let center = depot
-        .get::<SharedPointCenter>("center")
-        .map_err(|_| StatusError::service_unavailable())?
-        .clone();
+pub async fn home_ws_handler(req: &mut Request, res: &mut Response) -> Result<(), StatusError> {
     WebSocketUpgrade::new()
         .upgrade(req, res, |mut ws| async move {
-            handle_home_ws(&mut ws, center).await;
+            handle_home_ws(&mut ws).await;
         })
         .await
 }
 
-async fn handle_home_ws(ws: &mut WebSocket, center: SharedPointCenter) {
+async fn handle_home_ws(ws: &mut WebSocket) {
     let mut ticker = tokio::time::interval(Duration::from_secs(1));
     loop {
         tokio::select! {
             _ = ticker.tick() => {
-                let emu_data = HomeEmuData::new(&center);
-                let ac_data = HomeAcData::new(&center);
-                let dc_data = HomeDcData::new(&center);
-                let warn_datas = HomeWarnDatas::new(&center);
+                let emu_data = HomeEmuData::new();
+                let ac_data = HomeAcData::new();
+                let dc_data = HomeDcData::new();
+                let warn_datas = HomeWarnDatas::new();
                 let home_common_data = HomeCommonData {
                     emu: emu_data,
                     ac: ac_data,
