@@ -37,7 +37,7 @@ impl Emu {
         let pool = get_database().expect("[engine] 数据库初始化失败");
         let strategies: Arc<AsyncMutex<Vec<Box<dyn Strategy>>>> = Arc::new(AsyncMutex::new(vec![
             Box::new(emu_runtime::EmuRuntime::new()),
-            Box::new(fault::FaultDiagnosis::new()),
+            Box::new(fault::FaultDiagnosis::new(pool.clone())),
             Box::new(tms::Tms::new()),
             Box::new(planned_curve::PlannedCurve::new(pool)),
             Box::new(taos::TaosWriter::new()),

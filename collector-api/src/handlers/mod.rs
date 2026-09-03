@@ -1,6 +1,7 @@
 use salvo::Request;
 use serde::Deserialize;
 
+pub(crate) mod alarm;
 pub(crate) mod data;
 pub(crate) mod emu;
 pub(crate) mod history;

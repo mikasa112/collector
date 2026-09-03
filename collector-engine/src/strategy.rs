@@ -17,6 +17,8 @@ pub enum StrategyError {
     PointNotFound(String),
     #[error("{0}")]
     TaosDbError(#[from] TaosDbError),
+    #[error("数据库错误: {0}")]
+    SqlError(#[from] sqlx::Error),
 }
 
 pub enum Schedule {

@@ -75,3 +75,25 @@ CREATE UNIQUE INDEX idx_emu_function_code ON t_emu_function(function_code) WHERE
 -- 启用计划曲线功能
 INSERT INTO t_emu_function (function_code, function_name, enabled, sort_order, remark)
 VALUES ('PLAN_CURVE', '计划曲线控制', 1, 1, '按计划曲线执行充放电');
+
+-- 故障历史表
+CREATE TABLE t_alarm (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+    alarm_code INTEGER NOT NULL,             -- 告警码
+    alarm_name VARCHAR(100) NOT NULL,        -- 告警名称
+    alarm_dev VARCHAR(100) NOT NULL,         -- 告警设备
+    alarm_level INTEGER NOT NULL,            -- 告警等级
+    alarm_status INTEGER DEFAULT 1,          -- 0: 已恢复 1: 正在发生
+
+    created_by VARCHAR(50),
+
+    -- 创建时间，同时作为故障发生时间
+    created_at DATETIME DEFAULT (datetime('now', 'localtime')),
+
+    -- 更新时间，告警恢复时更新，作为恢复时间
+    updated_at DATETIME DEFAULT (datetime('now', 'localtime')),
+
+    -- 软删除时间
+    deleted_at DATETIME
+);

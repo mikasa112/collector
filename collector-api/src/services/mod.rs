@@ -1,3 +1,4 @@
+pub mod alarm;
 pub mod data;
 pub mod emu;
 pub mod error;

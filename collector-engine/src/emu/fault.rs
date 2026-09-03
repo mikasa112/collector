@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::{collections::HashSet, time::Duration};
 
 use async_trait::async_trait;
 use collector_core::{
@@ -6,14 +6,31 @@ use collector_core::{
     core::point::{DataPoint, Val, WarnLevel},
     runtime::{core::get_runtime, emu::HealthStatus},
 };
+use sqlx::SqlitePool;
 
-use crate::strategy::{Schedule, Strategy, StrategyError};
+use crate::{
+    emu::alarm::{AlaramStatus, AlarmDao},
+    strategy::{Schedule, Strategy, StrategyError},
+};
 
-pub struct FaultDiagnosis {}
+pub struct FaultDiagnosis {
+    alarm_dao: AlarmDao,
+}
+
+/// 一次 tick 中命中的一条故障：dev 为所属设备表名（"pcs"/"bcu"/"tms"），
+/// code 由 point.id 与 bit 序号组合而成，唯一定位到具体故障位
+struct FaultAlarm {
+    dev: &'static str,
+    code: u32,
+    name: &'static str,
+    level: WarnLevel,
+}
 
 impl FaultDiagnosis {
-    pub fn new() -> Self {
-        Self {}
+    pub fn new(pool: SqlitePool) -> Self {
+        Self {
+            alarm_dao: AlarmDao { pool },
+        }
     }
 
     /// 将一个带 bits 定义的寄存器展开为若干个单独的告警 DataPoint，
@@ -40,6 +57,62 @@ impl FaultDiagnosis {
                 unit: None,
             })
             .collect()
+    }
+
+    /// 提取寄存器当前命中的故障位，dev 为所属设备表名，
+    /// code = point.id * 16 + bit 序号，保证同一 bit 位置每次 tick 算出的 code 一致
+    fn fault_alarms(dev: &'static str, point: &DataPoint) -> Vec<FaultAlarm> {
+        let Some(bits) = point.bits else {
+            return vec![];
+        };
+        let Ok(v) = u32::try_from(&point.value) else {
+            return vec![];
+        };
+        bits.bits
+            .iter()
+            .enumerate()
+            .filter(|(_, bit)| bit.level != WarnLevel::None)
+            .filter(|(i, _)| (v >> i) & 1 == 1)
+            .map(|(i, bit)| FaultAlarm {
+                dev,
+                code: point.id * 16 + i as u32,
+                name: bit.zh,
+                level: bit.level,
+            })
+            .collect()
+    }
+
+    /// 将本次 tick 命中的故障与库中仍为 Active 的告警做差集：
+    /// 新增的故障 insert 一条 Active 记录，之前 Active 但本次未命中的更新为 Recovered
+    async fn sync_alarms(&self, warnings: &[FaultAlarm]) -> Result<(), StrategyError> {
+        let current: HashSet<(u32, &str)> = warnings.iter().map(|w| (w.code, w.dev)).collect();
+        let active = self.alarm_dao.list_active_keys().await?;
+
+        for w in warnings {
+            if !active
+                .iter()
+                .any(|(code, dev)| *code == w.code && dev == w.dev)
+            {
+                self.alarm_dao
+                    .create_alarm(
+                        w.code,
+                        w.name.to_string(),
+                        w.dev.to_string(),
+                        w.level.into(),
+                        AlaramStatus::Active,
+                        "system".to_string(),
+                    )
+                    .await?;
+            }
+        }
+        for (code, dev) in active {
+            if !current.contains(&(code, dev.as_str())) {
+                self.alarm_dao
+                    .update_alarm_status(code, dev, AlaramStatus::Recovered)
+                    .await?;
+            }
+        }
+        Ok(())
     }
 }
 
@@ -74,11 +147,11 @@ impl Strategy for FaultDiagnosis {
             p.id = 500 + i as u32;
         }
         center.ingest("emu", bit_points);
-        let warnings: Vec<_> = [pcs, bcu, tms]
+        let warnings: Vec<FaultAlarm> = [("pcs", &pcs), ("bcu", &bcu), ("tms", &tms)]
             .into_iter()
-            .flatten()
-            .flat_map(|p| p.warning())
+            .flat_map(|(dev, points)| points.iter().flat_map(move |p| Self::fault_alarms(dev, p)))
             .collect();
+        self.sync_alarms(&warnings).await?;
         let runtime = get_runtime().await?;
         if !warnings.is_empty() {
             //当故障告警不为空，

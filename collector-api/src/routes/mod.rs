@@ -1,3 +1,4 @@
+mod alarm;
 mod data;
 mod emu;
 mod history;
@@ -19,6 +20,7 @@ pub(crate) fn root_router(eg25_rx: Option<watch::Receiver<Eg25Info>>) -> Router 
         .push(data::router())
         .push(planned_curve::router())
         .push(history::router())
+        .push(alarm::router())
         .push(ws::router())
         .push(emu::router());
     if let Some(rx) = eg25_rx {

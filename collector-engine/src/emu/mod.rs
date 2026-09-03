@@ -1,3 +1,4 @@
+pub(crate) mod alarm;
 mod cmd;
 pub mod core;
 mod emu_runtime;
