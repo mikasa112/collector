@@ -6,16 +6,17 @@ use collector_core::{
     down,
     runtime::{
         core::get_runtime,
-        emu::{EmuPermission, OperationMode},
+        emu::{ControlSource, EmuPermission, OperationMode, RunMode},
     },
 };
 
 use crate::{
     DataDriven,
     emu::{
-        ID_CHARGE_SOC_LIMIT, ID_DISCHARGE_SOC_LIMIT, ID_HEALTH_STATUS, ID_OPERATION_MODE,
-        ID_PERMISSION, KEY_CHARGE_SOC_LIMIT, KEY_DISCHARGE_SOC_LIMIT, KEY_HEALTH_STATUS,
-        KEY_OPERATION_MODE, KEY_PERMISSION,
+        ID_CHARGE_SOC_LIMIT, ID_CONTROL_SOURCE, ID_DISCHARGE_SOC_LIMIT, ID_HEALTH_STATUS,
+        ID_OPERATION_MODE, ID_PERMISSION, ID_RUN_MODE, KEY_CHARGE_SOC_LIMIT, KEY_CONTROL_SOURCE,
+        KEY_DISCHARGE_SOC_LIMIT, KEY_HEALTH_STATUS, KEY_OPERATION_MODE, KEY_PERMISSION,
+        KEY_RUN_MODE,
     },
     strategy::{Schedule, Strategy, StrategyError},
 };
@@ -88,6 +89,24 @@ impl Strategy for EmuRuntime {
             .emu_runtime
             .health()
             .unwrap_or(collector_core::runtime::emu::HealthStatus::Alarm);
+        //计划自动模式依赖计划曲线使能，计划曲线被关闭时自动切换为总功率模式
+        let rm = runtime
+            .emu_runtime
+            .run_mode()
+            .unwrap_or(RunMode::TotalPower);
+        let rm = if matches!(rm, RunMode::PlanAuto)
+            && !runtime.planned_curve.get_planned_curve_enable()
+        {
+            runtime.emu_runtime.set_run_mode(RunMode::TotalPower);
+            tracing::warn!("[EMU] 计划曲线已关闭, 运行模式自动切换为总功率");
+            RunMode::TotalPower
+        } else {
+            rm
+        };
+        let cs = runtime
+            .emu_runtime
+            .control_source()
+            .unwrap_or(ControlSource::Local);
         center.ingest(
             "emu",
             vec![
@@ -96,6 +115,8 @@ impl Strategy for EmuRuntime {
                 health_status(h as u8),
                 charge_soc_limit(charge_limit),
                 discharge_soc_limit(discharge_limit),
+                run_mode(rm as u8),
+                control_source(cs as u8),
             ],
         );
         Ok(())
@@ -128,6 +149,32 @@ impl DataDriven for EmuRuntime {
                 tracing::info!("[EMU] 放电SOC限制修改为{}", p.value);
                 changed = true;
             }
+            if p.point == PointRef::Id(ID_RUN_MODE)
+                || p.point == PointRef::Key(KEY_RUN_MODE.to_string())
+            {
+                let Ok(mode) = RunMode::try_from(p.value.as_u32()? as u8) else {
+                    tracing::warn!("[EMU] 无效的运行模式取值: {}", p.value);
+                    continue;
+                };
+                if matches!(mode, RunMode::PlanAuto)
+                    && !runtime.planned_curve.get_planned_curve_enable()
+                {
+                    tracing::warn!("[EMU] 计划曲线未开启, 无法切换为计划自动模式");
+                } else {
+                    runtime.emu_runtime.set_run_mode(mode);
+                    tracing::info!("[EMU] 运行模式修改为{}", p.value);
+                }
+            }
+            if p.point == PointRef::Id(ID_CONTROL_SOURCE)
+                || p.point == PointRef::Key(KEY_CONTROL_SOURCE.to_string())
+            {
+                let Ok(source) = ControlSource::try_from(p.value.as_u32()? as u8) else {
+                    tracing::warn!("[EMU] 无效的控制源取值: {}", p.value);
+                    continue;
+                };
+                runtime.emu_runtime.set_control_source(source);
+                tracing::info!("[EMU] 控制源修改为{}", p.value);
+            }
         }
         if changed && let Err(err) = runtime.emu_runtime.soc_protect.save().await {
             tracing::error!("[EMU] 保存SOC保护配置失败: {}", err);
@@ -139,7 +186,7 @@ fn operation_mode(data: u8) -> DataPoint {
     DataPoint {
         id: ID_OPERATION_MODE,
         key: KEY_OPERATION_MODE,
-        name: "EMU运行模式",
+        name: "EMU充放电状态",
         value: Val::U8(data),
         translator: None,
         bits: None,
@@ -180,6 +227,32 @@ fn charge_soc_limit(data: f64) -> DataPoint {
         key: KEY_CHARGE_SOC_LIMIT,
         name: "充电SOC限制",
         value: Val::F64(data),
+        translator: None,
+        bits: None,
+        words: None,
+        unit: None,
+    }
+}
+
+fn run_mode(data: u8) -> DataPoint {
+    DataPoint {
+        id: ID_RUN_MODE,
+        key: KEY_RUN_MODE,
+        name: "EMU运行模式",
+        value: Val::U8(data),
+        translator: None,
+        bits: None,
+        words: None,
+        unit: None,
+    }
+}
+
+fn control_source(data: u8) -> DataPoint {
+    DataPoint {
+        id: ID_CONTROL_SOURCE,
+        key: KEY_CONTROL_SOURCE,
+        name: "EMU控制源",
+        value: Val::U8(data),
         translator: None,
         bits: None,
         words: None,

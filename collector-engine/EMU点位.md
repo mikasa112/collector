@@ -1,22 +1,24 @@
 EMU功能点位，点在DataCenter中流转
 
-|点位|key|name|
-|----|----|---|
-|1|operation_mode|EMU运行模式|
-|2|permission|EMU充放电许可|
-|3|health_status|EMU告警故障状态|
-|4|charge_soc_limit|充电SOC限制|
-|5|discharge_soc_limit|放电SOC限制|
-|6|planned_curve|计划曲线使能|
-|7|emu_power|EMU上电方式|
-|10|sys_tms_mode|系统热管理模式|
-|500-2000|warn_fault|告警故障|
+|点位|key|name|读写|
+|----|----|---|----|
+|1|operation_mode|EMU充放电状态|只读|
+|2|permission|EMU充放电许可|只读|
+|3|health_status|EMU告警故障状态|只读|
+|4|charge_soc_limit|充电SOC限制|可读可写|
+|5|discharge_soc_limit|放电SOC限制|可读可写|
+|6|planned_curve|计划曲线使能|可读可写|
+|7|emu_power|EMU上电方式|可读可写|
+|8|run_mode|EMU运行模式|可读可写|
+|9|control_source|EMU控制源|可读可写|
+|10|sys_tms_mode|系统热管理模式|可读可写|
+|500-2000|warn_fault|告警故障|只读|
 
 点位ID/KEY常量定义：`collector-engine/src/emu/mod.rs`
 
 ---
 
-## 1. operation_mode（EMU运行模式）
+## 1. operation_mode（EMU充放电状态）
 
 - 类型：枚举 `u8`（`collector-core/src/runtime/emu.rs`，`OperationMode`）
 - 枚举值：
@@ -77,7 +79,25 @@ EMU功能点位，点在DataCenter中流转
   - 其他值：无动作
 - 用途：EMU系统整体上电启动方式选择（并网启动 vs 离网黑启动），一次性触发命令。
 
-## 8. sys_tms_mode（系统热管理模式）
+## 8. run_mode（EMU运行模式）
+
+- 类型：枚举 `u8`（`collector-core/src/runtime/emu.rs`，`RunMode`）
+- 枚举值：
+  - `0` PlanAuto 计划自动
+  - `1` TotalPower 总功率
+- 逻辑：`collector-engine/src/emu/emu_runtime.rs` 每秒检查一次联动关系：切换为 `0`（计划自动）时要求 `planned_curve`（点位6）已处于开启状态，否则拒绝切换；`planned_curve` 开启期间若被关闭，运行模式已为 `0` 时自动强制切换为 `1`（总功率）。默认值为 `1`，运行时状态不持久化，重启后恢复默认。
+- 用途：选择EMU功率控制方式（跟随计划曲线自动下发 / 按总功率给定），与 planned_curve 联动保证"计划自动"模式下计划曲线必然生效。
+
+## 9. control_source（EMU控制源）
+
+- 类型：枚举 `u8`（`collector-core/src/runtime/emu.rs`，`ControlSource`）
+- 枚举值：
+  - `0` Local 本地
+  - `1` Remote 远程
+- 逻辑：`collector-engine/src/emu/emu_runtime.rs` 每秒采集当前值并支持下行写入切换，无联动限制。默认值为 `0`（本地），运行时状态不持久化，重启后恢复默认。
+- 用途：选择EMU当前接受本地控制还是远程控制。
+
+## 10. sys_tms_mode（系统热管理模式）
 
 - 类型：枚举 `u8`（`collector-engine/src/emu/tms.rs`，`SysTmsMode`）
 - 枚举值：
@@ -99,7 +119,7 @@ EMU功能点位，点在DataCenter中流转
 - 底层对tms设备的实际动作寄存器：`id 2000` 热管理使能(bool)，`id 2001` 模式（Cooling=1/Heating=2/Circulation=3），`id 2002` 制冷出水温度设定，`id 2004` 制热出水温度设定。
 - 用途：液冷机组（水冷系统）运行模式管理，依据电池温度自动切换制冷/制热/自循环/待机。
 
-## 9. warn_fault（告警故障，点位范围500-2000）
+## 11. warn_fault（告警故障，点位范围500-2000）
 
 代码中没有名为 `warn_fault` 的常量，该key是对500-2000这段ID区间的统称；实际每个具体故障位都有各自独立的key（取自设备Excel配置中告警位的英文名）。
 
@@ -128,13 +148,13 @@ EMU功能点位，点在DataCenter中流转
 | 文件 | 作用 |
 |---|---|
 | `collector-engine/src/emu/mod.rs` | 各点位ID/KEY常量定义 |
-| `collector-engine/src/emu/emu_runtime.rs` | operation_mode/permission/health_status/charge_soc_limit/discharge_soc_limit 采集与写点逻辑 |
+| `collector-engine/src/emu/emu_runtime.rs` | operation_mode/permission/health_status/charge_soc_limit/discharge_soc_limit/run_mode/control_source 采集与写点逻辑 |
 | `collector-engine/src/emu/planned_curve.rs` | planned_curve 点位与计划曲线执行逻辑 |
 | `collector-engine/src/emu/cmd.rs` | emu_power 命令处理（并网/黑启动） |
 | `collector-engine/src/emu/tms.rs` | sys_tms_mode 枚举、自动判定逻辑、下行控制 |
 | `collector-engine/src/emu/fault.rs` | warn_fault(500-2000) 动态展开、health_status 联动 |
 | `collector-engine/src/emu/taos.rs` | pcs/bcu/tms 原始寄存器列定义（用于TDengine落库） |
-| `collector-core/src/runtime/emu.rs` | OperationMode/EmuPermission/HealthStatus 枚举、RuntimeEmu（运行时状态+SOC保护配置持久化） |
+| `collector-core/src/runtime/emu.rs` | OperationMode/EmuPermission/HealthStatus/RunMode/ControlSource 枚举、RuntimeEmu（运行时状态+SOC保护配置持久化） |
 | `collector-core/src/runtime/planned_curve.rs` | RuntimePlannedCurve（计划曲线使能持久化，SQLite表 t_emu_function） |
 | `collector-core/src/core/point.rs` | DataPoint/Bits/Bit/WarnLevel 通用定义、告警位解析 |
 | `collector-api/src/handlers/ws.rs` | 首页告警列表API，读取 read_range("emu",500,2000) |

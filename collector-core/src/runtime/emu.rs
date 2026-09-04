@@ -36,6 +36,48 @@ impl OperationMode {}
 
 #[repr(u8)]
 #[derive(Clone, Copy)]
+pub enum RunMode {
+    //计划自动
+    PlanAuto = 0,
+    //总功率
+    TotalPower = 1,
+}
+
+impl TryFrom<u8> for RunMode {
+    type Error = RuntimeEmuError;
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(RunMode::PlanAuto),
+            1 => Ok(RunMode::TotalPower),
+            _ => Err(RuntimeEmuError::EmuPermissionError),
+        }
+    }
+}
+
+#[repr(u8)]
+#[derive(Clone, Copy)]
+pub enum ControlSource {
+    //本地
+    Local = 0,
+    //远程
+    Remote = 1,
+}
+
+impl TryFrom<u8> for ControlSource {
+    type Error = RuntimeEmuError;
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(ControlSource::Local),
+            1 => Ok(ControlSource::Remote),
+            _ => Err(RuntimeEmuError::EmuPermissionError),
+        }
+    }
+}
+
+#[repr(u8)]
+#[derive(Clone, Copy)]
 pub enum HealthStatus {
     //正常
     Normal = 0,
@@ -141,6 +183,10 @@ pub struct RuntimeEmu {
     operation_mode: AtomicU8,
     #[serde(skip)]
     health: AtomicU8,
+    #[serde(skip)]
+    run_mode: AtomicU8,
+    #[serde(skip)]
+    control_source: AtomicU8,
     pub soc_protect: SocProtect,
 }
 
@@ -172,6 +218,8 @@ impl RuntimeEmu {
             permission: AtomicU8::new(3),
             operation_mode: AtomicU8::new(0),
             health: AtomicU8::new(2),
+            run_mode: AtomicU8::new(1),
+            control_source: AtomicU8::new(0),
             soc_protect,
         };
         runtime.soc_protect.save().await?;
@@ -196,6 +244,26 @@ impl RuntimeEmu {
 
     pub fn set_operation_mode(&self, mode: OperationMode) {
         self.operation_mode.store(mode as u8, Relaxed);
+    }
+
+    pub fn run_mode(&self) -> Result<RunMode, RuntimeEmuError> {
+        let r = self.run_mode.load(Relaxed);
+        let rm = RunMode::try_from(r)?;
+        Ok(rm)
+    }
+
+    pub fn set_run_mode(&self, mode: RunMode) {
+        self.run_mode.store(mode as u8, Relaxed);
+    }
+
+    pub fn control_source(&self) -> Result<ControlSource, RuntimeEmuError> {
+        let c = self.control_source.load(Relaxed);
+        let cs = ControlSource::try_from(c)?;
+        Ok(cs)
+    }
+
+    pub fn set_control_source(&self, source: ControlSource) {
+        self.control_source.store(source as u8, Relaxed);
     }
 
     pub fn health(&self) -> Result<HealthStatus, RuntimeEmuError> {

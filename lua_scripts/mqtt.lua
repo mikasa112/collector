@@ -13,6 +13,7 @@ local SN = "BVXZRNQHLMTP"
 local TOPIC = "/gateway/prod/v1/" .. SN .. "/up"
 local TOPIC_DOWN = "/gateway/prod/v1/" .. SN .. "/down"
 
+---@type MqttConn
 local conn = nil
 
 --- 处理云端下行控制消息
@@ -41,6 +42,7 @@ local function connect_mqtt()
         local c, err = mqtt.connect({
             host = HOST,
             port = PORT,
+            client_id = "lang_fang_emu1",
             max_packet_size = 1024 * 256
         })
         if c then
@@ -114,7 +116,7 @@ timer.every(30000, function()
         data      = collect_all(),
     }
     local ok, err = pcall(function()
-        conn:publish(TOPIC, payload)
+        conn:compressed_publish(TOPIC, payload, nil, 3)
     end)
     if not ok then
         log.warn("mqtt 上送失败: " .. tostring(err))

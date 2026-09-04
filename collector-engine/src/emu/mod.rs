@@ -32,3 +32,9 @@ pub(crate) const KEY_EMU_POWER: &str = "emu_power";
 
 pub(crate) const ID_SYS_TMS_MODE: u32 = 10;
 pub(crate) const KEY_SYS_TMS_MODE: &str = "sys_tms_mode";
+
+pub(crate) const ID_RUN_MODE: u32 = 8;
+pub(crate) const KEY_RUN_MODE: &str = "run_mode";
+
+pub(crate) const ID_CONTROL_SOURCE: u32 = 9;
+pub(crate) const KEY_CONTROL_SOURCE: &str = "control_source";
