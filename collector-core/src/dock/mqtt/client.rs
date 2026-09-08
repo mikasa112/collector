@@ -12,7 +12,7 @@ use tracing::{error, info};
 
 use crate::{
     center::data_center,
-    config::{MqttRoute, Project},
+    config::{MqttRoute, Project, config_provider::config_provider},
     core::point::{DownDataPoint, Val},
     dock::mqtt::MqttOverrideStore,
 };
@@ -52,8 +52,18 @@ struct MqttClientConf {
 
 impl MqttClient {
     pub fn from_project(project: &mut Project) -> Result<Option<Self>, MqttClientError> {
-        let Some(conf) = MqttClientConf::from_project(project) else {
+        let mqtt = &config_provider().program().mqtt;
+        if !mqtt.enable {
             return Ok(None);
+        }
+        let conf = MqttClientConf {
+            mqtt_host: mqtt.mqtt_host.clone(),
+            mqtt_port: mqtt.mqtt_port,
+            mqtt_username: mqtt.mqtt_username.clone(),
+            mqtt_password: mqtt.mqtt_password.clone(),
+            mqtt_yt: mqtt.mqtt_yt.clone(),
+            mqtt_yk: mqtt.mqtt_yk.clone(),
+            mqtt_routes: project.mqtt_routes.take().unwrap_or_default(),
         };
         Self::new(conf).map(Some)
     }
@@ -109,20 +119,6 @@ impl MqttClient {
         }
         info!("MQTT Client Disconnected");
         Ok(())
-    }
-}
-
-impl MqttClientConf {
-    fn from_project(project: &mut Project) -> Option<Self> {
-        Some(Self {
-            mqtt_host: project.mqtt_host.clone()?,
-            mqtt_port: project.mqtt_port?,
-            mqtt_username: project.mqtt_username.clone()?,
-            mqtt_password: project.mqtt_password.clone()?,
-            mqtt_yt: project.mqtt_yt.clone()?,
-            mqtt_yk: project.mqtt_yk.clone()?,
-            mqtt_routes: project.mqtt_routes.take().unwrap_or_default(),
-        })
     }
 }
 

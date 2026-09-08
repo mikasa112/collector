@@ -23,6 +23,7 @@ def main() -> int:
 
     workbook = XlsmWorkbook(source)
     project = parse_project_sheet(workbook.sheet_rows("project"))
+    project["program"] = parse_program_sheet(workbook.sheet_rows("program"))
     devices = parse_devices(
         workbook.sheet_rows("devices"),
         workbook.sheet_rows("config"),
@@ -87,9 +88,28 @@ class XlsmWorkbook:
         if sheet_data is None:
             return []
 
-        raw_rows: list[list[str]] = []
+        # 单元格值先按 (行号, 列号) 存入网格，再用合并单元格信息把
+        # 只写在左上角单元格的值回填到同一合并区域的其它单元格。
+        grid: dict[tuple[int, int], str] = {}
+        max_col = 0
         for row in sheet_data.findall("m:row", NS):
-            values = self._extract_row(row)
+            row_num = int(row.attrib.get("r", "1"))
+            for cell in row.findall("m:c", NS):
+                ref = cell.attrib.get("r", f"A{row_num}")
+                col = column_index(ref)
+                grid[(row_num, col)] = self._cell_value(cell)
+                max_col = max(max_col, col)
+
+        for min_col, min_row, max_col_m, max_row_m in self._load_merges(root):
+            anchor = grid.get((min_row, min_col), "")
+            for r in range(min_row, max_row_m + 1):
+                for c in range(min_col, max_col_m + 1):
+                    if (r, c) != (min_row, min_col):
+                        grid[(r, c)] = anchor
+
+        raw_rows: list[list[str]] = []
+        for row_num in sorted({r for r, _ in grid}):
+            values = [grid.get((row_num, c), "") for c in range(1, max_col + 1)]
             if any(cell.strip() for cell in values):
                 raw_rows.append(values)
 
@@ -106,14 +126,22 @@ class XlsmWorkbook:
             objects.append(item)
         return objects
 
-    def _extract_row(self, row: ET.Element) -> list[str]:
-        values: dict[int, str] = {}
-        for cell in row.findall("m:c", NS):
-            ref = cell.attrib.get("r", "A1")
-            values[column_index(ref)] = self._cell_value(cell)
-        if not values:
+    def _load_merges(self, root: ET.Element) -> list[tuple[int, int, int, int]]:
+        merge_cells = root.find("m:mergeCells", NS)
+        if merge_cells is None:
             return []
-        return [values.get(i, "") for i in range(1, max(values) + 1)]
+        merges: list[tuple[int, int, int, int]] = []
+        for merge in merge_cells.findall("m:mergeCell", NS):
+            start_ref, end_ref = merge.attrib["ref"].split(":")
+            merges.append(
+                (
+                    column_index(start_ref),
+                    row_index(start_ref),
+                    column_index(end_ref),
+                    row_index(end_ref),
+                )
+            )
+        return merges
 
     def _cell_value(self, cell: ET.Element) -> str:
         cell_type = cell.attrib.get("t")
@@ -190,6 +218,35 @@ def build_device_config(row: dict[str, str]) -> dict[str, Any]:
         for src_key, out_key in field_map.items()
         if src_key in row
     }
+
+
+def parse_program_sheet(rows: list[dict[str, str]]) -> dict[str, Any]:
+    features: dict[str, dict[str, Any]] = {}
+    order: list[str] = []
+
+    for row in rows:
+        feature = row.get("feature", "").strip()
+        if not feature:
+            continue
+        key = sanitize_identifier(feature)
+        if key not in features:
+            features[key] = {}
+            order.append(key)
+        entry = features[key]
+
+        enable = row.get("enable", "").strip()
+        if enable:
+            entry["enable"] = normalize_scalar(enable)
+
+        param = row.get("param", "").strip()
+        if param:
+            entry[param] = normalize_scalar(row.get("value", ""))
+
+    return {key: features[key] for key in order}
+
+
+def sanitize_identifier(text: str) -> str:
+    return re.sub(r"[^0-9a-zA-Z]+", "_", text.strip()).strip("_").lower()
 
 
 def find_optional_sheet_rows(
@@ -300,6 +357,11 @@ def column_index(cell_ref: str) -> int:
     for ch in letters.group(0):
         idx = idx * 26 + ord(ch) - ord("A") + 1
     return idx
+
+
+def row_index(cell_ref: str) -> int:
+    digits = re.search(r"\d+", cell_ref)
+    return int(digits.group(0)) if digits else 1
 
 
 if __name__ == "__main__":

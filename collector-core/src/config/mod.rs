@@ -7,9 +7,11 @@ use tracing::error;
 use crate::core::point::PointId;
 
 pub mod can_conf;
+pub mod config_provider;
 pub mod gpio_conf;
 pub mod modbus_conf;
 pub mod north_modbus_conf;
+pub mod program_conf;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ConfigurationError {
@@ -128,19 +130,8 @@ where
 pub struct Project {
     pub product_type: Option<String>,
     pub project: Option<String>,
-    pub emu_enable: Option<bool>,
-    pub http_ip: Option<String>,
-    pub http_port: Option<u16>,
-    pub mqtt_enable: Option<bool>,
-    pub mqtt_host: Option<String>,
-    pub mqtt_port: Option<u16>,
-    pub mqtt_username: Option<String>,
-    pub mqtt_password: Option<String>,
-    pub mqtt_yt: Option<String>,
-    pub mqtt_yk: Option<String>,
-    pub north_modbus_host: Option<String>,
-    pub north_modbus_port: Option<u16>,
-    pub north_modbus_conf: Option<String>,
+    #[serde(default)]
+    pub program: program_conf::Program,
     pub devices: HashMap<String, Device>,
     pub mqtt_routes: Option<Vec<MqttRoute>>,
 }
