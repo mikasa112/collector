@@ -211,13 +211,19 @@ impl ModbusConfig {
             return Err(anyhow::Error::msg("数量与数据类型不匹配"));
         }
 
-        let byte_order = ByteOrder::try_from(row[8].get_string()).ok();
+        let byte_order =
+            ByteOrder::try_from(row.get(8).and_then(|cell| cell.get_string())).ok();
         let scale = required_f64(row, 9, "缩放")?;
         let offset = required_f64(row, 10, "偏移量")?;
-        let enable = row[11].get_float().unwrap_or(1f64) != 0f64;
+        let enable = row
+            .get(11)
+            .and_then(|cell| cell.get_float())
+            .unwrap_or(1f64)
+            != 0f64;
         let key = required_static_str(row, 12, "键")?;
-        let trans = row[13]
-            .get_string()
+        let trans = row
+            .get(13)
+            .and_then(|cell| cell.get_string())
             .and_then(|str| Translator::try_from(str).ok());
         let trans: Option<&'static Translator> = match trans {
             Some(t) => Some(Box::leak(Box::new(t))),

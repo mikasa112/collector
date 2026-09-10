@@ -207,8 +207,8 @@ pub struct MqttRule {
 }
 
 pub(crate) fn required_f64(row: &[Data], idx: usize, field: &str) -> Result<f64, anyhow::Error> {
-    row[idx]
-        .get_float()
+    row.get(idx)
+        .and_then(|cell| cell.get_float())
         .ok_or_else(|| anyhow::Error::msg(format!("{field}不能为空")))
 }
 
@@ -217,8 +217,8 @@ pub(crate) fn required_str<'a>(
     idx: usize,
     field: &str,
 ) -> Result<&'a str, anyhow::Error> {
-    row[idx]
-        .get_string()
+    row.get(idx)
+        .and_then(|cell| cell.get_string())
         .ok_or_else(|| anyhow::Error::msg(format!("{field}不能为空")))
 }
 
@@ -231,7 +231,7 @@ pub(crate) fn required_static_str(
 }
 
 pub(crate) fn optional_static_str(row: &[Data], idx: usize) -> Option<&'static str> {
-    row[idx].get_string().map(|s| {
+    row.get(idx).and_then(|cell| cell.get_string()).map(|s| {
         let leaked: &'static mut str = s.to_owned().leak();
         leaked as &'static str
     })
@@ -243,10 +243,13 @@ pub(crate) fn required_usize_integerish(
     idx: usize,
     field: &str,
 ) -> Result<usize, anyhow::Error> {
-    if let Some(v) = row[idx].get_int() {
+    let Some(cell) = row.get(idx) else {
+        return Err(anyhow::Error::msg(format!("{field}不能为空")));
+    };
+    if let Some(v) = cell.get_int() {
         return usize::try_from(v).map_err(|_| anyhow::Error::msg(format!("{field}超出范围")));
     }
-    if let Some(v) = row[idx].get_float() {
+    if let Some(v) = cell.get_float() {
         if !v.is_finite() || v.fract().abs() > f64::EPSILON {
             return Err(anyhow::Error::msg(format!("{field}必须是整数")));
         }
@@ -256,8 +259,9 @@ pub(crate) fn required_usize_integerish(
 }
 
 pub(crate) fn required_hex(row: &[Data], idx: usize, field: &str) -> Result<u32, anyhow::Error> {
-    let str = row[idx]
-        .get_string()
+    let str = row
+        .get(idx)
+        .and_then(|cell| cell.get_string())
         .ok_or_else(|| anyhow::Error::msg(format!("{field}不能为空")))?
         .trim();
     let str = str.strip_prefix("0x").unwrap_or(str);

@@ -38,5 +38,9 @@ BINDGEN_EXTRA_CLANG_ARGS_x86_64_unknown_linux_musl = "-nostdinc -isystem /usr/li
 # own specs file pointing at musl's real lib dir (/usr/lib/musl/lib), so use
 # it as the linker explicitly - matching the aarch64-linux-musl-gcc override
 # already set globally in ~/.cargo/config.toml for the aarch64 musl target.
+# musl 的 "static-pie" 自举(self-relocation)在这个体量的二进制上会在启动时
+# 段错误(在 _start_c 阶段应用 R_X86_64_RELATIVE 时写越界), 用
+# relocation-model=static 强制产出真正的非 PIE 静态二进制来绕开这段代码路径。
 [target.x86_64-unknown-linux-musl]
 linker = "x86_64-linux-musl-gcc"
+rustflags = ["-C", "relocation-model=static"]

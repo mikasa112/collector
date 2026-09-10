@@ -98,8 +98,9 @@ impl GpioConfig {
         let line = required_f64(row, 5, "LINE")? as u16;
         let name = optional_static_str(row, 6);
         let enable = required_f64(row, 7, "ENABLE")? != 0.0;
-        let trans = row[8]
-            .get_string()
+        let trans = row
+            .get(8)
+            .and_then(|cell| cell.get_string())
             .and_then(|str| Translator::try_from(str).ok());
         let trans: Option<&'static Translator> = match trans {
             Some(t) => Some(Box::leak(Box::new(t))),

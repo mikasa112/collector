@@ -292,8 +292,9 @@ impl CanSignalConfig {
         let remark = optional_static_str(row, 13);
         let key = required_static_str(row, 14, "键")
             .map_err(|err| CanConfParseError::invalid_field(ENTITY, "键", err))?;
-        let trans = row[15]
-            .get_string()
+        let trans = row
+            .get(15)
+            .and_then(|cell| cell.get_string())
             .and_then(|str| Translator::try_from(str).ok());
         let trans: Option<&'static Translator> = match trans {
             Some(t) => Some(Box::leak(Box::new(t))),
@@ -401,8 +402,9 @@ impl CanSignalExtConfig {
         // as u32;
         let key = required_static_str(row, 16, "键")
             .map_err(|err| CanConfParseError::invalid_field(ENTITY, "键", err))?;
-        let trans = row[17]
-            .get_string()
+        let trans = row
+            .get(17)
+            .and_then(|cell| cell.get_string())
             .and_then(|str| Translator::try_from(str).ok());
         let trans: Option<&'static Translator> = match trans {
             Some(t) => Some(Box::leak(Box::new(t))),
