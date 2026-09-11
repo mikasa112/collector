@@ -41,6 +41,19 @@ function M.merge_with_id(segments, start_id)
     return result
 end
 
+--- 依次拼接多组数据点，保留原始 id，不重新编号。
+---@param segments DataPoint[][] 按拼接顺序排列的多组数据点
+---@return DataPoint[]
+function M.concat(segments)
+    local result = {}
+    for _, seg in ipairs(segments) do
+        for _, point in ipairs(seg) do
+            table.insert(result, point)
+        end
+    end
+    return result
+end
+
 --- 给一组数据点标记来源设备与原始 id，供合并编号后仍能反查回原始点位。
 --- 需在 merge_with_id 重新编号之前调用，否则原始 id 会被覆盖丢失。
 ---@param points DataPoint[]

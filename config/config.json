@@ -44,7 +44,7 @@
         "register_file": "./config/pcs/PCS_英博_大机.xlsx",
         "interval": 2000,
         "timeout": 2000,
-        "ip": "192.168.0.20",
+        "ip": "192.168.0.32",
         "port": 502,
         "slave": 1,
         "serial_tty": null,
@@ -68,7 +68,7 @@
         "register_file": "./config/pcs/PCS_英博_大机.xlsx",
         "interval": 2000,
         "timeout": 2000,
-        "ip": "192.168.0.21",
+        "ip": "192.168.0.33",
         "port": 502,
         "slave": 1,
         "serial_tty": null,
@@ -206,7 +206,25 @@
       "id": "di",
       "type": "DI",
       "desc": "IO模块",
-      "config": {}
+      "config": {
+        "type": "DI",
+        "com_type": "ModbusTCP",
+        "register_file": "./config/组合测控/DI.xlsx",
+        "interval": 2000,
+        "timeout": 2000,
+        "ip": "192.168.0.6",
+        "port": 502,
+        "slave": 1,
+        "serial_tty": null,
+        "baud_rate": null,
+        "data_bits": null,
+        "parity": null,
+        "stop_bits": null,
+        "interface": null,
+        "desc": null,
+        "request_interval": null,
+        "max_gap": null
+      }
     }
   }
 }
