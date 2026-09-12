@@ -16,6 +16,11 @@ local utils = require("_utils")
 ---@type MqttConn
 local conn = nil
 
+-- bank 的 yt 上送时已重新编号为从 1 开始，下行需按此表把新编号映射回原始 {dev, id} 才能 dc.dispatch。
+-- 每次 bank() 上送时同步刷新，供下方 handle_set_bank*_yt 使用。
+local bau1_yt_map = {}
+local bau2_yt_map = {}
+
 
 --- 遥调下行消息解析：消息格式为 {"id": 值, ...}，id 为设备原始点位 id，直接透传下发。
 ---@param dev_id string
@@ -39,6 +44,34 @@ local function handle_set_yt(dev_id, payload)
     end
 end
 
+--- 遥调下行消息解析（映射版）：消息格式为 {"id": 值, ...}，id 为上送时重新编号后的虚拟 id，
+--- 需先经 map 查回原始 {dev, id} 再下发。
+---@param map table<integer, {dev: string, id: integer}>
+---@param payload string
+local function handle_set_yt_mapped(map, payload)
+    local ok, msg = pcall(json.decode, payload)
+    if not ok or type(msg) ~= "table" then
+        log.warn("MQTT 遥调下行消息格式错误: " .. tostring(payload))
+        return
+    end
+    for id_str, value in pairs(msg) do
+        local id = tonumber(id_str)
+        if id == nil then
+            log.warn("MQTT 遥调下行消息id非法: " .. tostring(id_str))
+        else
+            local target = map[id]
+            if target == nil then
+                log.warn("MQTT 遥调下行id未知: " .. tostring(id))
+            else
+                local ok2, err = pcall(dc.dispatch, target.dev, target.id, value)
+                if not ok2 then
+                    log.warn("MQTT 遥调下发失败 dev=" .. target.dev .. " id=" .. tostring(target.id) .. ": " .. tostring(err))
+                end
+            end
+        end
+    end
+end
+
 local function handle_set_pcs1_yt(_topic, payload)
     handle_set_yt("pcs1", payload)
 end
@@ -48,11 +81,11 @@ local function handle_set_pcs2_yt(_topic, payload)
 end
 
 local function handle_set_bank1_yt(_topic, payload)
-    handle_set_yt("bau1", payload)
+    handle_set_yt_mapped(bau1_yt_map, payload)
 end
 
 local function handle_set_bank2_yt(_topic, payload)
-    handle_set_yt("bau2", payload)
+    handle_set_yt_mapped(bau2_yt_map, payload)
 end
 
 local function connect_mqtt()
@@ -202,6 +235,8 @@ local function split_bank_yc_yx_yt(points)
 end
 
 --- 分别读取 bau1/bau2 的遥测(yc)、遥信(yx)与遥调(yt)数据，各自独立上送，不合并编号。
+--- yc、yx、yt 的 id 均各自重新编号为从 1 开始的连续序号；
+--- yt 重新编号后原始 {dev, id} 记录到 bau1_yt_map/bau2_yt_map，供下行 dc.dispatch 时映射回原始点位。
 ---@return DataPoint[] bau1_yc
 ---@return DataPoint[] bau1_yx
 ---@return DataPoint[] bau1_yt
@@ -214,6 +249,16 @@ local function bank()
 
     local bau1_yc, bau1_yx, bau1_yt = split_bank_yc_yx_yt(bau1)
     local bau2_yc, bau2_yx, bau2_yt = split_bank_yc_yx_yt(bau2)
+
+    bau1_yc = utils.merge_with_id({ bau1_yc }, 1)
+    bau1_yx = utils.merge_with_id({ bau1_yx }, 1)
+    bau2_yc = utils.merge_with_id({ bau2_yc }, 1)
+    bau2_yx = utils.merge_with_id({ bau2_yx }, 1)
+
+    bau1_yt = utils.merge_with_id({ utils.tag_dev(bau1_yt, "bau1") }, 1)
+    bau2_yt = utils.merge_with_id({ utils.tag_dev(bau2_yt, "bau2") }, 1)
+    bau1_yt_map = utils.build_map(bau1_yt)
+    bau2_yt_map = utils.build_map(bau2_yt)
 
     return bau1_yc, bau1_yx, bau1_yt, bau2_yc, bau2_yx, bau2_yt
 end
@@ -230,15 +275,16 @@ local RACK_YX_SPAN = 87
 ---@param points DataPoint[]
 ---@param base_id integer 簇1 的 id 区间起点
 ---@param span integer 簇内 id 区间跨度（含端点）
----@return DataPoint[][] racks 按簇序号(0-based，对应 topic 里的簇号)排列的数组，共 RACK_COUNT 组
+---@return DataPoint[][] racks 按簇序号(0-based，对应 topic 里的簇号)排列的数组，共 RACK_COUNT 组，各簇 id 均重新编号为从 1 开始
 local function split_bank_racks(points, base_id, span)
     local racks = {}
     for i = 0, RACK_COUNT - 1 do
         local start_id = base_id + i * 1000
         local end_id = start_id + span
-        racks[i + 1] = utils.filter(points, function(p)
+        local rack = utils.filter(points, function(p)
             return p.id ~= nil and p.id >= start_id and p.id <= end_id
         end)
+        racks[i + 1] = utils.merge_with_id({ rack }, 1)
     end
     return racks
 end
