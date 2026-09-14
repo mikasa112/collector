@@ -234,9 +234,156 @@ local function split_bank_yc_yx_yt(points)
     return yc_data, yx_data, yt_data
 end
 
+--- 高特 BAU 堆遥测点位 -> 后端固定核心点位映射字典
+--- 无法映射的核心点位不进入映射表，后端对应字段自然为空，不予展示
+local GAOTE_BANK_YC_MAP = {
+    [20000] = 41, -- 电池堆电操状态 -> 41: 堆充放电标定/复位状态
+    [20001] = 4,  -- 电池堆电压 -> 4: 电池堆总电压
+    [20002] = 5,  -- 电池堆电流 -> 5: 电池堆总电流
+    [20003] = 3,  -- 电池堆 SOC -> 3: 电池堆SOC
+    [20004] = 6,  -- 电池堆 SOH -> 6: 电池堆SOH
+    [20005] = 9,  -- 最高电池电压 -> 9: 堆最高单体电压
+    [20006] = 70, -- 最高电压电池组号 -> 70: 最高电压电池组号
+    [20007] = 10, -- 最高电压电池所在组中的点号 -> 10: 堆最高单体电压编号
+    [20008] = 11, -- 最低电池电压 -> 11: 堆最低单体电压
+    [20009] = 71, -- 最低电压电池组号 -> 71: 最低电压电池组号
+    [20010] = 12, -- 最低电压电池所在组中的点号 -> 12: 堆最低单体电压编号
+    [20011] = 17, -- 最高电池温度 -> 17: 堆最高单体温度
+    [20012] = 72, -- 最高温度电池组号 -> 72: 最高温度电池组号
+    [20013] = 18, -- 最高温度电池所在组中的点号 -> 18: 堆最高单体温度编号
+    [20014] = 19, -- 最低电池温度 -> 19: 堆最低单体温度
+    [20015] = 73, -- 最低温度电池组号 -> 73: 最低温度电池组号
+    [20016] = 20, -- 最低温度电池所在组中的点号 -> 20: 堆最低单体温度编号
+    [20017] = 39, -- 堆累计充电电量 -> 39: 堆累计充电电量
+    [20018] = 38, -- 堆累计放电电量 -> 38: 堆累计放电电量
+    [20021] = 35, -- 堆可充电量 -> 35: 堆可充电量
+    [20022] = 34, -- 堆可放电量 -> 34: 堆可放电量
+    [20025] = 28, -- 允许最大放电功率 -> 28: 堆最大允许放电功率
+    [20026] = 29, -- 允许最大充电功率 -> 29: 堆最大允许充电功率
+    [20027] = 31, -- 允许最大放电电流 -> 31: 堆最大允许放电电流
+    [20028] = 30, -- 允许最大充电电流 -> 30: 堆最大允许充电电流
+    [20031] = 36, -- 当天放电电量 -> 36: 堆日放电电量
+    [20032] = 37, -- 当天充电电量 -> 37: 堆日充电电量
+    [20033] = 8,  -- 运行温度 -> 8: 堆单体平均温度 / 运行温度
+    [20036] = 27, -- 电池堆绝缘电阻 -> 27: 电池堆绝缘阻值
+}
+
+--- 高特 簇遥测（相对于各簇 base_id 的偏移量）-> 后端固定核心点位映射字典
+local GAOTE_RACK_YC_OFFSET_MAP = {
+    [1]  = 127, -- 允许充电最大功率 -> 127: 簇最大允许充电功率
+    [2]  = 126, -- 允许放电最大功率 -> 126: 簇最大允许放电功率
+    [15] = 101, -- 组电压 -> 101: 电池簇电压
+    [16] = 102, -- 组电流 -> 102: 电池簇电流
+    [18] = 100, -- 组 SOC -> 100: 电池簇SOC
+    [19] = 103, -- 组 SOH -> 103: 电池簇SOH
+    [20] = 124, -- 组绝缘电阻 -> 124: 簇正母线对地绝缘阻值
+    [21] = 104, -- 平均单体电压 -> 104: 簇单体平均电压
+    [22] = 105, -- 平均单体温度 -> 105: 簇单体平均温度
+    [23] = 106, -- 最高单体电压 -> 106: 簇最高单体电压
+    [24] = 107, -- 最高单体电压对应点号 -> 107: 簇最高单体电压编号
+    [25] = 108, -- 最低单体电压 -> 108: 簇最低单体电压值
+    [26] = 109, -- 最低单体电压对应点号 -> 109: 簇最低单体电压编号
+    [27] = 114, -- 最高单体温度 -> 114: 簇最高单体温度
+    [28] = 115, -- 最高单体温度对应点号 -> 115: 簇最高单体温度编号
+    [29] = 116, -- 最低单体温度 -> 116: 簇最低单体温度
+    [30] = 117, -- 最低单体温度对应点号 -> 117: 簇最低单体温度编号
+    [31] = 139, -- 最高单体SOC -> 139: 簇最高单体SOC
+    [33] = 140, -- 最低单体SOC -> 140: 簇最低单体SOC
+    [39] = 136, -- 累计充电电量 -> 136: 簇累计充电电量
+    [40] = 135, -- 累计放电电量 -> 135: 簇累计放电电量
+    [43] = 138, -- 可充电量 -> 138: 簇可充电量
+    [44] = 137, -- 可放电量 -> 137: 簇可放电量
+}
+
+--- 高特 遥调点位 -> 后端固定核心点位映射字典
+local GAOTE_BANK_YT_MAP = {
+    [50001] = 2002, -- 故障复归 -> 2002
+    [50002] = 2003, -- 接触器控制（预留） -> 2003
+    [50003] = 2000, -- 系统开关机 -> 2000
+    [50004] = 2006, -- 簇1启停 -> 2006
+    [50005] = 2007, -- 簇2启停 -> 2007
+    [50006] = 2008, -- 簇3启停 -> 2008
+    [50007] = 2009, -- 簇4启停 -> 2009
+    [50008] = 2010, -- 簇5启停 -> 2010
+    [50009] = 2011, -- 簇6启停 -> 2011
+    [50010] = 2019, -- 簇 7 维护模式控制 -> 2019: 簇7启停
+    [50011] = 2020, -- 簇 8 维护模式控制 -> 2020: 簇8启停
+    [50012] = 2021, -- 簇 9 维护模式控制 -> 2021: 簇9启停
+    [50013] = 2022, -- 簇 10 维护模式控制 -> 2022: 簇10启停
+    [50014] = 2023, -- 簇 11 维护模式控制 -> 2023: 簇11启停
+    [50015] = 2024, -- 簇 12 维护模式控制 -> 2024: 簇12启停
+}
+
+--- 堆遥信分类集合（按严重级别与告警类型归类）
+local BANK_L1_IDS = {
+    1002, 1005, 1008, 1011, 1014, 1017, 1020, 1023, 1026, 1029,
+    1032, 1035, 1038, 1041, 1044, 1047, 1048, 1049, 1050, 1051,
+    1052, 1056, 1071, 1074, 1077, 1078, 1079
+}
+local BANK_L2_IDS = {
+    1001, 1004, 1007, 1010, 1013, 1016, 1019, 1022, 1025, 1028,
+    1031, 1034, 1037, 1040, 1043, 1046, 1055, 1070, 1073, 1076
+}
+local BANK_L3_IDS = {
+    1000, 1003, 1006, 1009, 1012, 1015, 1018, 1021, 1024, 1027,
+    1030, 1033, 1036, 1039, 1042, 1045, 1069, 1072, 1075
+}
+
+--- 簇遥信分类集合（相对于各簇起始点位的偏移 0..87）
+local RACK_L1_OFFSETS = {
+    0, 3, 6, 9, 12, 15, 18, 21, 24, 27, 30, 33, 36,
+    37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50,
+    51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64,
+    65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76,
+    79, 82, 85, 86, 87
+}
+local RACK_L2_OFFSETS = {
+    2, 5, 8, 11, 14, 17, 20, 23, 26, 29, 32, 35, 78, 81, 84
+}
+local RACK_L3_OFFSETS = {
+    1, 4, 7, 10, 13, 16, 19, 22, 25, 28, 31, 34, 77, 80, 83
+}
+
+--- 检查列表中任意点位是否触发（值为 1 或 true）
+local function any_triggered(val_map, id_list)
+    for _, id in ipairs(id_list) do
+        local v = val_map[id]
+        if v == 1 or v == true or v == "1" then
+            return 1
+        end
+    end
+    return 0
+end
+
+--- 堆遥信聚合映射：将高特原始遥信按严重级别与禁充/放标志聚合为标准点位
+--- 1007: 堆一级故障, 1008: 堆二级告警, 1009: 堆三级预警, 1010: 堆禁充标志, 1011: 堆禁放标志
+local function map_bank_yx(raw_yx)
+    local val_map = {}
+    for _, p in ipairs(raw_yx) do
+        if p.id ~= nil then
+            val_map[p.id] = p.value
+        end
+    end
+
+    local l1 = any_triggered(val_map, BANK_L1_IDS)
+    local l2 = any_triggered(val_map, BANK_L2_IDS)
+    local l3 = any_triggered(val_map, BANK_L3_IDS)
+    local no_chg = (val_map[1053] == 1 or val_map[1053] == true or val_map[1053] == "1") and 1 or 0
+    local no_dischg = (val_map[1054] == 1 or val_map[1054] == true or val_map[1054] == "1") and 1 or 0
+
+    return {
+        { id = 1007, value = l1 },
+        { id = 1008, value = l2 },
+        { id = 1009, value = l3 },
+        { id = 1010, value = no_chg },
+        { id = 1011, value = no_dischg },
+    }
+end
+
 --- 分别读取 bau1/bau2 的遥测(yc)、遥信(yx)与遥调(yt)数据，各自独立上送，不合并编号。
---- yc、yx、yt 的 id 均各自重新编号为从 1 开始的连续序号；
---- yt 重新编号后原始 {dev, id} 记录到 bau1_yt_map/bau2_yt_map，供下行 dc.dispatch 时映射回原始点位。
+--- yc 映射为后端标准核心点位编号；
+--- yx 聚合映射为后端标准核心告警点位（1007-1011）；
+--- yt 映射后记录到 bau1_yt_map/bau2_yt_map，供下行 dc.dispatch 时反向映射回原始点位。
 ---@return DataPoint[] bau1_yc
 ---@return DataPoint[] bau1_yx
 ---@return DataPoint[] bau1_yt
@@ -250,15 +397,23 @@ local function bank()
     local bau1_yc, bau1_yx, bau1_yt = split_bank_yc_yx_yt(bau1)
     local bau2_yc, bau2_yx, bau2_yt = split_bank_yc_yx_yt(bau2)
 
-    bau1_yc = utils.merge_with_id({ bau1_yc }, 1)
-    bau1_yx = utils.merge_with_id({ bau1_yx }, 1)
-    bau2_yc = utils.merge_with_id({ bau2_yc }, 1)
-    bau2_yx = utils.merge_with_id({ bau2_yx }, 1)
+    bau1_yc = utils.map_points(bau1_yc, GAOTE_BANK_YC_MAP)
+    bau2_yc = utils.map_points(bau2_yc, GAOTE_BANK_YC_MAP)
 
-    bau1_yt = utils.merge_with_id({ utils.tag_dev(bau1_yt, "bau1") }, 1)
-    bau2_yt = utils.merge_with_id({ utils.tag_dev(bau2_yt, "bau2") }, 1)
-    bau1_yt_map = utils.build_map(bau1_yt)
-    bau2_yt_map = utils.build_map(bau2_yt)
+    bau1_yx = map_bank_yx(bau1_yx)
+    bau2_yx = map_bank_yx(bau2_yx)
+
+    bau1_yt = utils.map_points(bau1_yt, GAOTE_BANK_YT_MAP)
+    bau2_yt = utils.map_points(bau2_yt, GAOTE_BANK_YT_MAP)
+
+    bau1_yt_map = {}
+    for orig_id, std_id in pairs(GAOTE_BANK_YT_MAP) do
+        bau1_yt_map[std_id] = { dev = "bau1", id = orig_id }
+    end
+    bau2_yt_map = {}
+    for orig_id, std_id in pairs(GAOTE_BANK_YT_MAP) do
+        bau2_yt_map[std_id] = { dev = "bau2", id = orig_id }
+    end
 
     return bau1_yc, bau1_yx, bau1_yt, bau2_yc, bau2_yx, bau2_yt
 end
@@ -275,16 +430,49 @@ local RACK_YX_SPAN = 87
 ---@param points DataPoint[]
 ---@param base_id integer 簇1 的 id 区间起点
 ---@param span integer 簇内 id 区间跨度（含端点）
----@return DataPoint[][] racks 按簇序号(0-based，对应 topic 里的簇号)排列的数组，共 RACK_COUNT 组，各簇 id 均重新编号为从 1 开始
+---@return DataPoint[][] racks 按簇序号(0-based，对应 topic 里的簇号)排列的数组，共 RACK_COUNT 组
 local function split_bank_racks(points, base_id, span)
     local racks = {}
     for i = 0, RACK_COUNT - 1 do
         local start_id = base_id + i * 1000
         local end_id = start_id + span
-        local rack = utils.filter(points, function(p)
+        local raw_rack = utils.filter(points, function(p)
             return p.id ~= nil and p.id >= start_id and p.id <= end_id
         end)
-        racks[i + 1] = utils.merge_with_id({ rack }, 1)
+        if base_id == RACK_YC_BASE_ID then
+            local mapped_rack = {}
+            for _, p in ipairs(raw_rack) do
+                local offset = p.id - start_id
+                local std_id = GAOTE_RACK_YC_OFFSET_MAP[offset]
+                if std_id ~= nil then
+                    local pt = {}
+                    for k, v in pairs(p) do pt[k] = v end
+                    -- 加上 i * 39 配合后端 MqttConfig.pointOffset 还原回基准
+                    pt.id = std_id + i * 39
+                    table.insert(mapped_rack, pt)
+                end
+            end
+            racks[i + 1] = mapped_rack
+        elseif base_id == RACK_YX_BASE_ID then
+            -- 簇遥信聚合映射：L1(1203), L2(1204), L3(1205)
+            -- 加上 i * 115 配合后端 MqttConfig.pointOffset 还原回基准
+            local offset_map = {}
+            for _, p in ipairs(raw_rack) do
+                local offset = p.id - start_id
+                offset_map[offset] = p.value
+            end
+            local l1 = any_triggered(offset_map, RACK_L1_OFFSETS)
+            local l2 = any_triggered(offset_map, RACK_L2_OFFSETS)
+            local l3 = any_triggered(offset_map, RACK_L3_OFFSETS)
+            local yx_offset = i * 115
+            racks[i + 1] = {
+                { id = 1203 + yx_offset, value = l1 },
+                { id = 1204 + yx_offset, value = l2 },
+                { id = 1205 + yx_offset, value = l3 },
+            }
+        else
+            racks[i + 1] = raw_rack
+        end
     end
     return racks
 end

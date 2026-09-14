@@ -88,4 +88,24 @@ function M.build_map(points)
     return map
 end
 
+--- 根据映射字典表重映射数据点 id，未在 map 表中的点位被过滤掉（无法匹配核心点位则不显示）
+---@param points DataPoint[]
+---@param id_map table<integer, integer> 原始点号 -> 标准点号
+---@return DataPoint[]
+function M.map_points(points, id_map)
+    local result = {}
+    for _, p in ipairs(points) do
+        local target_id = id_map[p.id]
+        if target_id ~= nil then
+            local mapped = {}
+            for k, v in pairs(p) do
+                mapped[k] = v
+            end
+            mapped.id = target_id
+            table.insert(result, mapped)
+        end
+    end
+    return result
+end
+
 return M
