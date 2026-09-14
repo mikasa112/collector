@@ -301,6 +301,20 @@ function Engine.start(project)
 
             publish("/pds/bank/" .. bank_index .. "/rack/" .. i .. "/yc", mapped_yc)
             publish("/pds/bank/" .. bank_index .. "/rack/" .. i .. "/yx", mapped_yx)
+
+            -- 提取并发布该簇的单体电压(500)与单体温度(506)
+            local cell_vol_pt = utils.find(raw_yc, function(p) return p.id == start_yc + 45 end)
+            local cell_temp_pt = utils.find(raw_yc, function(p) return p.id == start_yc + 46 end)
+            if cell_vol_pt or cell_temp_pt then
+                local cell_data = {}
+                if cell_vol_pt and cell_vol_pt.value ~= nil then
+                    cell_data["500"] = cell_vol_pt.value
+                end
+                if cell_temp_pt and cell_temp_pt.value ~= nil then
+                    cell_data["506"] = cell_temp_pt.value
+                end
+                publish("/pds/bank/" .. bank_index .. "/cell/" .. i .. "/yc", cell_data)
+            end
         end
     end
 
