@@ -355,9 +355,21 @@ local function any_triggered(val_map, id_list)
     return 0
 end
 
---- 堆遥信聚合映射：将高特原始遥信按严重级别与禁充/放标志聚合为标准点位
---- 1007: 堆一级故障, 1008: 堆二级告警, 1009: 堆三级预警, 1010: 堆禁充标志, 1011: 堆禁放标志
-local function map_bank_yx(raw_yx)
+--- 提取设备的通讯状态点（id=0xFFFF / 65535）
+--- 若采集引擎注入则使用其实际值，若未注入则根据 points 是否有数据推断（有数据为 0 正常，空则为 1 离线）
+local function get_comm_point(points)
+    for _, p in ipairs(points) do
+        if p.id == COMM_STATUS_ID then
+            return { id = COMM_STATUS_ID, value = (p.value == 1 or p.value == true or p.value == "1") and 1 or 0 }
+        end
+    end
+    local val = (#points > 0) and 0 or 1
+    return { id = COMM_STATUS_ID, value = val }
+end
+
+--- 堆遥信聚合映射：将高特原始遥信按严重级别与禁充/放标志聚合为标准点位，并追加通讯状态点 65535
+--- 1007: 堆一级故障, 1008: 堆二级告警, 1009: 堆三级预警, 1010: 堆禁充标志, 1011: 堆禁放标志, 65535: bank通讯诊断
+local function map_bank_yx(raw_yx, comm_pt)
     local val_map = {}
     for _, p in ipairs(raw_yx) do
         if p.id ~= nil then
@@ -371,18 +383,22 @@ local function map_bank_yx(raw_yx)
     local no_chg = (val_map[1053] == 1 or val_map[1053] == true or val_map[1053] == "1") and 1 or 0
     local no_dischg = (val_map[1054] == 1 or val_map[1054] == true or val_map[1054] == "1") and 1 or 0
 
-    return {
+    local result = {
         { id = 1007, value = l1 },
         { id = 1008, value = l2 },
         { id = 1009, value = l3 },
         { id = 1010, value = no_chg },
         { id = 1011, value = no_dischg },
     }
+    if comm_pt then
+        table.insert(result, comm_pt)
+    end
+    return result
 end
 
 --- 分别读取 bau1/bau2 的遥测(yc)、遥信(yx)与遥调(yt)数据，各自独立上送，不合并编号。
 --- yc 映射为后端标准核心点位编号；
---- yx 聚合映射为后端标准核心告警点位（1007-1011）；
+--- yx 聚合映射为后端标准核心告警点位（1007-1011）并附带通讯诊断点（65535）；
 --- yt 映射后记录到 bau1_yt_map/bau2_yt_map，供下行 dc.dispatch 时反向映射回原始点位。
 ---@return DataPoint[] bau1_yc
 ---@return DataPoint[] bau1_yx
@@ -394,14 +410,17 @@ local function bank()
     local bau1 = dc.read_all("bau1")
     local bau2 = dc.read_all("bau2")
 
+    local bau1_comm = get_comm_point(bau1)
+    local bau2_comm = get_comm_point(bau2)
+
     local bau1_yc, bau1_yx, bau1_yt = split_bank_yc_yx_yt(bau1)
     local bau2_yc, bau2_yx, bau2_yt = split_bank_yc_yx_yt(bau2)
 
     bau1_yc = utils.map_points(bau1_yc, GAOTE_BANK_YC_MAP)
     bau2_yc = utils.map_points(bau2_yc, GAOTE_BANK_YC_MAP)
 
-    bau1_yx = map_bank_yx(bau1_yx)
-    bau2_yx = map_bank_yx(bau2_yx)
+    bau1_yx = map_bank_yx(bau1_yx, bau1_comm)
+    bau2_yx = map_bank_yx(bau2_yx, bau2_comm)
 
     bau1_yt = utils.map_points(bau1_yt, GAOTE_BANK_YT_MAP)
     bau2_yt = utils.map_points(bau2_yt, GAOTE_BANK_YT_MAP)
