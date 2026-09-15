@@ -136,18 +136,71 @@ pub enum ModbusConfigsError {
     DuplicatePointId(u16),
 }
 
+/// 一行模板配置按"重复次数/地址步长/序号步长"展开为多份（如一堆多簇场景）。
+/// 缺少这三列（或重复次数<=1）时原样返回单行，兼容旧配置文件。
+fn expand_row(row: &[Data]) -> Vec<Vec<Data>> {
+    const REPEAT_COL: usize = 16;
+    const ADDR_STEP_COL: usize = 17;
+    const ID_STEP_COL: usize = 18;
+
+    let repeat_count = row
+        .get(REPEAT_COL)
+        .and_then(|cell| cell.get_float())
+        .map(|v| v as i64)
+        .filter(|&v| v > 1);
+    let Some(repeat_count) = repeat_count else {
+        return vec![row.to_vec()];
+    };
+
+    let steps = row
+        .get(0)
+        .and_then(|cell| cell.get_float())
+        .zip(row.get(5).and_then(|cell| cell.get_float()))
+        .zip(row.get(ID_STEP_COL).and_then(|cell| cell.get_float()))
+        .zip(row.get(ADDR_STEP_COL).and_then(|cell| cell.get_float()));
+    let Some((((base_id, base_addr), id_step), addr_step)) = steps else {
+        error!("配置了重复次数({repeat_count})但缺少序号/寄存器地址/序号步长/地址步长，按不展开处理");
+        return vec![row.to_vec()];
+    };
+
+    (0..repeat_count)
+        .map(|i| {
+            let n = i + 1; // 簇号从1开始
+            let mut new_row = row.to_vec();
+            if let Some(cell) = new_row.get_mut(0) {
+                *cell = Data::Float(base_id + i as f64 * id_step);
+            }
+            if let Some(cell) = new_row.get_mut(5) {
+                *cell = Data::Float(base_addr + i as f64 * addr_step);
+            }
+            for (idx, cell) in new_row.iter_mut().enumerate() {
+                if idx == 0 || idx == 5 {
+                    continue;
+                }
+                if let Data::String(s) = cell {
+                    if s.contains("{n}") {
+                        *cell = Data::String(s.replace("{n}", &n.to_string()));
+                    }
+                }
+            }
+            new_row
+        })
+        .collect()
+}
+
 pub(crate) fn build_configs(path: String) -> Result<ModbusConfigs, ModbusConfigsError> {
     let mut workbook: Xlsx<_> = open_workbook(path)?;
     let mut configs = Vec::new();
     let parse = |range: Range<Data>, configs: &mut Vec<ModbusConfig>| {
         for row in range.rows() {
-            let config = ModbusConfig::build(row);
-            match config {
-                Ok(config) => {
-                    configs.push(config);
-                }
-                Err(err) => {
-                    error!("构建Modbus配置失败: {}", err);
+            for expanded in expand_row(row) {
+                match ModbusConfig::build(&expanded) {
+                    Ok(config) => {
+                        configs.push(config);
+                    }
+                    Err(err) => {
+                        error!("构建Modbus配置失败: {}", err);
+                    }
                 }
             }
         }
@@ -261,5 +314,86 @@ impl ModbusConfig {
             status_words,
             warn_bits,
         })
+    }
+}
+
+#[cfg(test)]
+mod expand_row_tests {
+    use super::*;
+
+    fn base_row() -> Vec<Data> {
+        vec![
+            Data::Float(50.0),                        // 0: 序号
+            Data::String("簇{n}电压".to_string()),      // 1: 点位名称
+            Data::String("U16".to_string()),           // 2: 数据类型
+            Data::Empty,                               // 3: 单位
+            Data::Empty,                               // 4: 备注
+            Data::Float(2203.0),                       // 5: 寄存器地址
+            Data::String("HoldingRegisters".to_string()), // 6: 寄存器类型
+            Data::Float(1.0),                          // 7: 数量
+            Data::Empty,                               // 8: 字节序
+            Data::Float(1.0),                          // 9: 缩放
+            Data::Float(0.0),                           // 10: 偏移量
+            Data::Float(1.0),                          // 11: 启用
+            Data::String("clusterVoltage{n}".to_string()), // 12: 键
+            Data::Empty,                               // 13: 点位名称翻译
+            Data::Empty,                               // 14: 状态字
+            Data::Empty,                               // 15: 告警位
+        ]
+    }
+
+    #[test]
+    fn expand_row_without_extra_columns_returns_single_row() {
+        let row = base_row();
+        let expanded = expand_row(&row);
+        assert_eq!(expanded.len(), 1);
+        assert_eq!(expanded[0], row);
+    }
+
+    #[test]
+    fn expand_row_with_repeat_count_one_returns_single_row() {
+        let mut row = base_row();
+        row.push(Data::Float(1.0)); // 16: 重复次数
+        row.push(Data::Float(46.0)); // 17: 地址步长
+        row.push(Data::Float(1.0)); // 18: 序号步长
+        let expanded = expand_row(&row);
+        assert_eq!(expanded.len(), 1);
+    }
+
+    #[test]
+    fn expand_row_generates_n_rows_with_incrementing_id_and_address() {
+        let mut row = base_row();
+        row.push(Data::Float(12.0)); // 16: 重复次数
+        row.push(Data::Float(46.0)); // 17: 地址步长
+        row.push(Data::Float(1.0)); // 18: 序号步长
+
+        let expanded = expand_row(&row);
+        assert_eq!(expanded.len(), 12);
+
+        assert_eq!(expanded[0][0], Data::Float(50.0));
+        assert_eq!(expanded[0][5], Data::Float(2203.0));
+        assert_eq!(expanded[0][1], Data::String("簇1电压".to_string()));
+        assert_eq!(
+            expanded[0][12],
+            Data::String("clusterVoltage1".to_string())
+        );
+
+        assert_eq!(expanded[11][0], Data::Float(61.0));
+        assert_eq!(expanded[11][5], Data::Float(2709.0));
+        assert_eq!(expanded[11][1], Data::String("簇12电压".to_string()));
+        assert_eq!(
+            expanded[11][12],
+            Data::String("clusterVoltage12".to_string())
+        );
+    }
+
+    #[test]
+    fn expand_row_missing_steps_falls_back_to_single_row() {
+        let mut row = base_row();
+        row.push(Data::Float(12.0)); // 16: 重复次数
+        // 缺少地址步长(17)/序号步长(18)
+        let expanded = expand_row(&row);
+        assert_eq!(expanded.len(), 1);
+        assert_eq!(expanded[0], row);
     }
 }

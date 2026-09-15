@@ -99,9 +99,20 @@ fn parse_mod_meta(path: &Path, source: &str) -> Result<ScriptMeta, LoadError> {
     .exec()
     .map_err(|e| LoadError::Lua(e.to_string()))?;
 
-    lua.load(source)
-        .exec()
-        .map_err(|e| LoadError::Lua(format!("{}: {}", path.display(), e)))?;
+    if let Err(e) = lua.load(source).exec() {
+        // 脚本顶层可能出现 `local m = require("xxx"); m.start(...)` 这类调用链，
+        // 代理表在 __call 处返回的是普通空表（而非代理本身，见上方说明），
+        // 因此链式调用会在沙箱里报错。只要 MOD 已在报错前赋值成功，
+        // 元信息提取的目的已经达成，不应因脚本后续逻辑而整体判定为失败。
+        if lua.globals().get::<mlua::Table>("MOD").is_err() {
+            return Err(LoadError::Lua(format!("{}: {}", path.display(), e)));
+        }
+        tracing::warn!(
+            "[mod] 脚本 {} 顶层执行未完全成功（MOD 元信息已提取，忽略后续错误）: {}",
+            path.display(),
+            e
+        );
+    }
 
     let mod_table: mlua::Table = lua
         .globals()
