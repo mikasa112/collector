@@ -59,16 +59,28 @@ function Engine.start(project)
     local bau1_yt_map = {}
     local bau2_yt_map = {}
 
-    -- 刷新下行反查表
+    -- 刷新下行反查表（支持根据各自堆协议动态映射）
     local function refresh_yt_maps()
-        if project.GAOTE_BANK_YT_MAP then
-            bau1_yt_map = {}
-            for orig_id, std_id in pairs(project.GAOTE_BANK_YT_MAP) do
-                bau1_yt_map[std_id] = { dev = "bau1", id = orig_id }
+        local dev0 = project.BANK0_DEV_ID or "ems"
+        local proto0 = project.BANK0_PROTOCOL or "ems"
+        local dev1 = project.BANK1_DEV_ID or "bau"
+        local proto1 = project.BANK1_PROTOCOL or "bau"
+
+        -- 堆0 反查表
+        bau1_yt_map = {}
+        local map0 = (proto0 == "ems" and project.GAOTE_EMS_BANK_YT_MAP) or project.GAOTE_BANK_YT_MAP
+        if map0 then
+            for orig_id, std_id in pairs(map0) do
+                bau1_yt_map[std_id] = { dev = dev0, id = orig_id }
             end
-            bau2_yt_map = {}
-            for orig_id, std_id in pairs(project.GAOTE_BANK_YT_MAP) do
-                bau2_yt_map[std_id] = { dev = "bau2", id = orig_id }
+        end
+
+        -- 堆1 反查表
+        bau2_yt_map = {}
+        local map1 = (proto1 == "ems" and project.GAOTE_EMS_BANK_YT_MAP) or project.GAOTE_BANK_YT_MAP
+        if map1 then
+            for orig_id, std_id in pairs(map1) do
+                bau2_yt_map[std_id] = { dev = dev1, id = orig_id }
             end
         end
     end
@@ -196,6 +208,10 @@ function Engine.start(project)
         return p1_yc, p1_yt, p1_yx, p2_yc, p2_yt, p2_yx
     end
 
+    local function is_truthy(v)
+        return v == 1 or v == true or v == "1"
+    end
+
     local function map_bank_yx(raw_yx, comm_pt)
         local val_map = {}
         for _, p in ipairs(raw_yx) do
@@ -217,103 +233,206 @@ function Engine.start(project)
         return result
     end
 
+    local function map_ems_bank_yx(raw_yx, comm_pt)
+        local val_map = {}
+        for _, p in ipairs(raw_yx) do
+            if p.id ~= nil then val_map[p.id] = p.value end
+        end
+        local l1 = any_triggered(val_map, project.GAOTE_EMS_BANK_L1_IDS or {}) -- 轻度预警
+        local l2 = any_triggered(val_map, project.GAOTE_EMS_BANK_L2_IDS or {}) -- 中度告警
+        local l3 = any_triggered(val_map, project.GAOTE_EMS_BANK_L3_IDS or {}) -- 严重故障
+        local no_chg_id = project.GAOTE_EMS_BANK_NO_CHG_ID or 1046
+        local no_dischg_id = project.GAOTE_EMS_BANK_NO_DISCHG_ID or 1047
+        local no_chg = is_truthy(val_map[no_chg_id]) and 1 or 0
+        local no_dischg = is_truthy(val_map[no_dischg_id]) and 1 or 0
+        local result = {
+            { id = 1007, value = l3 }, -- 1007: 堆一级故障 (严重)
+            { id = 1008, value = l2 }, -- 1008: 堆二级告警 (中度)
+            { id = 1009, value = l1 }, -- 1009: 堆三级预警 (轻度)
+            { id = 1010, value = no_chg },    -- 1010: 堆禁充标志
+            { id = 1011, value = no_dischg }, -- 1011: 堆禁放标志
+        }
+        if comm_pt then table.insert(result, comm_pt) end
+        return result
+    end
+
+    --- 读取单个堆的遥测、遥信、遥调（支持 ems 与 bau 双协议）
+    local function parse_single_bank(dev_id, protocol)
+        local raw = dc.read_all(dev_id)
+        if not raw or #raw == 0 then
+            if dev_id == "bau1" then raw = dc.read_all("ems") or dc.read_all("bau") or {} end
+            if dev_id == "ems" then raw = dc.read_all("bau1") or dc.read_all("bau") or {} end
+        end
+        raw = raw or {}
+        local comm_pt = get_comm_point(raw)
+
+        if protocol == "ems" then
+            -- 高特本地 EMS 处理分支 (点位 20..46 为堆遥测，1000..1052 为堆遥信)
+            local yc_raw = utils.filter(raw, function(p) return p.id ~= nil and p.id >= 20 and p.id <= 46 end)
+            local yx_raw = utils.filter(raw, function(p) return p.id ~= nil and p.id >= 1000 and p.id <= 1052 end)
+            local yt_raw = utils.filter(raw, function(p) return p.id ~= nil and p.id >= 2000 and p.id <= 2015 end)
+
+            local mapped_yc = project.GAOTE_EMS_BANK_YC_MAP and utils.map_points(yc_raw, project.GAOTE_EMS_BANK_YC_MAP) or yc_raw
+            local mapped_yx = map_ems_bank_yx(yx_raw, comm_pt)
+            local mapped_yt = project.GAOTE_EMS_BANK_YT_MAP and utils.map_points(yt_raw, project.GAOTE_EMS_BANK_YT_MAP) or yt_raw
+            return mapped_yc, mapped_yx, mapped_yt
+        else
+            -- 高特 BAU 处理分支 (寄存器 20000..20040)
+            local yc_raw = utils.filter(raw, function(p) return p.id ~= nil and p.id >= 20000 and p.id <= 20040 end)
+            local yx_raw = utils.filter(raw, function(p) return p.id ~= nil and p.id >= 1000 and p.id <= 1079 end)
+            local yt_raw = utils.filter(raw, function(p) return p.id ~= nil and p.id >= 50000 and p.id <= 50015 end)
+
+            local mapped_yc = project.GAOTE_BANK_YC_MAP and utils.map_points(yc_raw, project.GAOTE_BANK_YC_MAP) or yc_raw
+            local mapped_yx = map_bank_yx(yx_raw, comm_pt)
+            local mapped_yt = project.GAOTE_BANK_YT_MAP and utils.map_points(yt_raw, project.GAOTE_BANK_YT_MAP) or yt_raw
+            return mapped_yc, mapped_yx, mapped_yt
+        end
+    end
+
     local function collect_bank()
-        local bau1 = dc.read_all("bau1")
-        local bau2 = dc.read_all("bau2")
+        local dev0 = project.BANK0_DEV_ID or "ems"
+        local proto0 = project.BANK0_PROTOCOL or "ems"
+        local dev1 = project.BANK1_DEV_ID or "bau"
+        local proto1 = project.BANK1_PROTOCOL or "bau"
 
-        local b1_comm = get_comm_point(bau1)
-        local b2_comm = get_comm_point(bau2)
-
-        local split_bank = function(points)
-            local yc = utils.filter(points, function(p) return p.id ~= nil and p.id >= 20000 and p.id <= 20040 end)
-            local yx = utils.filter(points, function(p) return p.id ~= nil and p.id >= 1000 and p.id <= 1079 end)
-            local yt = utils.filter(points, function(p) return p.id ~= nil and p.id >= 50000 and p.id <= 50015 end)
-            return yc, yx, yt
-        end
-
-        local b1_yc, b1_yx, b1_yt = split_bank(bau1)
-        local b2_yc, b2_yx, b2_yt = split_bank(bau2)
-
-        if project.GAOTE_BANK_YC_MAP then
-            b1_yc = utils.map_points(b1_yc, project.GAOTE_BANK_YC_MAP)
-            b2_yc = utils.map_points(b2_yc, project.GAOTE_BANK_YC_MAP)
-        end
-
-        b1_yx = map_bank_yx(b1_yx, b1_comm)
-        b2_yx = map_bank_yx(b2_yx, b2_comm)
-
-        if project.GAOTE_BANK_YT_MAP then
-            b1_yt = utils.map_points(b1_yt, project.GAOTE_BANK_YT_MAP)
-            b2_yt = utils.map_points(b2_yt, project.GAOTE_BANK_YT_MAP)
-        end
+        local b1_yc, b1_yx, b1_yt = parse_single_bank(dev0, proto0)
+        local b2_yc, b2_yx, b2_yt = parse_single_bank(dev1, proto1)
 
         refresh_yt_maps()
         return b1_yc, b1_yx, b1_yt, b2_yc, b2_yx, b2_yt
     end
 
-    local function publish_bank_racks(dev_id, bank_index)
+    local function publish_bank_racks(dev_id, bank_index, protocol)
         local points = dc.read_all(dev_id)
-        local rack_count = project.RACK_COUNT or 12
-        local yc_base = project.RACK_YC_BASE_ID or 21000
-        local yc_span = project.RACK_YC_SPAN or 46
-        local yx_base = project.RACK_YX_BASE_ID or 2000
-        local yx_span = project.RACK_YX_SPAN or 87
+        if not points or #points == 0 then
+            if dev_id == "bau1" then points = dc.read_all("ems") or dc.read_all("bau") or {} end
+            if dev_id == "ems" then points = dc.read_all("bau1") or dc.read_all("bau") or {} end
+        end
+        points = points or {}
 
-        for i = 0, rack_count - 1 do
-            local start_yc = yc_base + i * 1000
-            local raw_yc = utils.filter(points, function(p) return p.id ~= nil and p.id >= start_yc and p.id <= start_yc + yc_span end)
-            local mapped_yc = {}
-            if project.GAOTE_RACK_YC_OFFSET_MAP then
-                for _, p in ipairs(raw_yc) do
-                    local offset = p.id - start_yc
-                    local std_id = project.GAOTE_RACK_YC_OFFSET_MAP[offset]
-                    if std_id ~= nil then
-                        local pt = {}
-                        for k, v in pairs(p) do pt[k] = v end
-                        pt.id = std_id + i * 39
-                        table.insert(mapped_yc, pt)
+        local proto = protocol or (bank_index == 0 and (project.BANK0_PROTOCOL or "ems") or (project.BANK1_PROTOCOL or "bau"))
+
+        if proto == "ems" then
+            -- 高特本地 EMS 簇解析分支 (12 簇，遥测每簇 30 点位，遥信每簇 60 点位)
+            local rack_count = project.EMS_RACK_COUNT or 12
+            local yc_base = project.EMS_RACK_YC_BASE_ID or 50
+            local yc_step = project.EMS_RACK_YC_STEP or 30
+            local yc_span = project.EMS_RACK_YC_SPAN or 24
+            local yx_base = project.EMS_RACK_YX_BASE_ID or 1053
+            local yx_step = project.EMS_RACK_YX_STEP or 60
+            local yx_span = project.EMS_RACK_YX_SPAN or 53
+
+            for i = 0, rack_count - 1 do
+                local start_yc = yc_base + i * yc_step
+                local raw_yc = utils.filter(points, function(p) return p.id ~= nil and p.id >= start_yc and p.id <= start_yc + yc_span end)
+                local mapped_yc = {}
+                if project.GAOTE_EMS_RACK_YC_OFFSET_MAP then
+                    for _, p in ipairs(raw_yc) do
+                        local offset = p.id - start_yc
+                        local std_id = project.GAOTE_EMS_RACK_YC_OFFSET_MAP[offset]
+                        if std_id ~= nil then
+                            local pt = {}
+                            for k, v in pairs(p) do pt[k] = v end
+                            -- 与后端 pointOffset("rack", "yc", i) 步长 39 保持对齐
+                            pt.id = std_id + i * 39
+                            table.insert(mapped_yc, pt)
+                        end
                     end
+                else
+                    mapped_yc = raw_yc
                 end
-            else
-                mapped_yc = raw_yc
-            end
 
-            local start_yx = yx_base + i * 1000
-            local raw_yx = utils.filter(points, function(p) return p.id ~= nil and p.id >= start_yx and p.id <= start_yx + yx_span end)
-            local mapped_yx = {}
-            if project.RACK_L1_OFFSETS and project.RACK_L2_OFFSETS and project.RACK_L3_OFFSETS then
+                local start_yx = yx_base + i * yx_step
+                local raw_yx = utils.filter(points, function(p) return p.id ~= nil and p.id >= start_yx and p.id <= start_yx + yx_span end)
                 local offset_map = {}
                 for _, p in ipairs(raw_yx) do
                     offset_map[p.id - start_yx] = p.value
                 end
-                local l1 = any_triggered(offset_map, project.RACK_L1_OFFSETS)
-                local l2 = any_triggered(offset_map, project.RACK_L2_OFFSETS)
-                local l3 = any_triggered(offset_map, project.RACK_L3_OFFSETS)
+
+                local l1 = any_triggered(offset_map, project.GAOTE_EMS_RACK_L1_OFFSETS or {})
+                local l2 = any_triggered(offset_map, project.GAOTE_EMS_RACK_L2_OFFSETS or {})
+                local l3 = any_triggered(offset_map, project.GAOTE_EMS_RACK_L3_OFFSETS or {})
+                local contactor = is_truthy(offset_map[project.GAOTE_EMS_RACK_CONTACTOR_OFFSET or 48]) and 1 or 0
+                local no_chg = is_truthy(offset_map[project.GAOTE_EMS_RACK_NO_CHG_OFFSET or 49]) and 1 or 0
+                local no_dischg = is_truthy(offset_map[project.GAOTE_EMS_RACK_NO_DISCHG_OFFSET or 50]) and 1 or 0
+
                 local yx_offset = i * 115
-                mapped_yx = {
-                    { id = 1203 + yx_offset, value = l1 },
-                    { id = 1204 + yx_offset, value = l2 },
-                    { id = 1205 + yx_offset, value = l3 },
+                local mapped_yx = {
+                    { id = 1203 + yx_offset, value = l3 },        -- 簇一级故障 (严重)
+                    { id = 1204 + yx_offset, value = l2 },        -- 簇二级告警 (中度)
+                    { id = 1205 + yx_offset, value = l1 },        -- 簇三级预警 (轻度)
+                    { id = 1206 + yx_offset, value = no_chg },    -- 簇禁充标志
+                    { id = 1207 + yx_offset, value = no_dischg }, -- 簇禁放标志
+                    { id = 1208 + yx_offset, value = contactor }, -- 簇总正接触器状态
                 }
-            else
-                mapped_yx = raw_yx
+
+                publish("/pds/bank/" .. bank_index .. "/rack/" .. i .. "/yc", mapped_yc)
+                publish("/pds/bank/" .. bank_index .. "/rack/" .. i .. "/yx", mapped_yx)
             end
+        else
+            -- 高特 BAU 簇解析分支 (保留原有逻辑)
+            local rack_count = project.RACK_COUNT or 12
+            local yc_base = project.RACK_YC_BASE_ID or 21000
+            local yc_span = project.RACK_YC_SPAN or 46
+            local yx_base = project.RACK_YX_BASE_ID or 2000
+            local yx_span = project.RACK_YX_SPAN or 87
 
-            publish("/pds/bank/" .. bank_index .. "/rack/" .. i .. "/yc", mapped_yc)
-            publish("/pds/bank/" .. bank_index .. "/rack/" .. i .. "/yx", mapped_yx)
+            for i = 0, rack_count - 1 do
+                local start_yc = yc_base + i * 1000
+                local raw_yc = utils.filter(points, function(p) return p.id ~= nil and p.id >= start_yc and p.id <= start_yc + yc_span end)
+                local mapped_yc = {}
+                if project.GAOTE_RACK_YC_OFFSET_MAP then
+                    for _, p in ipairs(raw_yc) do
+                        local offset = p.id - start_yc
+                        local std_id = project.GAOTE_RACK_YC_OFFSET_MAP[offset]
+                        if std_id ~= nil then
+                            local pt = {}
+                            for k, v in pairs(p) do pt[k] = v end
+                            pt.id = std_id + i * 39
+                            table.insert(mapped_yc, pt)
+                        end
+                    end
+                else
+                    mapped_yc = raw_yc
+                end
 
-            -- 提取并发布该簇的单体电压(500)与单体温度(506)
-            local cell_vol_pt = utils.find(raw_yc, function(p) return p.id == start_yc + 45 end)
-            local cell_temp_pt = utils.find(raw_yc, function(p) return p.id == start_yc + 46 end)
-            if cell_vol_pt or cell_temp_pt then
-                local cell_data = {}
-                if cell_vol_pt and cell_vol_pt.value ~= nil then
-                    cell_data["500"] = cell_vol_pt.value
+                local start_yx = yx_base + i * 1000
+                local raw_yx = utils.filter(points, function(p) return p.id ~= nil and p.id >= start_yx and p.id <= start_yx + yx_span end)
+                local mapped_yx = {}
+                if project.RACK_L1_OFFSETS and project.RACK_L2_OFFSETS and project.RACK_L3_OFFSETS then
+                    local offset_map = {}
+                    for _, p in ipairs(raw_yx) do
+                        offset_map[p.id - start_yx] = p.value
+                    end
+                    local l1 = any_triggered(offset_map, project.RACK_L1_OFFSETS)
+                    local l2 = any_triggered(offset_map, project.RACK_L2_OFFSETS)
+                    local l3 = any_triggered(offset_map, project.RACK_L3_OFFSETS)
+                    local yx_offset = i * 115
+                    mapped_yx = {
+                        { id = 1203 + yx_offset, value = l1 },
+                        { id = 1204 + yx_offset, value = l2 },
+                        { id = 1205 + yx_offset, value = l3 },
+                    }
+                else
+                    mapped_yx = raw_yx
                 end
-                if cell_temp_pt and cell_temp_pt.value ~= nil then
-                    cell_data["506"] = cell_temp_pt.value
+
+                publish("/pds/bank/" .. bank_index .. "/rack/" .. i .. "/yc", mapped_yc)
+                publish("/pds/bank/" .. bank_index .. "/rack/" .. i .. "/yx", mapped_yx)
+
+                -- 提取并发布该簇的单体电压(500)与单体温度(506)
+                local cell_vol_pt = utils.find(raw_yc, function(p) return p.id == start_yc + 45 end)
+                local cell_temp_pt = utils.find(raw_yc, function(p) return p.id == start_yc + 46 end)
+                if cell_vol_pt or cell_temp_pt then
+                    local cell_data = {}
+                    if cell_vol_pt and cell_vol_pt.value ~= nil then
+                        cell_data["500"] = cell_vol_pt.value
+                    end
+                    if cell_temp_pt and cell_temp_pt.value ~= nil then
+                        cell_data["506"] = cell_temp_pt.value
+                    end
+                    publish("/pds/bank/" .. bank_index .. "/cell/" .. i .. "/yc", cell_data)
                 end
-                publish("/pds/bank/" .. bank_index .. "/cell/" .. i .. "/yc", cell_data)
             end
         end
     end
@@ -351,8 +470,12 @@ function Engine.start(project)
         publish("/pds/bank/1/yt", b2_yt)
 
         -- 4. RACKS
-        publish_bank_racks("bau1", 0)
-        publish_bank_racks("bau2", 1)
+        local dev0 = project.BANK0_DEV_ID or "ems"
+        local proto0 = project.BANK0_PROTOCOL or "ems"
+        local dev1 = project.BANK1_DEV_ID or "bau"
+        local proto1 = project.BANK1_PROTOCOL or "bau"
+        publish_bank_racks(dev0, 0, proto0)
+        publish_bank_racks(dev1, 1, proto1)
     end)
 end
 
