@@ -213,22 +213,15 @@ function Engine.start(project)
     end
 
     local function map_bank_yx(raw_yx, comm_pt)
-        local val_map = {}
+        -- 高特 BAU 堆遥信：不再聚合成笼统的 1007-1011 一二三级/禁充/禁放汇总位，
+        -- 只逐点透传原始点位 1000-1079（平移 +8000），对应 BankYX.java 新增字段 9000-9079，
+        -- 故障列表直接显示具体故障名
+        local result = {}
         for _, p in ipairs(raw_yx) do
-            if p.id ~= nil then val_map[p.id] = p.value end
+            if p.id ~= nil and p.id >= 1000 and p.id <= 1079 then
+                table.insert(result, { id = p.id + 8000, value = p.value })
+            end
         end
-        local l1 = any_triggered(val_map, project.BANK_L1_IDS or {})
-        local l2 = any_triggered(val_map, project.BANK_L2_IDS or {})
-        local l3 = any_triggered(val_map, project.BANK_L3_IDS or {})
-        local no_chg = (val_map[1053] == 1 or val_map[1053] == true or val_map[1053] == "1") and 1 or 0
-        local no_dischg = (val_map[1054] == 1 or val_map[1054] == true or val_map[1054] == "1") and 1 or 0
-        local result = {
-            { id = 1007, value = l1 },
-            { id = 1008, value = l2 },
-            { id = 1009, value = l3 },
-            { id = 1010, value = no_chg },
-            { id = 1011, value = no_dischg },
-        }
         if comm_pt then table.insert(result, comm_pt) end
         return result
     end
@@ -396,25 +389,19 @@ function Engine.start(project)
                     mapped_yc = raw_yc
                 end
 
-                local start_yx = yx_base + i * 1000
+                -- 高特各簇原始基址不规律（簇1=2000,簇2=2100,簇3=3000,簇4起才是+1000规整），
+                -- 不能用线性公式 yx_base + i*1000 推算，必须查表
+                local start_yx = (project.GAOTE_RACK_YX_BASES and project.GAOTE_RACK_YX_BASES[i + 1]) or (yx_base + i * 1000)
                 local raw_yx = utils.filter(points, function(p) return p.id ~= nil and p.id >= start_yx and p.id <= start_yx + yx_span end)
+                -- 高特 BAU 簇遥信：不再聚合成笼统的 1203-1205 一二三级汇总位，
+                -- 只逐点透传：原始点位相对本簇基址的偏移(0..87)映射到簇1基准 2000-2087，
+                -- 再平移 +8000 得到 10000-10087，最后按本簇实例加 i*115（与后端 pointOffset("rack","yx",i) 对齐），
+                -- 对应 RackYX.java 新增字段，故障列表直接显示具体故障名
+                local yx_offset = i * 115
                 local mapped_yx = {}
-                if project.RACK_L1_OFFSETS and project.RACK_L2_OFFSETS and project.RACK_L3_OFFSETS then
-                    local offset_map = {}
-                    for _, p in ipairs(raw_yx) do
-                        offset_map[p.id - start_yx] = p.value
-                    end
-                    local l1 = any_triggered(offset_map, project.RACK_L1_OFFSETS)
-                    local l2 = any_triggered(offset_map, project.RACK_L2_OFFSETS)
-                    local l3 = any_triggered(offset_map, project.RACK_L3_OFFSETS)
-                    local yx_offset = i * 115
-                    mapped_yx = {
-                        { id = 1203 + yx_offset, value = l1 },
-                        { id = 1204 + yx_offset, value = l2 },
-                        { id = 1205 + yx_offset, value = l3 },
-                    }
-                else
-                    mapped_yx = raw_yx
+                for _, p in ipairs(raw_yx) do
+                    local local_offset = p.id - start_yx
+                    table.insert(mapped_yx, { id = 10000 + local_offset + yx_offset, value = p.value })
                 end
 
                 publish("/pds/bank/" .. bank_index .. "/rack/" .. i .. "/yc", mapped_yc)
