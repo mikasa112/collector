@@ -252,6 +252,16 @@ function Engine.start(project)
             local yt_raw = utils.filter(raw, function(p) return p.id ~= nil and p.id >= 50000 and p.id <= 50015 end)
 
             local mapped_yc = project.GAOTE_BANK_YC_MAP and utils.map_points(yc_raw, project.GAOTE_BANK_YC_MAP) or yc_raw
+            -- 部分标准点位在 BAU 原始寄存器里的枚举语义与既定标准不一致（如堆状态原始为13值枚举），
+            -- 映射完成后按 GAOTE_BANK_YC_VALUE_TRANSFORM 逐点归一化，不影响未配置的其它点位
+            if project.GAOTE_BANK_YC_VALUE_TRANSFORM then
+                for _, p in ipairs(mapped_yc) do
+                    local transform = project.GAOTE_BANK_YC_VALUE_TRANSFORM[p.id]
+                    if transform and p.value ~= nil then
+                        p.value = transform(p.value)
+                    end
+                end
+            end
             local mapped_yx = map_bank_yx(yx_raw, comm_pt)
             local mapped_yt = project.GAOTE_BANK_YT_MAP and utils.map_points(yt_raw, project.GAOTE_BANK_YT_MAP) or yt_raw
             return mapped_yc, mapped_yx, mapped_yt
