@@ -83,8 +83,12 @@ impl ReadCursor {
             Ok(Err(err)) => {
                 self.fail_streak += 1;
                 warn!(
-                    "[{}] 读取失败 ({}/{}): {}",
-                    id, self.fail_streak, MAX_READ_FAILURES, err
+                    "[{}] 读取失败 ({}/{}, {}): {}",
+                    id,
+                    self.fail_streak,
+                    MAX_READ_FAILURES,
+                    blocks.describe_one(i),
+                    err
                 );
                 if self.fail_streak >= MAX_READ_FAILURES {
                     return ReadOutcome::FailureThresholdReached;
@@ -93,8 +97,11 @@ impl ReadCursor {
             Err(_) => {
                 self.fail_streak += 1;
                 warn!(
-                    "[{}] 读取超时 ({}/{}, 块 {})",
-                    id, self.fail_streak, MAX_READ_FAILURES, i
+                    "[{}] 读取超时 ({}/{}, {})",
+                    id,
+                    self.fail_streak,
+                    MAX_READ_FAILURES,
+                    blocks.describe_one(i)
                 );
                 if self.fail_streak >= MAX_READ_FAILURES {
                     return ReadOutcome::FailureThresholdReached;
