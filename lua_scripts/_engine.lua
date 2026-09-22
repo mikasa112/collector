@@ -326,6 +326,22 @@ function Engine.start(project)
 
                 publish("/pds/bank/" .. bank_index .. "/rack/" .. i .. "/yc", mapped_yc)
                 publish("/pds/bank/" .. bank_index .. "/rack/" .. i .. "/yx", mapped_yx)
+
+                -- 提取并发布该簇的单体温度(75)与单体电压(76)，偏移量相对 start_yc 为 25/26
+                -- 注意：目前协议文件仅给出簇1的寄存器地址（重复次数=1，未按簇展开），
+                -- 故 i=0 时才能取到有效数据，簇2..12 需补充协议里各簇真实寄存器地址后才会生效
+                local cell_temp_pt = utils.find(raw_yc, function(p) return p.id == start_yc + 25 end)
+                local cell_vol_pt = utils.find(raw_yc, function(p) return p.id == start_yc + 26 end)
+                if cell_vol_pt or cell_temp_pt then
+                    local cell_data = {}
+                    if cell_vol_pt and cell_vol_pt.value ~= nil then
+                        table.insert(cell_data, { id = 500, value = cell_vol_pt.value })
+                    end
+                    if cell_temp_pt and cell_temp_pt.value ~= nil then
+                        table.insert(cell_data, { id = 506, value = cell_temp_pt.value })
+                    end
+                    publish("/pds/bank/" .. bank_index .. "/cell/" .. i .. "/yc", cell_data)
+                end
             end
         else
             -- 高特 BAU 簇解析分支 (保留原有逻辑)
