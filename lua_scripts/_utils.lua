@@ -18,6 +18,20 @@ function M.filter(points, predicate)
     return result
 end
 
+--- 返回第一个满足条件的数据点，找不到则返回 nil
+---@param points DataPoint[]
+---@param predicate fun(value: DataPoint, index: integer): boolean
+---@return DataPoint?
+function M.find(points, predicate)
+    for i, value in ipairs(points) do
+        if predicate(value, i) then
+            return value
+        end
+    end
+
+    return nil
+end
+
 --- 依次拼接多组数据点，并将 id 重新编号为从 start_id 开始累加的连续序号，
 --- 避免各设备原始 id 各自从小数字起步、合并后互相冲突。
 ---@param segments DataPoint[][] 按拼接顺序排列的多组数据点
