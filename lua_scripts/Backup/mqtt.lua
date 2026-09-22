@@ -131,7 +131,6 @@ timer.every(30000, function()
     for dev_id, sn in pairs(DEVICE_SN) do
         local payload = {
             sn        = sn,
-            dev       = dev_id,
             timestamp = os.time(),
             data      = collect_device(dev_id),
         }

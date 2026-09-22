@@ -165,9 +165,21 @@ impl Blocks {
     pub(super) fn describe(&self) -> String {
         self.blocks
             .iter()
-            .map(|b| format!("{:?}[{:#06x}..+{}]", b.register_type, b.start, b.len))
+            .map(|b| Self::describe_block(b))
             .collect::<Vec<_>>()
             .join(", ")
+    }
+
+    /// 返回单个 block 的摘要（寄存器类型/起始地址/长度），用于失败日志定位
+    pub(super) fn describe_one(&self, index: usize) -> String {
+        self.blocks
+            .get(index)
+            .map(Self::describe_block)
+            .unwrap_or_else(|| format!("块 {index}"))
+    }
+
+    fn describe_block(b: &Block) -> String {
+        format!("{:?}[{:#06x}..+{}]", b.register_type, b.start, b.len)
     }
 
     /// 读取单个 block，不含 interval sleep

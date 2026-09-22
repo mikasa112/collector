@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use calamine::{Data, DataType, HeaderRow, Range, Reader, Xlsx, open_workbook};
 use tracing::error;
@@ -189,17 +189,27 @@ fn expand_row(row: &[Data]) -> Vec<Vec<Data>> {
 }
 
 pub(crate) fn build_configs(path: String) -> Result<ModbusConfigs, ModbusConfigsError> {
-    let mut workbook: Xlsx<_> = open_workbook(path)?;
+    let mut workbook: Xlsx<_> = open_workbook(&path)?;
     let mut configs = Vec::new();
-    let parse = |range: Range<Data>, configs: &mut Vec<ModbusConfig>| {
-        for row in range.rows() {
+    let mut errors: HashMap<(&'static str, String), Vec<u32>> = HashMap::new();
+    let parse = |sheet: &'static str,
+                 range: Range<Data>,
+                 configs: &mut Vec<ModbusConfig>,
+                 errors: &mut HashMap<(&'static str, String), Vec<u32>>| {
+        // Excel行号（1-based，与表格软件里看到的行号一致）
+        let row_offset = range.start().map(|(row, _)| row).unwrap_or(0);
+        for (idx, row) in range.rows().enumerate() {
+            let excel_row = row_offset + idx as u32 + 1;
             for expanded in expand_row(row) {
                 match ModbusConfig::build(&expanded) {
                     Ok(config) => {
                         configs.push(config);
                     }
                     Err(err) => {
-                        error!("构建Modbus配置失败: {}", err);
+                        errors
+                            .entry((sheet, err.to_string()))
+                            .or_default()
+                            .push(excel_row);
                     }
                 }
             }
@@ -210,8 +220,19 @@ pub(crate) fn build_configs(path: String) -> Result<ModbusConfigs, ModbusConfigs
             .with_header_row(HeaderRow::Row(1))
             .worksheet_range(sheet)
         {
-            parse(range, &mut configs);
+            parse(sheet, range, &mut configs, &mut errors);
         }
+    }
+    for ((sheet, reason), rows) in &errors {
+        let rows_str = rows
+            .iter()
+            .map(u32::to_string)
+            .collect::<Vec<_>>()
+            .join(", ");
+        error!(
+            "构建Modbus配置失败[配置文件: {path}][sheet: {sheet}] x{}: {reason}（行: {rows_str}）",
+            rows.len()
+        );
     }
     let mut seen = HashSet::with_capacity(configs.len());
     for cfg in &configs {
@@ -273,7 +294,7 @@ impl ModbusConfig {
             .and_then(|cell| cell.get_float())
             .unwrap_or(1f64)
             != 0f64;
-        let key = required_static_str(row, 12, "键")?;
+        let key = optional_static_str(row, 12).unwrap_or("");
         let trans = row
             .get(13)
             .and_then(|cell| cell.get_string())
