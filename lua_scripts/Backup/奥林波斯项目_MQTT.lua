@@ -400,41 +400,27 @@ end
 --- yc 映射为后端标准核心点位编号；
 --- yx 聚合映射为后端标准核心告警点位（1007-1011）并附带通讯诊断点（65535）；
 --- yt 映射后记录到 bau1_yt_map/bau2_yt_map，供下行 dc.dispatch 时反向映射回原始点位。
----@return DataPoint[] bau1_yc
----@return DataPoint[] bau1_yx
----@return DataPoint[] bau1_yt
----@return DataPoint[] bau2_yc
----@return DataPoint[] bau2_yx
----@return DataPoint[] bau2_yt
+---@return DataPoint[] bau_yc
+---@return DataPoint[] bau_yx
+---@return DataPoint[] bau_yt
 local function bank()
-    local bau1 = dc.read_all("bau1")
-    local bau2 = dc.read_all("bau2")
+    local bau1 = dc.read_all("bau")
 
     local bau1_comm = get_comm_point(bau1)
-    local bau2_comm = get_comm_point(bau2)
 
     local bau1_yc, bau1_yx, bau1_yt = split_bank_yc_yx_yt(bau1)
-    local bau2_yc, bau2_yx, bau2_yt = split_bank_yc_yx_yt(bau2)
 
     bau1_yc = utils.map_points(bau1_yc, GAOTE_BANK_YC_MAP)
-    bau2_yc = utils.map_points(bau2_yc, GAOTE_BANK_YC_MAP)
 
     bau1_yx = map_bank_yx(bau1_yx, bau1_comm)
-    bau2_yx = map_bank_yx(bau2_yx, bau2_comm)
 
     bau1_yt = utils.map_points(bau1_yt, GAOTE_BANK_YT_MAP)
-    bau2_yt = utils.map_points(bau2_yt, GAOTE_BANK_YT_MAP)
 
     bau1_yt_map = {}
     for orig_id, std_id in pairs(GAOTE_BANK_YT_MAP) do
-        bau1_yt_map[std_id] = { dev = "bau1", id = orig_id }
+        bau1_yt_map[std_id] = { dev = "bau", id = orig_id }
     end
-    bau2_yt_map = {}
-    for orig_id, std_id in pairs(GAOTE_BANK_YT_MAP) do
-        bau2_yt_map[std_id] = { dev = "bau2", id = orig_id }
-    end
-
-    return bau1_yc, bau1_yx, bau1_yt, bau2_yc, bau2_yx, bau2_yt
+    return bau1_yc, bau1_yx, bau1_yt
 end
 
 -- 每个 BAU 下辖 12 个簇，簇 N(1-based) 的 id 区间为
@@ -507,6 +493,24 @@ local function publish_bank_racks(dev_id, bank_index)
         local rack_index = i - 1
         publish("/pds/bank/" .. bank_index .. "/rack/" .. rack_index .. "/yc", yc_racks[i])
         publish("/pds/bank/" .. bank_index .. "/rack/" .. rack_index .. "/yx", yx_racks[i])
+
+        -- 单体电压(偏移45)/单体温度(偏移46)在 datacenter 中是 Val::List（每节电芯一个值），
+        -- 不能并入上面按簇偏移逐点映射的标量负载(GAOTE_RACK_YC_OFFSET_MAP 未收录这两个偏移)，
+        -- 需整体（数组）单独发布，key 沿用后端约定的 500(单体电压)/506(单体温度)。
+        local start_yc = RACK_YC_BASE_ID + rack_index * 1000
+        local cell_data = nil
+        for _, p in ipairs(points) do
+            if p.id == start_yc + 45 and p.value ~= nil then
+                cell_data = cell_data or {}
+                cell_data["500"] = p.value
+            elseif p.id == start_yc + 46 and p.value ~= nil then
+                cell_data = cell_data or {}
+                cell_data["506"] = p.value
+            end
+        end
+        if cell_data then
+            publish("/pds/bank/" .. bank_index .. "/cell/" .. rack_index .. "/yc", cell_data)
+        end
     end
 end
 
@@ -531,14 +535,11 @@ timer.every(2000,function ()
     publish("/pds/pcs/1/yt", pcs2_yt)
     publish("/pds/pcs/1/yx", pcs2_yx)
 
-    local bau1_yc, bau1_yx, bau1_yt, bau2_yc, bau2_yx, bau2_yt = bank()
-    publish("/pds/bank/0/yc", bau1_yc)
-    publish("/pds/bank/0/yx", bau1_yx)
-    publish("/pds/bank/0/yt", bau1_yt)
-    publish("/pds/bank/1/yc", bau2_yc)
-    publish("/pds/bank/1/yx", bau2_yx)
-    publish("/pds/bank/1/yt", bau2_yt)
+    local bau_yc, bau_yx, bau_yt = bank()
+    publish("/pds/bank/1/yc", bau_yc)
+    publish("/pds/bank/1/yx", bau_yx)
+    publish("/pds/bank/1/yt", bau_yt)
 
-    publish_bank_racks("bau1", 0)
-    publish_bank_racks("bau2", 1)
+    publish_bank_racks("bau", 1)
+    -- publish_bank_racks("bau2", 1)
 end)
