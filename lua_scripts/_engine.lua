@@ -19,17 +19,6 @@ local function to_payload(points)
     return result
 end
 
---- 检查列表中任意点位是否触发（值为 1 或 true）
-local function any_triggered(val_map, id_list)
-    for _, id in ipairs(id_list) do
-        local v = val_map[id]
-        if v == 1 or v == true or v == "1" then
-            return 1
-        end
-    end
-    return 0
-end
-
 --- 提取设备的通讯状态点（id=0xFFFF / 65535）
 local function get_comm_point(points)
     for _, p in ipairs(points) do
@@ -208,10 +197,6 @@ function Engine.start(project)
         return p1_yc, p1_yt, p1_yx, p2_yc, p2_yt, p2_yx
     end
 
-    local function is_truthy(v)
-        return v == 1 or v == true or v == "1"
-    end
-
     local function map_bank_yx(raw_yx, comm_pt)
         -- 高特 BAU 堆遥信：不再聚合成笼统的 1007-1011 一二三级/禁充/禁放汇总位，
         -- 只逐点透传原始点位 1000-1079（平移 +8000），对应 BankYX.java 新增字段 9000-9079，
@@ -227,24 +212,15 @@ function Engine.start(project)
     end
 
     local function map_ems_bank_yx(raw_yx, comm_pt)
-        local val_map = {}
+        -- 高特 EMS 堆遥信：不再聚合成笼统的 1007-1011 一二三级/禁充/禁放汇总位，
+        -- 只逐点透传原始点位 1000-1052（平移 +8200），对应 BankYX.java 新增字段 9200-9252，
+        -- 故障列表直接显示具体故障名
+        local result = {}
         for _, p in ipairs(raw_yx) do
-            if p.id ~= nil then val_map[p.id] = p.value end
+            if p.id ~= nil and p.id >= 1000 and p.id <= 1052 then
+                table.insert(result, { id = p.id + 8200, value = p.value })
+            end
         end
-        local l1 = any_triggered(val_map, project.GAOTE_EMS_BANK_L1_IDS or {}) -- 轻度预警
-        local l2 = any_triggered(val_map, project.GAOTE_EMS_BANK_L2_IDS or {}) -- 中度告警
-        local l3 = any_triggered(val_map, project.GAOTE_EMS_BANK_L3_IDS or {}) -- 严重故障
-        local no_chg_id = project.GAOTE_EMS_BANK_NO_CHG_ID or 1046
-        local no_dischg_id = project.GAOTE_EMS_BANK_NO_DISCHG_ID or 1047
-        local no_chg = is_truthy(val_map[no_chg_id]) and 1 or 0
-        local no_dischg = is_truthy(val_map[no_dischg_id]) and 1 or 0
-        local result = {
-            { id = 1007, value = l3 }, -- 1007: 堆一级故障 (严重)
-            { id = 1008, value = l2 }, -- 1008: 堆二级告警 (中度)
-            { id = 1009, value = l1 }, -- 1009: 堆三级预警 (轻度)
-            { id = 1010, value = no_chg },    -- 1010: 堆禁充标志
-            { id = 1011, value = no_dischg }, -- 1011: 堆禁放标志
-        }
         if comm_pt then table.insert(result, comm_pt) end
         return result
     end
@@ -337,27 +313,16 @@ function Engine.start(project)
 
                 local start_yx = yx_base + i * yx_step
                 local raw_yx = utils.filter(points, function(p) return p.id ~= nil and p.id >= start_yx and p.id <= start_yx + yx_span end)
-                local offset_map = {}
-                for _, p in ipairs(raw_yx) do
-                    offset_map[p.id - start_yx] = p.value
-                end
-
-                local l1 = any_triggered(offset_map, project.GAOTE_EMS_RACK_L1_OFFSETS or {})
-                local l2 = any_triggered(offset_map, project.GAOTE_EMS_RACK_L2_OFFSETS or {})
-                local l3 = any_triggered(offset_map, project.GAOTE_EMS_RACK_L3_OFFSETS or {})
-                local contactor = is_truthy(offset_map[project.GAOTE_EMS_RACK_CONTACTOR_OFFSET or 48]) and 1 or 0
-                local no_chg = is_truthy(offset_map[project.GAOTE_EMS_RACK_NO_CHG_OFFSET or 49]) and 1 or 0
-                local no_dischg = is_truthy(offset_map[project.GAOTE_EMS_RACK_NO_DISCHG_OFFSET or 50]) and 1 or 0
-
+                -- 高特 EMS 簇遥信：不再聚合成笼统的 1203-1208 一二三级/接触器/禁充/禁放汇总位，
+                -- 只逐点透传：原始点位相对本簇基址的偏移(0..53)映射到簇1基准 12000-12053，
+                -- 再按本簇实例加 i*115（与后端 pointOffset("rack","yx",i) 对齐），
+                -- 对应 RackYX.java 新增字段，故障列表直接显示具体故障名
                 local yx_offset = i * 115
-                local mapped_yx = {
-                    { id = 1203 + yx_offset, value = l3 },        -- 簇一级故障 (严重)
-                    { id = 1204 + yx_offset, value = l2 },        -- 簇二级告警 (中度)
-                    { id = 1205 + yx_offset, value = l1 },        -- 簇三级预警 (轻度)
-                    { id = 1206 + yx_offset, value = no_chg },    -- 簇禁充标志
-                    { id = 1207 + yx_offset, value = no_dischg }, -- 簇禁放标志
-                    { id = 1208 + yx_offset, value = contactor }, -- 簇总正接触器状态
-                }
+                local mapped_yx = {}
+                for _, p in ipairs(raw_yx) do
+                    local local_offset = p.id - start_yx
+                    table.insert(mapped_yx, { id = 12000 + local_offset + yx_offset, value = p.value })
+                end
 
                 publish("/pds/bank/" .. bank_index .. "/rack/" .. i .. "/yc", mapped_yc)
                 publish("/pds/bank/" .. bank_index .. "/rack/" .. i .. "/yx", mapped_yx)
