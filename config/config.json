@@ -1,12 +1,12 @@
 {
   "product_type": "EMU",
-  "project": "英博自研电池管理系统",
+  "project": "奥林波斯测试平台采集层",
   "program": {
     "emu": {
-      "enable": true
+      "enable": false
     },
     "http": {
-      "enable": true,
+      "enable": false,
       "ip": "0.0.0.0",
       "port": 9091
     },
@@ -15,16 +15,16 @@
       "path": "lua_scripts"
     },
     "north_modbus": {
-      "enable": true,
+      "enable": false,
       "north_modbus_host": "0.0.0.0",
       "north_modbus_port": 9092,
-      "north_modbus_conf": "./config/MODBUS_REGISTERS.xlsx"
+      "north_modbus_conf": "./config/北向/MODBUS_REGISTERS.xlsx"
     },
     "eg25_gl": {
-      "enable": true
+      "enable": false
     },
     "mqtt": {
-      "enable": true,
+      "enable": false,
       "mqtt_host": "127.0.0.1",
       "mqtt_port": 1883,
       "mqtt_username": "root",
@@ -34,17 +34,65 @@
     }
   },
   "devices": {
-    "pcs": {
-      "id": "pcs",
+    "pcs1": {
+      "id": "pcs1",
       "type": "PCS",
-      "desc": "英博电气125kWPCS",
+      "desc": "英博电气2.5MWPCS",
       "config": {
         "type": "PCS",
         "com_type": "ModbusTCP",
-        "register_file": "./config/pcs/PCS_英博_125.xlsx",
-        "interval": 1000,
+        "register_file": "./config/pcs/PCS_英博_大机.xlsx",
+        "interval": 2000,
         "timeout": 2000,
-        "ip": "192.168.0.20",
+        "ip": "192.168.0.32",
+        "port": 502,
+        "slave": 1,
+        "serial_tty": null,
+        "baud_rate": null,
+        "data_bits": null,
+        "parity": null,
+        "stop_bits": null,
+        "interface": null,
+        "desc": null,
+        "request_interval": 50,
+        "max_gap": null
+      }
+    },
+    "pcs2": {
+      "id": "pcs2",
+      "type": "PCS",
+      "desc": "英博电气2.5MWPCS",
+      "config": {
+        "type": "PCS",
+        "com_type": "ModbusTCP",
+        "register_file": "./config/pcs/PCS_英博_大机.xlsx",
+        "interval": 2000,
+        "timeout": 2000,
+        "ip": "192.168.0.33",
+        "port": 502,
+        "slave": 1,
+        "serial_tty": null,
+        "baud_rate": null,
+        "data_bits": null,
+        "parity": null,
+        "stop_bits": null,
+        "interface": null,
+        "desc": null,
+        "request_interval": 50,
+        "max_gap": null
+      }
+    },
+    "bau": {
+      "id": "bau",
+      "type": "BAU",
+      "desc": "高特电子BMS",
+      "config": {
+        "type": "BAU",
+        "com_type": "ModbusTCP",
+        "register_file": "./config/bms/BAU_高特.xlsx",
+        "interval": 2000,
+        "timeout": 5000,
+        "ip": "192.168.0.4",
         "port": 502,
         "slave": 1,
         "serial_tty": null,
@@ -58,115 +106,115 @@
         "max_gap": null
       }
     },
-    "bcu": {
-      "id": "bcu",
-      "type": "BCU",
-      "desc": "永泰BMS系统",
+    "ems": {
+      "id": "ems",
+      "type": "EMS",
+      "desc": "高特电子EMS",
       "config": {
-        "type": "BCU",
-        "com_type": "CAN",
-        "register_file": "./config/bms/BCU_永泰.xlsx",
+        "type": "EMS",
+        "com_type": "ModbusTCP",
+        "register_file": "./config/ems/EMS_高特.xlsx",
         "interval": 2000,
         "timeout": 5000,
-        "ip": null,
-        "port": null,
-        "slave": null,
+        "ip": "192.168.0.3",
+        "port": 502,
+        "slave": 1,
         "serial_tty": null,
-        "baud_rate": 500000,
+        "baud_rate": null,
         "data_bits": null,
         "parity": null,
         "stop_bits": null,
-        "interface": "can0",
-        "desc": null,
-        "request_interval": null,
-        "max_gap": null
-      }
-    },
-    "dehum": {
-      "id": "dehum",
-      "type": "Dehum",
-      "desc": "除湿机",
-      "config": {
-        "type": "Dehum",
-        "com_type": "ModbusRTU",
-        "register_file": "./config/辅控/除湿机.xlsx",
-        "interval": 2000,
-        "timeout": 2000,
-        "ip": null,
-        "port": null,
-        "slave": 2,
-        "serial_tty": "/dev/ttyXRUSB1",
-        "baud_rate": 9600,
-        "data_bits": 8,
-        "parity": "N",
-        "stop_bits": 1,
         "interface": null,
         "desc": null,
         "request_interval": null,
         "max_gap": null
       }
     },
-    "tms": {
-      "id": "tms",
-      "type": "TMS",
-      "desc": "液冷机组",
+    "meter": {
+      "id": "meter",
+      "type": "Meter",
+      "desc": "乔宇电气电表",
       "config": {
-        "type": "TMS",
-        "com_type": "ModbusRTU",
-        "register_file": "./config/液冷机组/水冷机组_埃森特.xlsx",
+        "type": "Meter",
+        "com_type": "ModbusTCP",
+        "register_file": "./config/组合测控/电表_乔宇电气.xlsx",
         "interval": 2000,
         "timeout": 2000,
-        "ip": null,
-        "port": null,
+        "ip": "192.168.0.5",
+        "port": 8001,
         "slave": 1,
-        "serial_tty": "/dev/ttyXRUSB3",
-        "baud_rate": 9600,
-        "data_bits": 8,
-        "parity": "N",
-        "stop_bits": 1,
+        "serial_tty": null,
+        "baud_rate": null,
+        "data_bits": null,
+        "parity": null,
+        "stop_bits": null,
         "interface": null,
         "desc": null,
         "request_interval": null,
         "max_gap": null
       }
     },
-    "fire": {
-      "id": "fire",
-      "type": "FIRE",
-      "desc": "消防系统",
+    "thCtrl": {
+      "id": "thCtrl",
+      "type": "变压器温控仪",
+      "desc": "干式变压器温湿度控制器",
       "config": {
-        "type": "FIRE",
-        "com_type": "ModbusRTU",
-        "register_file": "./config/辅控/消防温感烟感.xlsx",
+        "type": "变压器温控仪",
+        "com_type": "ModbusTCP",
+        "register_file": "./config/组合测控/干式变压器温湿度控制器.xlsx",
         "interval": 2000,
         "timeout": 2000,
-        "ip": null,
-        "port": null,
+        "ip": "192.168.0.5",
+        "port": 8002,
         "slave": 1,
-        "serial_tty": "/dev/ttyXRUSB2",
-        "baud_rate": 9600,
-        "data_bits": 8,
-        "parity": "N",
-        "stop_bits": 1,
+        "serial_tty": null,
+        "baud_rate": null,
+        "data_bits": null,
+        "parity": null,
+        "stop_bits": null,
         "interface": null,
         "desc": null,
         "request_interval": null,
         "max_gap": null
       }
     },
-    "gpio": {
-      "id": "gpio",
-      "type": "GPIO",
-      "desc": "DIDO",
+    "trThCtrl": {
+      "id": "trThCtrl",
+      "type": "变压器室温控仪",
+      "desc": "爱可信_温湿度控制器",
       "config": {
-        "type": "GPIO",
-        "com_type": "GPIO",
-        "register_file": "./config/gpio/GPIO.xlsx",
+        "type": "变压器室温控仪",
+        "com_type": "ModbusTCP",
+        "register_file": "./config/组合测控/温湿度控制器_爱可信.xlsx",
         "interval": 2000,
         "timeout": 2000,
-        "ip": null,
-        "port": null,
-        "slave": null,
+        "ip": "192.168.0.5",
+        "port": 8003,
+        "slave": 1,
+        "serial_tty": null,
+        "baud_rate": null,
+        "data_bits": null,
+        "parity": null,
+        "stop_bits": null,
+        "interface": null,
+        "desc": null,
+        "request_interval": null,
+        "max_gap": null
+      }
+    },
+    "di": {
+      "id": "di",
+      "type": "DI",
+      "desc": "IO模块",
+      "config": {
+        "type": "DI",
+        "com_type": "ModbusTCP",
+        "register_file": "./config/组合测控/DI.xlsx",
+        "interval": 2000,
+        "timeout": 2000,
+        "ip": "192.168.0.6",
+        "port": 502,
+        "slave": 1,
         "serial_tty": null,
         "baud_rate": null,
         "data_bits": null,
