@@ -54,6 +54,7 @@ impl CanRunner {
                 bits: None,
                 words: None,
                 unit: None,
+                level: None,
             }],
         );
     }
@@ -397,6 +398,7 @@ fn decode_signal(cfg: &CanSignalConfig, data: &[u8]) -> Option<DataPoint> {
         bits: cfg.enum_bits,
         words: cfg.enum_values,
         unit: cfg.unit,
+        level: None,
     })
 }
 
@@ -450,6 +452,7 @@ fn decode_ext_signal(
         bits: None,
         words: None,
         unit: None,
+        level: None,
     })
 }
 

@@ -188,6 +188,7 @@ impl PlannedCurve {
             bits: None,
             words: None,
             unit: None,
+            level: None,
         }
     }
 }

@@ -17,10 +17,10 @@ pub struct FaultDiagnosis {
     alarm_dao: AlarmDao,
 }
 
-/// 一次 tick 中命中的一条故障：dev 为所属设备表名（"pcs"/"bcu"/"tms"），
-/// code 由 point.id 与 bit 序号组合而成，唯一定位到具体故障位
+/// 一次 tick 中命中的一条故障：dev 为所属设备表名，
+/// code 对于打包位告警由 point.id 与 bit 序号组合而成，对于单点告警即 point.id
 struct FaultAlarm {
-    dev: &'static str,
+    dev: String,
     code: u32,
     name: &'static str,
     level: WarnLevel,
@@ -55,13 +55,14 @@ impl FaultDiagnosis {
                 bits: None,
                 words: None,
                 unit: None,
+                level: None,
             })
             .collect()
     }
 
     /// 提取寄存器当前命中的故障位，dev 为所属设备表名，
     /// code = point.id * 16 + bit 序号，保证同一 bit 位置每次 tick 算出的 code 一致
-    fn fault_alarms(dev: &'static str, point: &DataPoint) -> Vec<FaultAlarm> {
+    fn fault_alarms(dev: &str, point: &DataPoint) -> Vec<FaultAlarm> {
         let Some(bits) = point.bits else {
             return vec![];
         };
@@ -74,7 +75,7 @@ impl FaultDiagnosis {
             .filter(|(_, bit)| bit.level != WarnLevel::None)
             .filter(|(i, _)| (v >> i) & 1 == 1)
             .map(|(i, bit)| FaultAlarm {
-                dev,
+                dev: dev.to_string(),
                 code: point.id * 16 + i as u32,
                 name: bit.zh,
                 level: bit.level,
@@ -82,22 +83,35 @@ impl FaultDiagnosis {
             .collect()
     }
 
+    /// 单点遥信告警：point 配置了 level 且当前值非0即命中，code 直接用 point.id
+    /// （同一设备内 id 已在配置构建期校验唯一，不需要再拼 bit 序号）
+    fn level_alarms(dev: &str, point: &DataPoint) -> Option<FaultAlarm> {
+        let level = point.active_alarm_level()?;
+        Some(FaultAlarm {
+            dev: dev.to_string(),
+            code: point.id,
+            name: point.name,
+            level,
+        })
+    }
+
     /// 将本次 tick 命中的故障与库中仍为 Active 的告警做差集：
     /// 新增的故障 insert 一条 Active 记录，之前 Active 但本次未命中的更新为 Recovered
     async fn sync_alarms(&self, warnings: &[FaultAlarm]) -> Result<(), StrategyError> {
-        let current: HashSet<(u32, &str)> = warnings.iter().map(|w| (w.code, w.dev)).collect();
+        let current: HashSet<(u32, &str)> =
+            warnings.iter().map(|w| (w.code, w.dev.as_str())).collect();
         let active = self.alarm_dao.list_active_keys().await?;
 
         for w in warnings {
             if !active
                 .iter()
-                .any(|(code, dev)| *code == w.code && dev == w.dev)
+                .any(|(code, dev)| *code == w.code && dev == &w.dev)
             {
                 self.alarm_dao
                     .create_alarm(
                         w.code,
                         w.name.to_string(),
-                        w.dev.to_string(),
+                        w.dev.clone(),
                         w.level.into(),
                         AlaramStatus::Active,
                         "system".to_string(),
@@ -147,10 +161,23 @@ impl Strategy for FaultDiagnosis {
             p.id = 500 + i as u32;
         }
         center.ingest("emu", bit_points);
-        let warnings: Vec<FaultAlarm> = [("pcs", &pcs), ("bcu", &bcu), ("tms", &tms)]
+        let bits_warnings: Vec<FaultAlarm> = [("pcs", &pcs), ("bcu", &bcu), ("tms", &tms)]
             .into_iter()
             .flat_map(|(dev, points)| points.iter().flat_map(move |p| Self::fault_alarms(dev, p)))
             .collect();
+        // 通用扫描：任意设备里配置了单点告警等级(level)且当前值非0的点位，无需硬编码点位id
+        let level_warnings: Vec<FaultAlarm> = center
+            .dev_ids()
+            .into_iter()
+            .flat_map(|dev| {
+                center
+                    .read_all(&dev)
+                    .iter()
+                    .filter_map(|p| Self::level_alarms(&dev, p))
+                    .collect::<Vec<_>>()
+            })
+            .collect();
+        let warnings: Vec<FaultAlarm> = bits_warnings.into_iter().chain(level_warnings).collect();
         self.sync_alarms(&warnings).await?;
         let runtime = get_runtime().await?;
         if !warnings.is_empty() {

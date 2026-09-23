@@ -8,7 +8,7 @@ use crate::{
         optional_static_str, required_f64, required_static_str, required_str,
         required_usize_integerish,
     },
-    core::point::{Bits, Translator, Words},
+    core::point::{Bits, Translator, WarnLevel, Words},
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -261,6 +261,8 @@ pub struct ModbusConfig {
     pub trans: Option<&'static Translator>,
     pub status_words: Option<&'static Words>,
     pub warn_bits: Option<&'static Bits>,
+    /// 单点告警等级：用于"单个遥信点位本身就是一个告警"的场景（值非0即命中该等级告警）
+    pub level: Option<WarnLevel>,
 }
 
 impl ModbusConfig {
@@ -317,6 +319,12 @@ impl ModbusConfig {
             Some(t) => Some(Box::leak(Box::new(t))),
             None => None,
         };
+        // 索引19：告警等级，追加在重复次数(16)/地址步长(17)/序号步长(18)之后
+        let level = row
+            .get(19)
+            .and_then(|cell| cell.get_float())
+            .map(|v| WarnLevel::from(v as u8))
+            .filter(|lvl| *lvl != WarnLevel::None);
         Ok(ModbusConfig {
             id,
             name,
@@ -334,6 +342,7 @@ impl ModbusConfig {
             trans,
             status_words,
             warn_bits,
+            level,
         })
     }
 }

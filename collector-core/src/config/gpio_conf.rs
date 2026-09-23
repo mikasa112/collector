@@ -58,6 +58,7 @@ impl GpioConfig {
             bits: None,
             words: None,
             unit: None,
+            level: None,
         }
     }
 }

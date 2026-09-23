@@ -297,17 +297,34 @@ impl Display for Val {
 
 #[derive(Debug, Clone)]
 pub struct DataPoint {
+    /// 数据点ID, 全局唯一
     pub id: PointId,
+    /// 数据点key
     pub key: &'static str,
+    /// 数据点中文名称
     pub name: &'static str,
+    /// 数据点值
     pub value: Val,
+    /// 数据点翻译
     pub translator: Option<&'static Translator>,
+    /// 数据点按比特解析
     pub bits: Option<&'static Bits>,
+    /// 数据点按字解析
     pub words: Option<&'static Words>,
+    /// 数据点单位
     pub unit: Option<&'static str>,
+    /// 数据点告警等级，值非0即命中该等级告警
+    pub level: Option<WarnLevel>,
 }
 
 impl DataPoint {
+    /// 若配置了单点告警等级且当前值非0，返回命中的告警等级
+    pub fn active_alarm_level(&self) -> Option<WarnLevel> {
+        let level = self.level?;
+        let v = u32::try_from(&self.value).ok()?;
+        (v != 0).then_some(level)
+    }
+
     pub fn warning(&self) -> Vec<Bit> {
         let Ok(v) = u32::try_from(&self.value) else {
             return vec![];

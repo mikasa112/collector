@@ -141,6 +141,15 @@ EMU功能点位，点在DataCenter中流转
   - TMS：`config/水冷机组_埃森特.xlsx`（遥测sheet）。主要故障：各类温度/压力传感器故障、系统高压告警、水泵故障、排气过热度低/压缩比异常、压缩机过流过温保护、水温/水压过高过低保护、滤网堵塞、水箱液位过低、风机1-4故障/离线、内存(E2)错误、驱动离线等（绝大多数为级别2）。
 - 消费端：`collector-api/src/handlers/ws.rs`（`HomeWarnDatas::new`）调用 `center.read_range("emu", 500, 2000)`，过滤 `value==1` 的当前触发中告警，推送给前端首页告警列表。
 
+### 11.1 单点遥信告警等级（`ModbusConfig.level`/`DataPoint.level`）
+
+除了上面"打包位告警"（一个寄存器16个bit各自定义`zh|en|level`）外，还支持"单个遥信点位本身就是一个告警"的场景：
+
+- 配置：Modbus点位表新增第20列（紧跟在重复次数/地址步长/序号步长之后）"告警等级"，取值 `0`/空=不告警，`1`/`2`/`3`=对应 `WarnLevel::Normal`/`High`/`Critical`。解析见 `collector-core/src/config/modbus_conf.rs`（`ModbusConfig.level`）。
+- 运行时判定：`DataPoint::active_alarm_level()`（`collector-core/src/core/point.rs`）——配置了`level`且当前值非0即命中。
+- 扫描逻辑：`collector-engine/src/emu/fault.rs` 的 `FaultDiagnosis::level_alarms` 每3秒遍历**所有设备**（`center.dev_ids()`）的**所有点位**，筛出命中的单点告警，与原有pcs/bcu/tms打包位告警合并为同一份 `warnings`，一起写入 `t_alarm` 表并联动 `health_status`。
+- 与500-2000点位区间的区别：单点告警**不会**生成 emu 设备下的 `id=500+序号` 影子点位，只落库到 `t_alarm`、参与 `health_status` 聚合；`alarm_code` 直接用该点位自身的 `id`（因为同设备内id已在配置加载期校验唯一）。因此它不出现在 `read_range("emu",500,2000)` 的首页告警列表里，而是通过 `t_alarm` 表（`collector-api/src/routes/alarm.rs` 等告警相关接口）对外暴露。
+
 ---
 
 ## 相关文件一览

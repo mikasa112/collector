@@ -192,6 +192,7 @@ fn operation_mode(data: u8) -> DataPoint {
         bits: None,
         words: None,
         unit: None,
+        level: None,
     }
 }
 
@@ -205,6 +206,7 @@ fn permission(data: u8) -> DataPoint {
         bits: None,
         words: None,
         unit: None,
+        level: None,
     }
 }
 
@@ -218,6 +220,7 @@ fn health_status(data: u8) -> DataPoint {
         bits: None,
         words: None,
         unit: None,
+        level: None,
     }
 }
 
@@ -231,6 +234,7 @@ fn charge_soc_limit(data: f64) -> DataPoint {
         bits: None,
         words: None,
         unit: None,
+        level: None,
     }
 }
 
@@ -244,6 +248,7 @@ fn run_mode(data: u8) -> DataPoint {
         bits: None,
         words: None,
         unit: None,
+        level: None,
     }
 }
 
@@ -257,6 +262,7 @@ fn control_source(data: u8) -> DataPoint {
         bits: None,
         words: None,
         unit: None,
+        level: None,
     }
 }
 
@@ -270,5 +276,6 @@ fn discharge_soc_limit(data: f64) -> DataPoint {
         bits: None,
         words: None,
         unit: None,
+        level: None,
     }
 }

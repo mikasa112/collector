@@ -144,6 +144,7 @@ impl ModbusRunner {
                 bits: None,
                 words: None,
                 unit: None,
+                level: None,
             }],
         );
     }

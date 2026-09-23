@@ -285,6 +285,7 @@ impl Blocks {
                 bits: region.cfg.warn_bits,
                 words: region.cfg.status_words,
                 unit: region.cfg.unit,
+                level: region.cfg.level,
             });
         }
         out
@@ -467,6 +468,7 @@ mod tests {
             trans: None,
             status_words: None,
             warn_bits: None,
+            level: None,
         }
     }
 
