@@ -2,6 +2,7 @@ mod api;
 mod engine;
 mod errors;
 mod eventbus;
+mod manifest;
 mod scheduler;
 pub mod script_loader;
 mod script_manager;

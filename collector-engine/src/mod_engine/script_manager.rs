@@ -11,6 +11,7 @@ use tokio_util::sync::CancellationToken;
 use crate::mod_engine::{
     api::store::{LuaStore, new_store},
     engine::{ModEngine, ModEngineHandle},
+    manifest::{MANIFEST_FILE, Manifest},
     script_loader::{self, ScriptMeta},
     watcher::{FileEvent, watch_dir},
 };
@@ -89,6 +90,9 @@ pub struct ScriptManager {
     scripts: HashMap<PathBuf, ScriptInstance>,
     /// 记录每个路径最近一次处理时间，用于热更新去抖
     last_reload: HashMap<PathBuf, Instant>,
+    /// 模块注册总纲：`None` 表示脚本目录下未放置 `_manifest.lua`，不启用注册限制（兼容旧行为，目录下脚本全部允许执行）；
+    /// `Some` 表示已启用注册限制，只有总纲中列出的文件名才会被加载执行
+    manifest: Option<Manifest>,
 }
 
 impl ScriptManager {
@@ -100,6 +104,15 @@ impl ScriptManager {
             script_dir: PathBuf::new(),
             scripts: HashMap::new(),
             last_reload: HashMap::new(),
+            manifest: None,
+        }
+    }
+
+    /// 该文件名是否允许执行；未启用注册总纲时（`manifest` 为 `None`）永远放行
+    fn allows(&self, filename: &str) -> bool {
+        match &self.manifest {
+            None => true,
+            Some(manifest) => manifest.is_enabled(filename),
         }
     }
 
@@ -153,11 +166,26 @@ impl ScriptManager {
             .map_err(|e| crate::mod_engine::script_loader::LoadError::Io(e.to_string()))?;
         let _watcher = watcher;
 
+        self.manifest = Manifest::load(&script_dir).await;
+        if self.manifest.is_some() {
+            tracing::info!("[mod] 已启用模块注册总纲 {}，仅注册模块可执行", MANIFEST_FILE);
+        } else {
+            tracing::info!(
+                "[mod] 未找到模块注册总纲 {}，跳过注册限制（兼容模式，目录下脚本全部允许执行）",
+                MANIFEST_FILE
+            );
+        }
+
         // 初始扫描
         let metas = script_loader::scan_dir(&script_dir).await;
         tracing::info!("[mod] 初始加载 {} 个脚本", metas.len());
         for meta in metas {
-            self.load(meta).await;
+            let filename = file_name_of(&meta.path);
+            if self.allows(&filename) {
+                self.load(meta).await;
+            } else {
+                tracing::info!("[mod] 跳过未注册模块: {} ({})", meta.name, meta.path.display());
+            }
         }
 
         loop {
@@ -180,6 +208,25 @@ impl ScriptManager {
         Ok(())
     }
 
+    /// 重新扫描脚本目录，按当前注册总纲状态对齐运行中的实例：
+    /// 已注册且未运行的脚本启动，已运行但不再注册的脚本卸载。
+    /// 用于总纲文件本身发生变化时（新增/删除/编辑）批量生效。
+    async fn reconcile(&mut self) {
+        let metas = script_loader::scan_dir(&self.script_dir).await;
+        for meta in metas {
+            let filename = file_name_of(&meta.path);
+            let running = self.scripts.contains_key(&meta.path);
+            if self.allows(&filename) {
+                if !running {
+                    self.load(meta).await;
+                }
+            } else if running {
+                tracing::info!("[mod] 模块未注册，卸载: {} ({})", meta.name, meta.path.display());
+                self.unload(&meta.path).await;
+            }
+        }
+    }
+
     async fn handle_file_event(&mut self, event: FileEvent) {
         match event {
             FileEvent::Upsert(path) => {
@@ -192,9 +239,30 @@ impl ScriptManager {
                 }
                 self.last_reload.insert(path.clone(), now);
 
+                if file_name_of(&path) == MANIFEST_FILE {
+                    tracing::info!("[mod] 模块注册总纲变更，重新校验已加载脚本: {}", path.display());
+                    self.manifest = Manifest::load(&self.script_dir).await;
+                    self.reconcile().await;
+                    return;
+                }
+
                 tracing::info!("[mod] 热更新: {}", path.display());
                 match script_loader::load_script(&path).await {
-                    Ok(meta) => self.load(meta).await,
+                    Ok(meta) => {
+                        let filename = file_name_of(&meta.path);
+                        if self.allows(&filename) {
+                            self.load(meta).await;
+                        } else {
+                            tracing::info!(
+                                "[mod] 跳过未注册模块: {} ({})",
+                                meta.name,
+                                meta.path.display()
+                            );
+                            // 该脚本可能此前已在运行（比如刚被从注册表移除后又编辑了文件），
+                            // 确保它不会继续挂着旧实例
+                            self.unload(&meta.path).await;
+                        }
+                    }
                     Err(e) => {
                         // 重命名/移动会被 notify 合并为一个事件，其中旧路径仍带 .lua
                         // 后缀，被误判为 Upsert；此时文件已不存在，应视为卸载，
@@ -210,8 +278,24 @@ impl ScriptManager {
             }
             FileEvent::Remove(path) => {
                 self.last_reload.remove(&path);
+                if file_name_of(&path) == MANIFEST_FILE {
+                    tracing::warn!(
+                        "[mod] 模块注册总纲已删除，回退为兼容模式（不再限制注册，目录下脚本全部允许执行）"
+                    );
+                    self.manifest = None;
+                    self.reconcile().await;
+                    return;
+                }
                 self.unload(&path).await;
             }
         }
     }
+}
+
+/// 提取路径的文件名部分（不含目录），用于和总纲条目 / `MANIFEST_FILE` 比较
+fn file_name_of(path: &std::path::Path) -> String {
+    path.file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or_default()
+        .to_string()
 }
