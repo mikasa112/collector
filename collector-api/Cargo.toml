@@ -5,7 +5,8 @@ edition = "2024"
 
 [dependencies]
 collector-core = { path = "../collector-core" }
-salvo = { version = "0.93.0", features = ["jwt-auth", "websocket"] }
+salvo = { version = "0.93.0", features = ["jwt-auth", "websocket", "serve-static"] }
+rust-embed = { version = "8", features = ["interpolate-folder-path"] }
 validator = { version = "0.20.0", features = ["derive"] }
 tokio = { workspace = true }
 tokio-util = { workspace = true }

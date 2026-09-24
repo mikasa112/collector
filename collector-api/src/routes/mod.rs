@@ -5,6 +5,8 @@ mod history;
 #[cfg(target_os = "linux")]
 mod network;
 mod planned_curve;
+#[cfg(target_os = "linux")]
+mod system;
 mod user;
 mod ws;
 
@@ -28,5 +30,9 @@ pub(crate) fn root_router(eg25_rx: Option<watch::Receiver<Eg25Info>>) -> Router 
     }
     #[cfg(target_os = "linux")]
     let v1 = v1.push(network::router());
-    Router::new().push(v1)
+    #[cfg(target_os = "linux")]
+    let v1 = v1.push(system::router());
+    Router::new()
+        .push(v1)
+        .push(crate::static_files::router())
 }

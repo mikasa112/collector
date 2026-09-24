@@ -106,7 +106,7 @@ fn init_mqtt_client(project: &mut config::Project) -> Option<MqttClient> {
     }
 }
 
-/// 构建设备管理器；若启用虚拟设备引擎（EMU），额外初始化数据库并挂载虚拟设备
+/// 构建设备管理器；若启用虚拟设备引擎（EMU），额外挂载虚拟设备
 async fn build_dev_manager(
     devices: HashMap<String, config::Device>,
     can_bus: SharedCanBus,
@@ -115,11 +115,6 @@ async fn build_dev_manager(
 
     if config_provider().program().emu.enable {
         data_center().set_emu_enable(true);
-        // 数据库连接池需要在设备管理器（含虚拟设备引擎）启动前初始化好，
-        // 否则引擎里依赖数据库的策略（如计划曲线）会因为连接池还未就绪而报错
-        let _sql_pool = init_database(DatabaseConfig::default())
-            .await
-            .expect("数据库初始化失败");
         init_taos().await.expect("taos数据库初始化失败");
         if let Err(e) = get_runtime().await {
             tracing::error!("EMU运行时配置错误: {}", e);
@@ -230,6 +225,12 @@ pub async fn cmd() {
     let can_bus = SharedCanBus::default();
 
     let mqtt_client = init_mqtt_client(&mut project.project);
+
+    // 数据库连接池需要在设备管理器（含虚拟设备引擎）启动前初始化好,
+    // 且用户登录等 API 也依赖它,因此无条件初始化,不再受 emu.enable 影响
+    let _sql_pool = init_database(DatabaseConfig::default())
+        .await
+        .expect("数据库初始化失败");
 
     let devices = std::mem::take(&mut project.project.devices);
     let mut manager = build_dev_manager(devices, can_bus.clone()).await;

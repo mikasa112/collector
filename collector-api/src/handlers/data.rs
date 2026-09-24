@@ -1,3 +1,4 @@
+use collector_core::center::data_center;
 use collector_core::core::point::{PointId, Val};
 use salvo::{Request, handler};
 use validator::Validate;
@@ -28,4 +29,9 @@ pub async fn set(req: &mut Request) -> ApiResult<ObjResponse<()>> {
     let service = DataService::new()?;
     service.set(params).await?;
     Ok(ObjResponse::ok(()))
+}
+
+#[handler]
+pub async fn list_devices() -> ApiResult<ObjResponse<Vec<String>>> {
+    Ok(ObjResponse::ok(data_center().dev_ids()))
 }

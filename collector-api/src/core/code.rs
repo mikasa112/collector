@@ -99,6 +99,13 @@ impl Code {
                 ServiceError::InternalError(msg) => {
                     (StatusCode::INTERNAL_SERVER_ERROR, 500, msg.clone())
                 }
+                ServiceError::Io(err) => {
+                    tracing::error!("IO 错误: {}", err);
+                    (StatusCode::INTERNAL_SERVER_ERROR, 500, "系统错误".to_string())
+                }
+                ServiceError::Json(err) => {
+                    (StatusCode::BAD_REQUEST, 400, format!("配置文件格式错误: {}", err))
+                }
             },
 
             // DAO 层错误映射（直接使用时）

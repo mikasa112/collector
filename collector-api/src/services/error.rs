@@ -49,6 +49,14 @@ pub enum ServiceError {
     /// 系统内部错误
     #[error("{0}")]
     InternalError(String),
+
+    /// IO 错误
+    #[error("IO 错误: {0}")]
+    Io(#[from] std::io::Error),
+
+    /// 配置文件格式错误
+    #[error("配置文件格式错误: {0}")]
+    Json(#[from] serde_json::Error),
 }
 
 /// Service 层结果类型

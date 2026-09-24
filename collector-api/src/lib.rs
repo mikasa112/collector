@@ -12,6 +12,7 @@ pub(crate) mod middleware;
 pub(crate) mod models;
 pub(crate) mod routes;
 pub(crate) mod services;
+pub(crate) mod static_files;
 
 pub struct ApiApp {
     ip: String,

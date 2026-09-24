@@ -1,0 +1,30 @@
+:root {
+  --text: #333;
+  --text-dim: #888;
+  --bg: #fff;
+  --bg-alt: #f7f7f8;
+  --border: #e2e2e5;
+  --accent: #2563eb;
+  --ok: #16a34a;
+  --warn: #dc2626;
+
+  font: 14px/1.5 system-ui, 'Segoe UI', Roboto, sans-serif;
+  color: var(--text);
+  background: var(--bg);
+  color-scheme: light dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --text: #e5e5e7;
+    --text-dim: #999;
+    --bg: #1a1a1e;
+    --bg-alt: #232328;
+    --border: #34343a;
+    --accent: #60a5fa;
+  }
+}
+
+body {
+  margin: 0;
+}
