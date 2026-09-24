@@ -1,7 +1,11 @@
 mod api;
+mod budget;
 mod engine;
 mod errors;
 mod eventbus;
+mod global_bus;
+mod hook;
+mod introspect;
 mod manifest;
 mod scheduler;
 pub mod script_loader;
@@ -11,5 +15,7 @@ mod watcher;
 
 pub use api::store::LuaStore;
 pub use engine::{ModEngine, ModEngineHandle};
+pub use global_bus::GlobalBus;
+pub use introspect::{EngineSnapshot, ScriptInfo, ScriptStatus};
 pub use script_manager::ScriptManager;
 pub type Result<T> = std::result::Result<T, errors::Error>;

@@ -3,12 +3,18 @@ use std::path::{Path, PathBuf};
 use mlua::{Lua, LuaOptions, StdLib};
 use tokio::fs;
 
+/// 引擎当前的模组 API 版本。脚本可选择在 `MOD.api_version` 中声明其兼容的版本号：
+/// 缺省（未声明）视为兼容，兼容旧脚本；声明但与此不相等则拒绝加载。
+pub const ENGINE_API_VERSION: u32 = 1;
+
 #[derive(Debug, Clone)]
 pub struct ScriptMeta {
     pub path: PathBuf,
     pub name: String,
     pub description: String,
     pub source: String,
+    /// 该脚本依赖的其它顶层脚本文件名（不含目录），要求依赖脚本已注册且运行中才允许加载
+    pub depends: Vec<String>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -21,6 +27,8 @@ pub enum LoadError {
     MissingMod(String),
     #[error("MOD.name 字段缺失或类型错误: {0}")]
     MissingName(String),
+    #[error("模组 API 版本不兼容: {0}")]
+    IncompatibleApiVersion(String),
 }
 
 /// 扫描目录，返回所有成功解析的脚本元信息（跳过 _ 开头的辅助文件）
@@ -125,10 +133,25 @@ fn parse_mod_meta(path: &Path, source: &str) -> Result<ScriptMeta, LoadError> {
 
     let description: String = mod_table.get("description").unwrap_or_default();
 
+    let api_version: Option<u32> = mod_table.get("api_version").unwrap_or(None);
+    if let Some(v) = api_version
+        && v != ENGINE_API_VERSION
+    {
+        return Err(LoadError::IncompatibleApiVersion(format!(
+            "{}: 脚本声明 api_version={}，引擎当前 api_version={}",
+            path.display(),
+            v,
+            ENGINE_API_VERSION
+        )));
+    }
+
+    let depends: Vec<String> = mod_table.get("depends").unwrap_or_default();
+
     Ok(ScriptMeta {
         path: path.to_owned(),
         name,
         description,
         source: source.to_owned(),
+        depends,
     })
 }

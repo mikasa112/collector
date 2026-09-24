@@ -4,4 +4,6 @@ pub(super) mod json;
 pub(super) mod log;
 pub(super) mod mqtt;
 pub(super) mod mqtt_client;
+pub(super) mod plugin;
+pub(super) mod save;
 pub(super) mod store;

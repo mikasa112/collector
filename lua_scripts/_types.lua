@@ -6,8 +6,11 @@
 -----------------------------------------------------------------------
 
 ---@class ModDef
----@field name        string  脚本名称，用于日志显示
----@field description string? 脚本描述（可选）
+---@field name        string    脚本名称，用于日志显示
+---@field description string?   脚本描述（可选）
+---@field depends     string[]? 依赖的其它顶层脚本文件名列表（不含目录，如 "a.lua"），仅对 `_manifest.lua` 注册的顶层脚本有效；
+---                              依赖脚本未注册/未运行时本脚本会被跳过加载。缺省视为无依赖
+---@field api_version integer?  声明本脚本兼容的引擎模组 API 版本；缺省视为兼容，声明但与引擎当前版本不一致时会被拒绝加载
 
 --- 脚本元信息，引擎启动时读取
 ---@type ModDef
@@ -137,6 +140,12 @@ event = {}
 ---@param fn   fun(value: any) 回调函数
 function event.on(name, fn) end
 
+--- 广播一个跨模块事件：所有仍在运行的顶层脚本（包括发出者自身）中通过 event.on 注册的同名处理器都会收到，
+--- 用于顶层脚本之间的协作通信。payload 经 JSON 编解码在脚本间传递，仅支持可 JSON 序列化的值。
+---@param name    string 事件名
+---@param payload any    传给处理器的数据
+function event.emit(name, payload) end
+
 -----------------------------------------------------------------------
 -- timer - 定时器 API（基于回调，适合简单场景；复杂逻辑推荐 task.spawn + wait）
 -----------------------------------------------------------------------
@@ -174,6 +183,73 @@ function store.get(key) end
 --- 删除一个键
 ---@param key string
 function store.del(key) end
+
+-----------------------------------------------------------------------
+-- save - 持久化存档 API（按脚本文件名隔离，落盘保存，跨热重载/进程重启保留）
+-----------------------------------------------------------------------
+
+---@class SaveApi
+save = {}
+
+--- 写入一个值并立即落盘（支持 number/string/boolean/table）
+---@param key   string
+---@param value any
+function save.set(key, value) end
+
+--- 读取一个值，不存在时返回 nil
+---@param key string
+---@return any
+function save.get(key) end
+
+--- 删除一个键并立即落盘
+---@param key string
+function save.del(key) end
+
+-----------------------------------------------------------------------
+-- plugin - 插件目录自动发现 API（只在加载时扫描一次，不支持热重载）
+-----------------------------------------------------------------------
+
+---@class PluginApi
+plugin = {}
+
+--- 扫描 `subdir` 目录下的 .lua 文件（跳过 "_" 开头的文件，可借此临时禁用某个插件），
+--- 返回形如 "subdir.filename" 的模块路径列表（按文件名排序），可直接传给 require。
+---@param subdir string 相对本脚本所在目录的子目录名（如 "plugins"）
+---@return string[]
+function plugin.list(subdir) return {} end
+
+-----------------------------------------------------------------------
+-- hook - 同 VM 内插件钩子 API（扩展/替换机制，与 event 并列但语义不同：带返回值、支持替换）
+-----------------------------------------------------------------------
+
+---@class HookApi
+hook = {}
+
+--- 注册一个扩展处理器：emit 时按注册顺序全部执行，仅产生副作用，返回值被忽略。
+--- 同一个钩子名可注册多个 on 处理器。
+---@param name string             钩子名
+---@param fn   fun(payload: any)  处理器函数
+function hook.on(name, fn) end
+
+--- 注册一个替换处理器：同一个钩子名只有最后注册的生效（之前注册的会被日志警告并静默失效）。
+---@param name string                  钩子名
+---@param fn   fun(payload: any): any  处理器函数，返回改写后的 payload
+function hook.override(name, fn) end
+
+--- 触发一个钩子点：先跑完全部 on 处理器（出错只记警告，不中断），
+--- 再跑 override 处理器（有则用其返回值，无则原样返回 payload；出错会透传给调用者）。
+---@param name    string 钩子名
+---@param payload any    传给处理器的数据
+---@return any 经处理后的 payload
+function hook.emit(name, payload) end
+
+-----------------------------------------------------------------------
+-- 内置生命周期钩子名（用 hook.on 订阅，无需额外注册 API）
+-----------------------------------------------------------------------
+
+--- 内置钩子 "on_unload"：脚本即将被卸载/热重载或引擎关闭前触发（无 payload）。
+--- 用 hook.on("on_unload", function() ... end) 订阅，做收尾清理（如保存最终状态）。
+--- 出错只记警告，不影响正常卸载流程。
 
 -----------------------------------------------------------------------
 -- DcChangedEvent - dc:changed 事件 payload

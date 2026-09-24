@@ -1,27 +1,59 @@
-use std::{collections::BinaryHeap, time::Duration};
+use std::{
+    collections::BinaryHeap,
+    sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    },
+    time::Duration,
+};
 
 use futures_util::StreamExt;
 use mlua::{Function, RegistryKey, Thread};
 use tokio::time::Instant;
 
 use crate::mod_engine::{
+    budget::Budget,
     errors::SchedulerError,
     timer_task::{CoroTask, TimerTask},
 };
+
+/// `Scheduler` 内部的 timer/coroutine 数量旁路计数器，供自省 API 在不持有 `&Scheduler`
+/// 的情况下同步读取（如 `sys.status()` 查自己时，运行在自身引擎的协程内，不能经命令队列往返）。
+#[derive(Clone, Default)]
+pub struct SchedulerStats(Arc<(AtomicUsize, AtomicUsize)>);
+
+impl SchedulerStats {
+    pub fn snapshot(&self) -> (usize, usize) {
+        (self.0.0.load(Ordering::Relaxed), self.0.1.load(Ordering::Relaxed))
+    }
+
+    fn sync(&self, timers: usize, coros: usize) {
+        self.0.0.store(timers, Ordering::Relaxed);
+        self.0.1.store(coros, Ordering::Relaxed);
+    }
+}
 
 pub struct Scheduler {
     next_id: u64,
     timers: BinaryHeap<TimerTask>,
     coros: BinaryHeap<CoroTask>,
+    budget: Budget,
+    stats: SchedulerStats,
 }
 
 impl Scheduler {
-    pub fn new() -> Self {
+    pub fn new(budget: Budget) -> Self {
         Self {
             next_id: 1,
             timers: BinaryHeap::new(),
             coros: BinaryHeap::new(),
+            budget,
+            stats: SchedulerStats::default(),
         }
+    }
+
+    pub fn stats_handle(&self) -> SchedulerStats {
+        self.stats.clone()
     }
 
     fn alloc_id(&mut self) -> u64 {
@@ -38,6 +70,7 @@ impl Scheduler {
             callback,
         };
         self.timers.push(task);
+        self.stats.sync(self.timers.len(), self.coros.len());
     }
 
     pub fn add_every(&mut self, interval: Duration, callback: RegistryKey) {
@@ -48,6 +81,7 @@ impl Scheduler {
             callback,
         };
         self.timers.push(task);
+        self.stats.sync(self.timers.len(), self.coros.len());
     }
 
     /// 注册一个协程任务，立即（now）首次 resume
@@ -65,6 +99,7 @@ impl Scheduler {
                 tracing::error!("[mod] 协程创建失败: {}", e);
             }
         }
+        self.stats.sync(self.timers.len(), self.coros.len());
     }
 
     /// 驱动一次调度：执行所有到期的回调任务和协程任务
@@ -78,7 +113,11 @@ impl Scheduler {
             }
             let mut task = self.timers.pop().ok_or(SchedulerError::TaskNotFound)?;
             let func: Function = lua.registry_value(&task.callback)?;
-            func.call_async::<()>(()).await?;
+            self.budget.reset();
+            if let Err(e) = func.call_async::<()>(()).await {
+                tracing::warn!("[mod] 定时器回调执行出错: {}", e);
+            }
+            // 无论本次回调是否出错，周期定时器都继续排期，不能因一次出错就停掉整个 timer.every
             if let Some(interval) = task.interval {
                 task.next_run = Instant::now() + interval;
                 self.timers.push(task);
@@ -95,6 +134,7 @@ impl Scheduler {
         }
 
         for mut task in ready {
+            self.budget.reset();
             match task.stream.next().await {
                 Some(Ok(vals)) => {
                     // 协程 yield 出一个 ms 数，重新入队等待
@@ -121,6 +161,7 @@ impl Scheduler {
             }
         }
 
+        self.stats.sync(self.timers.len(), self.coros.len());
         Ok(())
     }
 

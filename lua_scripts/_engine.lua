@@ -82,6 +82,7 @@ function Engine.start(project)
             log.warn("MQTT 遥调下行消息格式错误 dev=" .. dev_id .. ": " .. tostring(payload))
             return
         end
+        hook.emit("on_downlink", { dev = dev_id, msg = msg })
         for id_str, value in pairs(msg) do
             local id = tonumber(id_str)
             if id ~= nil then
@@ -117,6 +118,10 @@ function Engine.start(project)
     -- 统一发布消息
     local function publish(topic, points)
         if not conn then return end
+        -- before_publish 钩子：插件可借此审计/改写本次发布内容；返回 nil 则丢弃本次发布
+        local p = hook.emit("before_publish", { topic = topic, points = points })
+        if not p then return end
+        topic, points = p.topic, p.points
         local ok, err = pcall(function()
             conn:publish(topic, to_payload(points))
         end)

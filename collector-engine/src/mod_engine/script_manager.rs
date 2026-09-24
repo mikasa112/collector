@@ -1,5 +1,5 @@
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet, VecDeque},
     path::PathBuf,
     sync::{Arc, Mutex},
     time::{Duration, Instant},
@@ -11,6 +11,7 @@ use tokio_util::sync::CancellationToken;
 use crate::mod_engine::{
     api::store::{LuaStore, new_store},
     engine::{ModEngine, ModEngineHandle},
+    global_bus::GlobalBus,
     manifest::{MANIFEST_FILE, Manifest},
     script_loader::{self, ScriptMeta},
     watcher::{FileEvent, watch_dir},
@@ -24,6 +25,9 @@ struct ScriptInstance {
     join: tokio::task::JoinHandle<()>,
     owned_topics: Arc<Mutex<Vec<String>>>,
     override_store: Option<MqttOverrideStore>,
+    bus: GlobalBus,
+    /// 在 `bus` 中登记时使用的 key（脚本路径字符串），卸载时用于反注册
+    key: String,
 }
 
 impl ScriptInstance {
@@ -33,14 +37,20 @@ impl ScriptInstance {
         store: LuaStore,
         can_bus: Option<SharedCanBus>,
         script_dir: PathBuf,
+        data_file: PathBuf,
+        bus: GlobalBus,
     ) -> Option<Self> {
         let owned_topics: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+        let key = meta.path.to_string_lossy().to_string();
         let (engine, handle) = match ModEngine::create(
             override_store.clone(),
             owned_topics.clone(),
             store,
             can_bus,
             script_dir,
+            data_file,
+            bus.clone(),
+            meta.name.clone(),
         ) {
             Ok(pair) => pair,
             Err(e) => {
@@ -48,6 +58,8 @@ impl ScriptInstance {
                 return None;
             }
         };
+
+        bus.register(key.clone(), meta.name.clone(), handle.clone());
 
         let name = meta.name.clone();
         let join = tokio::spawn(async move {
@@ -60,6 +72,7 @@ impl ScriptInstance {
             tracing::error!("[mod:{}] {}", meta.name, e);
             handle.shutdown();
             let _ = join.await;
+            bus.unregister(&key);
             return None;
         }
 
@@ -68,12 +81,15 @@ impl ScriptInstance {
             join,
             owned_topics,
             override_store,
+            bus,
+            key,
         })
     }
 
     async fn shutdown(self) {
         self.handle.shutdown();
         let _ = self.join.await;
+        self.bus.unregister(&self.key);
         if let Some(store) = self.override_store {
             let topics = self.owned_topics.lock().unwrap();
             store.clear_all(&topics);
@@ -84,9 +100,13 @@ impl ScriptInstance {
 pub struct ScriptManager {
     override_store: Option<MqttOverrideStore>,
     store: LuaStore,
+    /// 跨顶层脚本（跨 VM）事件广播表，供 `event.emit` 使用
+    bus: GlobalBus,
     can_bus: Option<SharedCanBus>,
     /// 脚本目录，用于给各脚本 VM 配置 `require` 搜索路径
     script_dir: PathBuf,
+    /// 持久化存档目录（`script_dir/.data`），按脚本文件名隔离存档文件
+    save_dir: PathBuf,
     scripts: HashMap<PathBuf, ScriptInstance>,
     /// 记录每个路径最近一次处理时间，用于热更新去抖
     last_reload: HashMap<PathBuf, Instant>,
@@ -100,12 +120,20 @@ impl ScriptManager {
         Self {
             override_store,
             store: new_store(),
+            bus: GlobalBus::new(),
             can_bus,
             script_dir: PathBuf::new(),
+            save_dir: PathBuf::new(),
             scripts: HashMap::new(),
             last_reload: HashMap::new(),
             manifest: None,
         }
+    }
+
+    /// 拿到一个存活的、可随时查询的 `GlobalBus` handle，供 Rust 侧（future HTTP/CLI 层）
+    /// 在 `run(self, ...)` 消费掉 `self` 之前保留下来做运行时自省查询
+    pub fn bus(&self) -> GlobalBus {
+        self.bus.clone()
     }
 
     /// 该文件名是否允许执行；未启用注册总纲时（`manifest` 为 `None`）永远放行
@@ -116,18 +144,32 @@ impl ScriptManager {
         }
     }
 
+    /// 该文件名对应的脚本当前是否正在运行
+    fn is_running_filename(&self, filename: &str) -> bool {
+        self.scripts.keys().any(|p| file_name_of(p) == filename)
+    }
+
     async fn load(&mut self, meta: ScriptMeta) {
         if let Some(old) = self.scripts.remove(&meta.path) {
             old.shutdown().await;
         }
         let path = meta.path.clone();
         let name = meta.name.clone();
+        let stem = meta
+            .path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or(&name)
+            .to_string();
+        let data_file = self.save_dir.join(format!("{stem}.json"));
         if let Some(instance) = ScriptInstance::spawn(
             &meta,
             self.override_store.clone(),
             self.store.clone(),
             self.can_bus.clone(),
             self.script_dir.clone(),
+            data_file,
+            self.bus.clone(),
         )
         .await
         {
@@ -160,6 +202,10 @@ impl ScriptManager {
             .canonicalize()
             .map_err(|e| crate::mod_engine::script_loader::LoadError::Io(e.to_string()))?;
         self.script_dir = script_dir.clone();
+        self.save_dir = script_dir.join(".data");
+        tokio::fs::create_dir_all(&self.save_dir)
+            .await
+            .map_err(|e| crate::mod_engine::script_loader::LoadError::Io(e.to_string()))?;
 
         // 先启动 watcher，再扫描，避免扫描期间的文件变化事件丢失
         let (watcher, mut notify_rx) = watch_dir(&script_dir)
@@ -179,13 +225,24 @@ impl ScriptManager {
         // 初始扫描
         let metas = script_loader::scan_dir(&script_dir).await;
         tracing::info!("[mod] 初始加载 {} 个脚本", metas.len());
-        for meta in metas {
-            let filename = file_name_of(&meta.path);
-            if self.allows(&filename) {
-                self.load(meta).await;
-            } else {
-                tracing::info!("[mod] 跳过未注册模块: {} ({})", meta.name, meta.path.display());
-            }
+        let allowed: Vec<ScriptMeta> = metas
+            .into_iter()
+            .filter(|meta| {
+                let filename = file_name_of(&meta.path);
+                if self.allows(&filename) {
+                    true
+                } else {
+                    tracing::info!("[mod] 跳过未注册模块: {} ({})", meta.name, meta.path.display());
+                    false
+                }
+            })
+            .collect();
+        let (ordered, skipped) = resolve_load_order(allowed);
+        for (filename, path, reason) in skipped {
+            tracing::warn!("[mod] 跳过模块 {} ({}): {}", filename, path.display(), reason);
+        }
+        for meta in ordered {
+            self.load(meta).await;
         }
 
         loop {
@@ -213,16 +270,30 @@ impl ScriptManager {
     /// 用于总纲文件本身发生变化时（新增/删除/编辑）批量生效。
     async fn reconcile(&mut self) {
         let metas = script_loader::scan_dir(&self.script_dir).await;
+        let mut allowed = Vec::new();
         for meta in metas {
             let filename = file_name_of(&meta.path);
-            let running = self.scripts.contains_key(&meta.path);
             if self.allows(&filename) {
-                if !running {
-                    self.load(meta).await;
-                }
-            } else if running {
+                allowed.push(meta);
+            } else if self.scripts.contains_key(&meta.path) {
                 tracing::info!("[mod] 模块未注册，卸载: {} ({})", meta.name, meta.path.display());
                 self.unload(&meta.path).await;
+            }
+        }
+
+        let (ordered, skipped) = resolve_load_order(allowed);
+        for (filename, path, reason) in skipped {
+            if self.scripts.contains_key(&path) {
+                tracing::warn!("[mod] 模块 {} 依赖不再满足({})，卸载", filename, reason);
+                self.unload(&path).await;
+            } else {
+                tracing::warn!("[mod] 跳过模块 {}: {}", filename, reason);
+            }
+        }
+
+        for meta in ordered {
+            if !self.scripts.contains_key(&meta.path) {
+                self.load(meta).await;
             }
         }
     }
@@ -251,7 +322,25 @@ impl ScriptManager {
                     Ok(meta) => {
                         let filename = file_name_of(&meta.path);
                         if self.allows(&filename) {
-                            self.load(meta).await;
+                            let missing: Vec<&String> = meta
+                                .depends
+                                .iter()
+                                .filter(|d| !self.is_running_filename(d))
+                                .collect();
+                            if missing.is_empty() {
+                                self.load(meta).await;
+                            } else {
+                                tracing::warn!(
+                                    "[mod] 模块 {} 依赖不满足(缺少运行中的: {})，跳过加载",
+                                    meta.name,
+                                    missing
+                                        .iter()
+                                        .map(|s| s.as_str())
+                                        .collect::<Vec<_>>()
+                                        .join(", ")
+                                );
+                                self.unload(&meta.path).await;
+                            }
                         } else {
                             tracing::info!(
                                 "[mod] 跳过未注册模块: {} ({})",
@@ -298,4 +387,88 @@ fn file_name_of(path: &std::path::Path) -> String {
         .and_then(|n| n.to_str())
         .unwrap_or_default()
         .to_string()
+}
+
+/// 对已通过 `allows()` 过滤的脚本列表按 `MOD.depends` 依赖关系做拓扑排序（Kahn 算法）。
+///
+/// 返回按依赖顺序可加载的脚本列表，以及因依赖缺失或成环被跳过的 (文件名, 路径, 原因)。
+/// 依赖目标不在传入列表中（未注册或不存在）视为缺失依赖；排序后仍有残留则视为依赖成环。
+fn resolve_load_order(metas: Vec<ScriptMeta>) -> (Vec<ScriptMeta>, Vec<(String, PathBuf, String)>) {
+    let mut by_filename: HashMap<String, ScriptMeta> = metas
+        .into_iter()
+        .map(|m| (file_name_of(&m.path), m))
+        .collect();
+    let available: HashSet<String> = by_filename.keys().cloned().collect();
+
+    let mut skipped: Vec<(String, PathBuf, String)> = Vec::new();
+    let mut skipped_names: HashSet<String> = HashSet::new();
+    let mut in_degree: HashMap<String, usize> = HashMap::new();
+    let mut dependents: HashMap<String, Vec<String>> = HashMap::new();
+
+    for (filename, meta) in &by_filename {
+        let missing: Vec<String> = meta
+            .depends
+            .iter()
+            .filter(|d| !available.contains(*d))
+            .cloned()
+            .collect();
+        if !missing.is_empty() {
+            skipped.push((
+                filename.clone(),
+                meta.path.clone(),
+                format!("缺少依赖: {}", missing.join(", ")),
+            ));
+            skipped_names.insert(filename.clone());
+            continue;
+        }
+        in_degree.entry(filename.clone()).or_insert(0);
+        for dep in &meta.depends {
+            *in_degree.entry(filename.clone()).or_insert(0) += 1;
+            dependents.entry(dep.clone()).or_default().push(filename.clone());
+        }
+    }
+
+    let mut queue: VecDeque<String> = in_degree
+        .iter()
+        .filter(|&(name, &deg)| deg == 0 && !skipped_names.contains(name))
+        .map(|(name, _)| name.clone())
+        .collect();
+
+    let mut order: Vec<String> = Vec::new();
+    let mut visited: HashSet<String> = HashSet::new();
+    while let Some(name) = queue.pop_front() {
+        if !visited.insert(name.clone()) {
+            continue;
+        }
+        order.push(name.clone());
+        if let Some(deps) = dependents.get(&name) {
+            for dependent in deps {
+                if skipped_names.contains(dependent) {
+                    continue;
+                }
+                if let Some(deg) = in_degree.get_mut(dependent) {
+                    *deg -= 1;
+                    if *deg == 0 {
+                        queue.push_back(dependent.clone());
+                    }
+                }
+            }
+        }
+    }
+
+    for name in in_degree.keys() {
+        if visited.contains(name) || skipped_names.contains(name) {
+            continue;
+        }
+        if let Some(meta) = by_filename.get(name) {
+            skipped.push((name.clone(), meta.path.clone(), "依赖出现循环".to_string()));
+        }
+    }
+
+    let sorted_metas: Vec<ScriptMeta> = order
+        .into_iter()
+        .filter_map(|name| by_filename.remove(&name))
+        .collect();
+
+    (sorted_metas, skipped)
 }
