@@ -7,6 +7,8 @@ pub mod history;
 pub mod network;
 pub mod planned_curve;
 #[cfg(target_os = "linux")]
+pub mod script;
+#[cfg(target_os = "linux")]
 pub mod system;
 pub mod user;
 

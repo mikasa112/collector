@@ -20,4 +20,15 @@ pub(crate) fn router() -> Router {
         )
         .push(Router::with_path("restart").post(handlers::system::restart))
         .push(Router::with_path("status").get(handlers::system::status))
+        .push(
+            Router::with_path("scripts")
+                .get(handlers::script::list_scripts)
+                .push(
+                    Router::with_path("file")
+                        .get(handlers::script::get_script)
+                        .put(handlers::script::put_script)
+                        .post(handlers::script::post_script)
+                        .delete(handlers::script::delete_script),
+                ),
+        )
 }

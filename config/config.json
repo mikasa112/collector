@@ -18,7 +18,7 @@
       "enable": true,
       "north_modbus_host": "0.0.0.0",
       "north_modbus_port": 9092,
-      "north_modbus_conf": "./config/MODBUS_REGISTERS.xlsx"
+      "north_modbus_conf": "./config/北向/MODBUS_REGISTERS.xlsx"
     },
     "eg25_gl": {
       "enable": false

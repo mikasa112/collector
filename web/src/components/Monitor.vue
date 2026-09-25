@@ -163,6 +163,10 @@ function displayValue(point: Point): string {
 h1 {
   font-size: 20px;
   margin: 8px 0 16px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--accent);
+  text-shadow: 0 0 10px var(--accent-glow);
 }
 
 .toolbar {
@@ -178,7 +182,7 @@ input {
   padding: 6px 10px;
   border: 1px solid var(--border);
   border-radius: 6px;
-  background: var(--bg);
+  background: var(--bg-alt);
   color: var(--text);
 }
 
@@ -187,12 +191,32 @@ input {
 }
 
 .status {
+  position: relative;
+  padding-left: 14px;
   color: var(--warn);
   font-size: 12px;
 }
 
+.status::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: 7px;
+  height: 7px;
+  margin-top: -3.5px;
+  border-radius: 50%;
+  background: var(--warn);
+  box-shadow: 0 0 8px var(--warn-glow);
+}
+
 .status.ok {
   color: var(--ok);
+}
+
+.status.ok::before {
+  background: var(--ok);
+  box-shadow: 0 0 8px var(--ok-glow);
 }
 
 .count {
@@ -205,12 +229,15 @@ table {
   width: 100%;
   border-collapse: collapse;
   font-size: 13px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
 }
 
 th,
 td {
   text-align: left;
-  padding: 6px 10px;
+  padding: 8px 10px;
   border-bottom: 1px solid var(--border);
 }
 
@@ -218,14 +245,15 @@ thead th {
   position: sticky;
   top: 0;
   background: var(--bg-alt);
+  border-bottom: 1px solid var(--accent);
 }
 
 tbody tr:hover {
-  background: var(--bg-alt);
+  background: var(--accent-dim);
 }
 
 .mono {
   font-family: ui-monospace, Consolas, monospace;
-  color: var(--text-dim);
+  color: var(--accent);
 }
 </style>

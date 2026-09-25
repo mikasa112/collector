@@ -9,6 +9,8 @@ pub(crate) mod history;
 pub(crate) mod network;
 pub(crate) mod planned_curve;
 #[cfg(target_os = "linux")]
+pub(crate) mod script;
+#[cfg(target_os = "linux")]
 pub(crate) mod system;
 pub(crate) mod user;
 pub(crate) mod ws;

@@ -1,3 +1,5 @@
+import { ref } from 'vue'
+
 const TOKEN_KEY = 'collector_token'
 
 export interface ObjResponse<T> {
@@ -10,12 +12,18 @@ export function getToken(): string | null {
   return localStorage.getItem(TOKEN_KEY)
 }
 
+// 全局登录态：整个前端只有一处登录入口（App.vue），登录成功或 token 失效时
+// 这里统一更新，其它页面只需读取 loggedIn，不用各自维护一份状态。
+export const loggedIn = ref(!!getToken())
+
 export function setToken(token: string) {
   localStorage.setItem(TOKEN_KEY, token)
+  loggedIn.value = true
 }
 
 export function clearToken() {
   localStorage.removeItem(TOKEN_KEY)
+  loggedIn.value = false
 }
 
 export class ApiError extends Error {
@@ -89,4 +97,41 @@ export interface UnitStatus {
 
 export function getStatus(): Promise<UnitStatus> {
   return request<UnitStatus>('/v1/system/status')
+}
+
+export interface ScriptEntry {
+  path: string
+  is_dir: boolean
+  size: number
+  modified: string
+}
+
+export function listScripts(): Promise<ScriptEntry[]> {
+  return request<ScriptEntry[]>('/v1/system/scripts')
+}
+
+export function getScript(path: string): Promise<string> {
+  return request<string>(`/v1/system/scripts/file?path=${encodeURIComponent(path)}`)
+}
+
+export function saveScript(path: string, content: string): Promise<void> {
+  return request<void>('/v1/system/scripts/file', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path, content }),
+  })
+}
+
+export function createScript(path: string, content: string): Promise<void> {
+  return request<void>('/v1/system/scripts/file', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path, content }),
+  })
+}
+
+export function deleteScript(path: string): Promise<void> {
+  return request<void>(`/v1/system/scripts/file?path=${encodeURIComponent(path)}`, {
+    method: 'DELETE',
+  })
 }

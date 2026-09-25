@@ -3,6 +3,10 @@ name = "collector-cmd"
 version = "0.1.0"
 edition = "2024"
 
+[[bin]]
+name = "colld"
+path = "src/main.rs"
+
 [dependencies]
 collector-core = { path = "../collector-core" }
 collector-api = { path = "../collector-api" }
