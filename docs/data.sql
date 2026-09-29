@@ -3,7 +3,7 @@ CREATE TABLE t_user (
     name TEXT,
     account TEXT NOT NULL UNIQUE, -- 通常账号应该是唯一的
     password TEXT NOT NULL,
-	role TEXT NOT NULL DEFAULT 'user' CHECK(role IN ('admin', 'user', 'guest')),
+	role TEXT NOT NULL DEFAULT 'user' CHECK(role IN ('super_admin', 'admin', 'user')),
 	-- 创建时间：插入时自动生成
     created_at DATETIME DEFAULT (datetime('now', 'localtime')),
     -- 更新时间：初始与创建时间一致

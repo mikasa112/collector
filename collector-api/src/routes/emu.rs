@@ -1,6 +1,6 @@
 use salvo::Router;
 
-use crate::{handlers, middleware::auth::auth_handler};
+use crate::{handlers, middleware::auth::require_role, models::user::Role};
 
 /// EMU 相关路由
 pub(crate) fn router() -> Router {
@@ -9,7 +9,7 @@ pub(crate) fn router() -> Router {
             .get(handlers::emu::soc_protect)
             .push(
                 Router::new()
-                    .hoop(auth_handler())
+                    .hoop(require_role(Role::Admin))
                     .post(handlers::emu::set_soc_protect),
             ),
     )

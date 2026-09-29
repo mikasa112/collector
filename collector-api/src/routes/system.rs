@@ -1,13 +1,17 @@
 use salvo::Router;
 
-use crate::{handlers, middleware::auth::auth_handler};
+use crate::{
+    handlers,
+    middleware::auth::require_role,
+    models::user::Role,
+};
 
 /// 系统管理相关路由：配置读写、备份/回滚、重启、状态查询
 ///
-/// 整组统一鉴权（包括 GET）：config.json 里含 mqtt 明文密码等敏感信息
+/// 整组要求 Admin 及以上（包括 GET）：涉及系统级操作，且 config.json 里含 mqtt 明文密码等敏感信息
 pub(crate) fn router() -> Router {
     Router::with_path("system")
-        .hoop(auth_handler())
+        .hoop(require_role(Role::Admin))
         .push(
             Router::with_path("config")
                 .get(handlers::system::get_config)

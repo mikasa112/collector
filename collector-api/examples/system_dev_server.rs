@@ -32,7 +32,7 @@ fn main() {
                 name TEXT,
                 account TEXT NOT NULL UNIQUE,
                 password TEXT NOT NULL,
-                role TEXT NOT NULL DEFAULT 'user',
+                role TEXT NOT NULL DEFAULT 'user' CHECK(role IN ('super_admin', 'admin', 'user')),
                 created_at DATETIME DEFAULT (datetime('now', 'localtime')),
                 updated_at DATETIME DEFAULT (datetime('now', 'localtime')),
                 deleted_at DATETIME
@@ -47,7 +47,7 @@ fn main() {
             .hash_password(TEST_PASSWORD.as_bytes(), &salt)
             .unwrap()
             .to_string();
-        sqlx::query("INSERT INTO t_user (account, password, role) VALUES (?, ?, 'admin')")
+        sqlx::query("INSERT INTO t_user (account, password, role) VALUES (?, ?, 'super_admin')")
             .bind(TEST_ACCOUNT)
             .bind(&hash)
             .execute(&pool)

@@ -115,6 +115,17 @@ impl UserDao {
         Ok(count)
     }
 
+    /// 统计指定角色的用户数量
+    pub async fn count_by_role(pool: &SqlitePool, role: Role) -> DaoResult<i64> {
+        let (count,): (i64,) =
+            sqlx::query_as("SELECT COUNT(*) FROM t_user WHERE role = ? AND deleted_at IS NULL")
+                .bind(role)
+                .fetch_one(pool)
+                .await?;
+
+        Ok(count)
+    }
+
     /// 更新用户信息
     pub async fn update(
         pool: &SqlitePool,
@@ -124,23 +135,24 @@ impl UserDao {
         role: Option<Role>,
     ) -> DaoResult<u64> {
         let mut query = String::from("UPDATE t_user SET updated_at = datetime('now')");
-        let mut bindings = Vec::new();
 
-        if let Some(n) = name {
+        if name.is_some() {
             query.push_str(", name = ?");
-            bindings.push(n.to_string());
         }
-
-        if let Some(p) = password {
+        if password.is_some() {
             query.push_str(", password = ?");
-            bindings.push(p.to_string());
         }
-
+        if role.is_some() {
+            query.push_str(", role = ?");
+        }
         query.push_str(" WHERE id = ?");
 
         let mut q = sqlx::query(&query);
-        for binding in bindings {
-            q = q.bind(binding);
+        if let Some(n) = name {
+            q = q.bind(n);
+        }
+        if let Some(p) = password {
+            q = q.bind(p);
         }
         if let Some(r) = role {
             q = q.bind(r);
