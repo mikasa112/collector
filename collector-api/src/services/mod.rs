@@ -2,6 +2,7 @@ pub mod alarm;
 pub mod data;
 pub mod emu;
 pub mod error;
+pub mod field_binding;
 pub mod history;
 #[cfg(target_os = "linux")]
 pub mod network;

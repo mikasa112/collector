@@ -4,7 +4,6 @@ use std::time::Duration;
 
 use clap::Parser;
 use collector_api::ApiApp;
-use collector_core::center::data_center;
 use collector_core::config;
 use collector_core::config::config_provider::{config_provider, init_config_provider};
 use collector_core::dev::can_bus::SharedCanBus;
@@ -114,7 +113,6 @@ async fn build_dev_manager(
     let mut manager = DevManager::new(devices, can_bus);
 
     if config_provider().program().emu.enable {
-        data_center().set_emu_enable(true);
         init_taos().await.expect("taos数据库初始化失败");
         if let Err(e) = get_runtime().await {
             tracing::error!("EMU运行时配置错误: {}", e);

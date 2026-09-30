@@ -3,7 +3,7 @@ use std::time::Duration;
 use collector_core::{
     center::data_center,
     core::point::{DataPoint, DownDataPoint, PointRef, Val},
-    down,
+    field::field_registry,
     runtime::{
         core::get_runtime,
         emu::{ControlSource, EmuPermission, OperationMode, RunMode},
@@ -20,6 +20,7 @@ use crate::{
     },
     strategy::{Schedule, Strategy, StrategyError},
 };
+
 pub struct EmuRuntime {}
 
 impl EmuRuntime {
@@ -44,14 +45,14 @@ impl Strategy for EmuRuntime {
 
     async fn on_tick(&mut self) -> Result<(), StrategyError> {
         let center = data_center();
-        let state = center.read("bcu", 34);
-        let soc = center
-            .read("bcu", 32)
+        let state = field_registry().read("bcu_comm_status")?;
+        let soc = field_registry()
+            .read("soc")?
             .map(|it| it.value.as_f64().unwrap_or(0.0))
             .unwrap_or(0.0);
         //电流负充正放
-        let bcu_current = center
-            .read("bcu", 46)
+        let bcu_current = field_registry()
+            .read("bcu_current")?
             .map(|it| it.value.as_f64().unwrap_or(0.0))
             .unwrap_or(0.0);
         let state = state.map(|it| it.value.as_u32().unwrap_or(0)).unwrap_or(0);
@@ -67,16 +68,16 @@ impl Strategy for EmuRuntime {
         let discharge_limit = runtime.emu_runtime.soc_protect.discharge_limit();
         let per = if soc >= charge_limit {
             if bcu_current < 0.0 {
-                let _ = center
-                    .dispatch("pcs", vec![down!(id: 2003, Val::F64(0.0))])
+                let _ = field_registry()
+                    .dispatch("pcs_active_power", Val::F64(0.0))
                     .await;
                 tracing::warn!("[EMU] 系统禁充, 修正有功功率为0")
             }
             EmuPermission::ChargeDisabled
         } else if soc <= discharge_limit {
             if bcu_current > 0.0 {
-                let _ = center
-                    .dispatch("pcs", vec![down!(id: 2003, Val::F64(0.0))])
+                let _ = field_registry()
+                    .dispatch("pcs_active_power", Val::F64(0.0))
                     .await;
                 tracing::warn!("[EMU] 系统禁放, 修正有功功率为0")
             }

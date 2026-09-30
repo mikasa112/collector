@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { ApiError, clearToken, loggedIn, login, setToken } from './api'
+import FieldBinding from './components/FieldBinding.vue'
 import Monitor from './components/Monitor.vue'
 import ScriptEditor from './components/ScriptEditor.vue'
 import SystemPanel from './components/SystemPanel.vue'
 
-const tab = ref<'monitor' | 'system' | 'scripts'>('monitor')
+const tab = ref<'monitor' | 'system' | 'scripts' | 'fields'>('monitor')
 
 const username = ref('')
 const password = ref('')
@@ -43,12 +44,14 @@ function doLogout() {
         <button :class="{ active: tab === 'monitor' }" @click="tab = 'monitor'">点位监控</button>
         <button :class="{ active: tab === 'system' }" @click="tab = 'system'">系统管理</button>
         <button :class="{ active: tab === 'scripts' }" @click="tab = 'scripts'">脚本管理</button>
+        <button :class="{ active: tab === 'fields' }" @click="tab = 'fields'">字段映射</button>
       </div>
       <button type="button" class="logout" @click="doLogout">退出登录</button>
     </div>
     <Monitor v-if="tab === 'monitor'" />
     <SystemPanel v-else-if="tab === 'system'" />
-    <ScriptEditor v-else />
+    <ScriptEditor v-else-if="tab === 'scripts'" />
+    <FieldBinding v-else />
   </template>
 </template>
 

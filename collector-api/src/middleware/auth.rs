@@ -69,6 +69,13 @@ pub fn current_role(depot: &Depot) -> Option<Role> {
         .and_then(|data| Role::try_from(data.claims.role.as_str()).ok())
 }
 
+/// 从已通过 JWT 校验的 claims 中解析出调用者用户名
+pub fn current_username(depot: &Depot) -> Option<String> {
+    depot
+        .jwt_auth_data::<JwtClaims>()
+        .map(|data| data.claims.username.clone())
+}
+
 /// 校验调用者角色是否达到 min_role，不足则返回 403 并终止后续处理
 struct RoleGate {
     min_role: Role,

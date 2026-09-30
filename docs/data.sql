@@ -97,3 +97,16 @@ CREATE TABLE t_alarm (
     -- 软删除时间
     deleted_at DATETIME
 );
+
+-- 字段绑定覆盖表：将策略里的逻辑字段(field_key)覆盖绑定到指定设备的物理点位
+CREATE TABLE t_field_binding_override (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    field_key VARCHAR(64) NOT NULL UNIQUE,  -- 逻辑字段名，如 soc、bcu_current
+    dev_id VARCHAR(50) NOT NULL,            -- 绑定到的设备id
+    point_kind TINYINT NOT NULL,            -- 点位引用方式: 1-Id 2-Key 3-Name
+    point_value VARCHAR(50) NOT NULL,       -- Id存数字文本，Key/Name存字符串
+    enabled TINYINT NOT NULL DEFAULT 1,     -- 0-已重置为默认(保留记录) 1-生效覆盖
+    updated_by VARCHAR(50),
+    created_at DATETIME DEFAULT (datetime('now', 'localtime')),
+    updated_at DATETIME DEFAULT (datetime('now', 'localtime'))
+);

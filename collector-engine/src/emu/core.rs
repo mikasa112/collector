@@ -2,8 +2,11 @@ use std::{sync::Arc, time::Duration};
 
 use crate::{
     emu::{
+        FIELDS,
         cmd::{self, Command},
-        emu_runtime, fault, planned_curve, taos, tms,
+        emu_runtime, fault, planned_curve,
+        power_guard::{EmuPolicy, PowerDispatchGuard},
+        taos, tms,
     },
     strategy::{Schedule, Strategy},
 };
@@ -39,9 +42,28 @@ impl Emu {
             Box::new(emu_runtime::EmuRuntime::new()),
             Box::new(fault::FaultDiagnosis::new(pool.clone())),
             Box::new(tms::Tms::new()),
-            Box::new(planned_curve::PlannedCurve::new(pool)),
+            Box::new(planned_curve::PlannedCurve::new(pool.clone())),
             Box::new(taos::TaosWriter::new()),
         ]));
+        // 统一注入 EMU 集中声明的字段清单，再让各策略补充注入自己独有的字段
+        collector_core::field::field_registry().register(FIELDS);
+        {
+            let list = strategies.lock().await;
+            for s in list.iter() {
+                collector_core::field::field_registry().register(s.fields());
+            }
+        }
+        if let Err(err) = collector_core::field::field_registry().reload(&pool).await {
+            tracing::warn!("[engine] 字段绑定覆盖表加载失败: {}", err);
+        }
+
+        // 有功功率下发前的限制策略，只在 EMU 被实际启用（即本构造函数被调用）时才
+        // 注册进 DataCenter；未启用 EMU 的部署完全不会触碰这里的钳位逻辑。
+        let mut power_guard = PowerDispatchGuard::new("pcs_active_power");
+        power_guard.register(Box::new(EmuPolicy));
+        // 未来的防逆流/需量控制等策略在此继续 power_guard.register(...)
+        data_center().register_dispatch_interceptor(Arc::new(power_guard));
+
         let state = SharedState::new(LifecycleState::New);
         let (stop_tx, stop_rx) = watch::channel(false);
         Self {

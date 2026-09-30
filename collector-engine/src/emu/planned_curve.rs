@@ -4,7 +4,7 @@ use chrono::{Datelike, Timelike};
 use collector_core::{
     center::data_center,
     core::point::{DataPoint, DownDataPoint, PointRef, Val},
-    down,
+    field::field_registry,
     runtime::core::get_runtime,
 };
 use sqlx::{SqlitePool, prelude::FromRow};
@@ -143,8 +143,8 @@ impl PlannedCurve {
                     false
                 };
                 if reach_limit {
-                    if let Err(e) = center
-                        .dispatch("pcs", vec![down!(id: 2003, Val::F64(0.0))])
+                    if let Err(e) = field_registry()
+                        .dispatch("pcs_active_power", Val::F64(0.0))
                         .await
                     {
                         tracing::error!("[计划曲线] 下发功率失败: {}", e);
@@ -161,8 +161,8 @@ impl PlannedCurve {
                 }
             }
         }
-        if let Err(e) = center
-            .dispatch("pcs", vec![down!(id: 2003, Val::F64(detail.power_value))])
+        if let Err(e) = field_registry()
+            .dispatch("pcs_active_power", Val::F64(detail.power_value))
             .await
         {
             tracing::error!("[计划曲线] 下发功率失败: {}", e);

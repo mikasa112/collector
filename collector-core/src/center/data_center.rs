@@ -31,7 +31,7 @@
 //! - **零拷贝**：使用 Arc 共享数据
 //! - **变化检测**：只在数据实际变化时更新版本号和推送通知
 
-use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard, atomic::AtomicBool};
+use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 use ahash::AHashMap;
 
@@ -41,8 +41,8 @@ use tracing::warn;
 
 use crate::{
     center::{DataCenterError, DownlinkSender},
-    core::point::{DataPoint, DownDataPoint, PointId, PointRef, Val},
-    runtime::emu::EmuPermission,
+    core::point::{DataPoint, DownDataPoint, PointId},
+    dispatch::{DispatchInterceptor, PointReader},
 };
 
 /// 数据中心主结构
@@ -57,8 +57,8 @@ pub struct DataCenter {
     /// 使用 Arc<RwLock> 实现多线程安全的读写访问
     devices: DashMap<String, Arc<RwLock<DeviceCache>>>,
 
-    /// 是否启用EMU的功能, 默认不启用
-    emu_enable: AtomicBool,
+    /// 下发前拦截器链：由外部业务模块注册，`DataCenter` 不关心其具体规则
+    dispatch_interceptors: RwLock<Vec<Arc<dyn DispatchInterceptor>>>,
 }
 
 impl DataCenter {
@@ -70,8 +70,23 @@ impl DataCenter {
         Self {
             downlinks: DashMap::with_capacity(dev_len),
             devices: DashMap::with_capacity(dev_len),
-            emu_enable: AtomicBool::new(false),
+            dispatch_interceptors: RwLock::new(Vec::new()),
         }
+    }
+
+    /// 注册一个下发前拦截器
+    ///
+    /// 业务模块（EMU充放电许可、防逆流、需量控制……）通过实现
+    /// [`DispatchInterceptor`] 并调用本方法接入下发流程，`DataCenter`
+    /// 本身不感知任何具体业务规则，只负责按注册顺序依次调用。
+    ///
+    /// 通常只在启动阶段调用一次，运行期高频访问的是 `dispatch`。
+    pub fn register_dispatch_interceptor(&self, interceptor: Arc<dyn DispatchInterceptor>) {
+        let mut interceptors = self
+            .dispatch_interceptors
+            .write()
+            .unwrap_or_else(|err| err.into_inner());
+        interceptors.push(interceptor);
     }
 
     /// 获取或创建设备缓存
@@ -82,11 +97,6 @@ impl DataCenter {
             .entry(dev_id.to_owned())
             .or_insert_with(|| Arc::new(RwLock::new(DeviceCache::default())))
             .clone()
-    }
-
-    pub fn set_emu_enable(&self, enable: bool) {
-        self.emu_enable
-            .store(enable, std::sync::atomic::Ordering::Relaxed);
     }
 
     /// 获取所有设备ID列表
@@ -201,46 +211,24 @@ impl DataCenter {
 
     /// 下发数据点到设备
     ///
-    /// 将控制指令通过下行通道直接转发给设备驱动，由驱动负责解析 PointRef。
+    /// 下发前依次交给已注册的拦截器检查/改写点位（参见
+    /// `register_dispatch_interceptor`），再将控制指令通过下行通道直接
+    /// 转发给设备驱动，由驱动负责解析 PointRef。
     pub async fn dispatch(
         &self,
         dev_id: &str,
         mut points: Vec<DownDataPoint>,
     ) -> Result<(), DataCenterError> {
-        let emu_enable = self.emu_enable.load(std::sync::atomic::Ordering::Relaxed);
-        if emu_enable {
-            //并网有功功率
-            if let Some(power) = points.iter_mut().find(|it| it.point == PointRef::Id(2003)) {
-                let mut power_val = power.value.as_f64().unwrap_or(0.0);
-                //EMU充放电许可
-                let permission = self
-                    .read("emu", 2)
-                    .and_then(|it| {
-                        EmuPermission::try_from(it.value.as_u32().unwrap_or(3) as u8).ok()
-                    })
-                    .unwrap_or(EmuPermission::TotalStop);
-                match permission {
-                    EmuPermission::ChargeDisabled => {
-                        if power_val > 0.0 {
-                            tracing::warn!("[EMU] 系统禁充, 钳制下送{power_val}电压到0");
-                            power_val = 0.0;
-                        }
-                    }
-                    EmuPermission::DischargeDisabled => {
-                        if power_val < 0.0 {
-                            tracing::warn!("[EMU] 系统禁放, 钳制下送{power_val}电压到0");
-                            power_val = 0.0
-                        }
-                    }
-                    EmuPermission::TotalStop => {
-                        tracing::warn!("[EMU] 系统禁充禁放, 钳制下送{power_val}电压到0");
-                        power_val = 0.0
-                    }
-                    _ => {}
-                }
-                power.value = Val::F64(power_val)
+        {
+            let interceptors = self
+                .dispatch_interceptors
+                .read()
+                .unwrap_or_else(|err| err.into_inner());
+            for interceptor in interceptors.iter() {
+                interceptor.intercept(dev_id, &mut points, self);
             }
         }
+
         let sender = self
             .downlinks
             .get(dev_id)
@@ -409,6 +397,12 @@ impl DataCenter {
         }
 
         Some(cache.update_tx.as_ref().unwrap().subscribe())
+    }
+}
+
+impl PointReader for DataCenter {
+    fn read(&self, dev_id: &str, point_id: PointId) -> Option<DataPoint> {
+        self.read(dev_id, point_id)
     }
 }
 

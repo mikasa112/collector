@@ -1,9 +1,12 @@
+use collector_core::{field::FieldSpec, field_spec};
+
 pub(crate) mod alarm;
 mod cmd;
 pub mod core;
 mod emu_runtime;
 mod fault;
 mod planned_curve;
+pub mod power_guard;
 mod taos;
 mod tms;
 
@@ -38,3 +41,18 @@ pub(crate) const KEY_RUN_MODE: &str = "run_mode";
 
 pub(crate) const ID_CONTROL_SOURCE: u32 = 9;
 pub(crate) const KEY_CONTROL_SOURCE: &str = "control_source";
+
+/// EMU 用到的全部逻辑字段，集中在此声明并统一注入 [`collector_core::field::field_registry`]，
+/// 不再由各策略各自声明、逐个注册。
+pub(crate) const FIELDS: &[FieldSpec] = &[
+    field_spec!("bcu_comm_status", "BCU通信状态", Read, "bcu", Id(34)),
+    field_spec!("soc", "SOC", Read, "bcu", Id(32)),
+    field_spec!("bcu_current", "BCU电流(负充正放)", Read, "bcu", Id(46)),
+    field_spec!(
+        "pcs_active_power",
+        "PCS有功功率设定",
+        Write,
+        "pcs",
+        Id(2003)
+    ),
+];
