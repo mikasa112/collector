@@ -1,14 +1,10 @@
 use collector_core::{
     center::{DataCenterError, data_center},
-    core::point::{DownDataPoint, PointRef, Val},
+    core::point::{DownDataPoint, Val},
     down,
 };
 
-use crate::{
-    DataDriven,
-    emu::{ID_EMU_POWER, KEY_EMU_POWER},
-    strategy::StrategyError,
-};
+use crate::{DataDriven, emu::EMU_POWER, strategy::StrategyError};
 
 #[derive(Debug, thiserror::Error)]
 pub enum CommandError {
@@ -124,9 +120,7 @@ impl Command for EmuPower {
 impl DataDriven for EmuPower {
     async fn down(&self, points: &[DownDataPoint]) -> Result<(), StrategyError> {
         for p in points.iter() {
-            if p.point == PointRef::Id(ID_EMU_POWER)
-                || p.point == PointRef::Key(KEY_EMU_POWER.to_string())
-            {
+            if EMU_POWER.matches(&p.point) {
                 let v = p.value.as_u32()?;
                 //并网启动
                 if v == 1 {

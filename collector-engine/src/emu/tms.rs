@@ -1,7 +1,7 @@
 use std::{sync::Arc, time::Duration};
 
 use crate::{
-    emu::{ID_SYS_TMS_MODE, KEY_SYS_TMS_MODE},
+    emu::SYS_TMS_MODE,
     strategy::{Schedule, Strategy, StrategyError},
 };
 use async_trait::async_trait;
@@ -69,8 +69,8 @@ impl Tms {
         Self {
             sys_tms_mode: Arc::new(RwLock::new(SysTmsMode::Auto)),
             point: Arc::new(RwLock::new(DataPoint {
-                id: ID_SYS_TMS_MODE,
-                key: KEY_SYS_TMS_MODE,
+                id: SYS_TMS_MODE.id,
+                key: SYS_TMS_MODE.key,
                 name: "系统热管理模式",
                 value: Val::U8(SysTmsMode::Auto as u8),
                 translator: None,

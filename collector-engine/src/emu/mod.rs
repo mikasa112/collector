@@ -1,4 +1,4 @@
-use collector_core::{field::FieldSpec, field_spec};
+use collector_core::{core::point::PointRef, field::FieldSpec, field_spec};
 
 pub(crate) mod alarm;
 mod cmd;
@@ -10,37 +10,40 @@ pub mod power_guard;
 mod taos;
 mod tms;
 
+/// EMU 功能点位：ID 与 Key 成对声明，避免两个常量各写各的。
+pub(crate) struct Point {
+    pub id: u32,
+    pub key: &'static str,
+}
+
+impl Point {
+    /// 下发点是否指向本点位（按 ID 或 Key 匹配）
+    pub(crate) fn matches(&self, p: &PointRef) -> bool {
+        match p {
+            PointRef::Id(id) => *id == self.id,
+            PointRef::Key(key) => key == self.key,
+            _ => false,
+        }
+    }
+}
+
+macro_rules! point {
+    ($name:ident, $id:expr, $key:expr) => {
+        pub(crate) const $name: Point = Point { id: $id, key: $key };
+    };
+}
+
 // EMU功能点位常量定义
-// EMU功能点位常量定义
-pub(crate) const ID_OPERATION_MODE: u32 = 1;
-pub(crate) const KEY_OPERATION_MODE: &str = "operation_mode";
-
-pub(crate) const ID_PERMISSION: u32 = 2;
-pub(crate) const KEY_PERMISSION: &str = "permission";
-
-pub(crate) const ID_HEALTH_STATUS: u32 = 3;
-pub(crate) const KEY_HEALTH_STATUS: &str = "health_status";
-
-pub(crate) const ID_CHARGE_SOC_LIMIT: u32 = 4;
-pub(crate) const KEY_CHARGE_SOC_LIMIT: &str = "charge_soc_limit";
-
-pub(crate) const ID_DISCHARGE_SOC_LIMIT: u32 = 5;
-pub(crate) const KEY_DISCHARGE_SOC_LIMIT: &str = "discharge_soc_limit";
-
-pub(crate) const ID_PLANNED_CURVE: u32 = 6;
-pub(crate) const KEY_PLANNED_CURVE: &str = "planned_curve";
-
-pub(crate) const ID_EMU_POWER: u32 = 7;
-pub(crate) const KEY_EMU_POWER: &str = "emu_power";
-
-pub(crate) const ID_SYS_TMS_MODE: u32 = 10;
-pub(crate) const KEY_SYS_TMS_MODE: &str = "sys_tms_mode";
-
-pub(crate) const ID_RUN_MODE: u32 = 8;
-pub(crate) const KEY_RUN_MODE: &str = "run_mode";
-
-pub(crate) const ID_CONTROL_SOURCE: u32 = 9;
-pub(crate) const KEY_CONTROL_SOURCE: &str = "control_source";
+point!(OPERATION_MODE, 1, "operation_mode");
+point!(PERMISSION, 2, "permission");
+point!(HEALTH_STATUS, 3, "health_status");
+point!(CHARGE_SOC_LIMIT, 4, "charge_soc_limit");
+point!(DISCHARGE_SOC_LIMIT, 5, "discharge_soc_limit");
+point!(PLANNED_CURVE, 6, "planned_curve");
+point!(EMU_POWER, 7, "emu_power");
+point!(RUN_MODE, 8, "run_mode");
+point!(CONTROL_SOURCE, 9, "control_source");
+point!(SYS_TMS_MODE, 10, "sys_tms_mode");
 
 /// EMU 用到的全部逻辑字段，集中在此声明并统一注入 [`collector_core::field::field_registry`]，
 /// 不再由各策略各自声明、逐个注册。

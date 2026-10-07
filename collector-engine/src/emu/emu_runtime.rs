@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use collector_core::{
     center::data_center,
-    core::point::{DataPoint, DownDataPoint, PointRef, Val},
+    core::point::{DataPoint, DownDataPoint, Val},
     field::field_registry,
     runtime::{
         core::get_runtime,
@@ -13,10 +13,8 @@ use collector_core::{
 use crate::{
     DataDriven,
     emu::{
-        ID_CHARGE_SOC_LIMIT, ID_CONTROL_SOURCE, ID_DISCHARGE_SOC_LIMIT, ID_HEALTH_STATUS,
-        ID_OPERATION_MODE, ID_PERMISSION, ID_RUN_MODE, KEY_CHARGE_SOC_LIMIT, KEY_CONTROL_SOURCE,
-        KEY_DISCHARGE_SOC_LIMIT, KEY_HEALTH_STATUS, KEY_OPERATION_MODE, KEY_PERMISSION,
-        KEY_RUN_MODE,
+        CHARGE_SOC_LIMIT, CONTROL_SOURCE, DISCHARGE_SOC_LIMIT, HEALTH_STATUS, OPERATION_MODE,
+        PERMISSION, RUN_MODE,
     },
     strategy::{Schedule, Strategy, StrategyError},
 };
@@ -130,9 +128,7 @@ impl DataDriven for EmuRuntime {
         let runtime = get_runtime().await?;
         let mut changed = false;
         for p in points.iter() {
-            if p.point == PointRef::Id(ID_CHARGE_SOC_LIMIT)
-                || p.point == PointRef::Key(KEY_CHARGE_SOC_LIMIT.to_string())
-            {
+            if CHARGE_SOC_LIMIT.matches(&p.point) {
                 runtime
                     .emu_runtime
                     .soc_protect
@@ -140,9 +136,7 @@ impl DataDriven for EmuRuntime {
                 tracing::info!("[EMU] 充电SOC限制修改为{}", p.value);
                 changed = true;
             }
-            if p.point == PointRef::Id(ID_DISCHARGE_SOC_LIMIT)
-                || p.point == PointRef::Key(KEY_DISCHARGE_SOC_LIMIT.to_string())
-            {
+            if DISCHARGE_SOC_LIMIT.matches(&p.point) {
                 runtime
                     .emu_runtime
                     .soc_protect
@@ -150,9 +144,7 @@ impl DataDriven for EmuRuntime {
                 tracing::info!("[EMU] 放电SOC限制修改为{}", p.value);
                 changed = true;
             }
-            if p.point == PointRef::Id(ID_RUN_MODE)
-                || p.point == PointRef::Key(KEY_RUN_MODE.to_string())
-            {
+            if RUN_MODE.matches(&p.point) {
                 let Ok(mode) = RunMode::try_from(p.value.as_u32()? as u8) else {
                     tracing::warn!("[EMU] 无效的运行模式取值: {}", p.value);
                     continue;
@@ -166,9 +158,7 @@ impl DataDriven for EmuRuntime {
                     tracing::info!("[EMU] 运行模式修改为{}", p.value);
                 }
             }
-            if p.point == PointRef::Id(ID_CONTROL_SOURCE)
-                || p.point == PointRef::Key(KEY_CONTROL_SOURCE.to_string())
-            {
+            if CONTROL_SOURCE.matches(&p.point) {
                 let Ok(source) = ControlSource::try_from(p.value.as_u32()? as u8) else {
                     tracing::warn!("[EMU] 无效的控制源取值: {}", p.value);
                     continue;
@@ -185,8 +175,8 @@ impl DataDriven for EmuRuntime {
 }
 fn operation_mode(data: u8) -> DataPoint {
     DataPoint {
-        id: ID_OPERATION_MODE,
-        key: KEY_OPERATION_MODE,
+        id: OPERATION_MODE.id,
+        key: OPERATION_MODE.key,
         name: "EMU充放电状态",
         value: Val::U8(data),
         translator: None,
@@ -199,8 +189,8 @@ fn operation_mode(data: u8) -> DataPoint {
 
 fn permission(data: u8) -> DataPoint {
     DataPoint {
-        id: ID_PERMISSION,
-        key: KEY_PERMISSION,
+        id: PERMISSION.id,
+        key: PERMISSION.key,
         name: "EMU充放电许可",
         value: Val::U8(data),
         translator: None,
@@ -213,8 +203,8 @@ fn permission(data: u8) -> DataPoint {
 
 fn health_status(data: u8) -> DataPoint {
     DataPoint {
-        id: ID_HEALTH_STATUS,
-        key: KEY_HEALTH_STATUS,
+        id: HEALTH_STATUS.id,
+        key: HEALTH_STATUS.key,
         name: "EMU告警故障状态",
         value: Val::U8(data),
         translator: None,
@@ -227,8 +217,8 @@ fn health_status(data: u8) -> DataPoint {
 
 fn charge_soc_limit(data: f64) -> DataPoint {
     DataPoint {
-        id: ID_CHARGE_SOC_LIMIT,
-        key: KEY_CHARGE_SOC_LIMIT,
+        id: CHARGE_SOC_LIMIT.id,
+        key: CHARGE_SOC_LIMIT.key,
         name: "充电SOC限制",
         value: Val::F64(data),
         translator: None,
@@ -241,8 +231,8 @@ fn charge_soc_limit(data: f64) -> DataPoint {
 
 fn run_mode(data: u8) -> DataPoint {
     DataPoint {
-        id: ID_RUN_MODE,
-        key: KEY_RUN_MODE,
+        id: RUN_MODE.id,
+        key: RUN_MODE.key,
         name: "EMU运行模式",
         value: Val::U8(data),
         translator: None,
@@ -255,8 +245,8 @@ fn run_mode(data: u8) -> DataPoint {
 
 fn control_source(data: u8) -> DataPoint {
     DataPoint {
-        id: ID_CONTROL_SOURCE,
-        key: KEY_CONTROL_SOURCE,
+        id: CONTROL_SOURCE.id,
+        key: CONTROL_SOURCE.key,
         name: "EMU控制源",
         value: Val::U8(data),
         translator: None,
@@ -269,8 +259,8 @@ fn control_source(data: u8) -> DataPoint {
 
 fn discharge_soc_limit(data: f64) -> DataPoint {
     DataPoint {
-        id: ID_DISCHARGE_SOC_LIMIT,
-        key: KEY_DISCHARGE_SOC_LIMIT,
+        id: DISCHARGE_SOC_LIMIT.id,
+        key: DISCHARGE_SOC_LIMIT.key,
         name: "放电SOC限制",
         value: Val::F64(data),
         translator: None,

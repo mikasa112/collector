@@ -1,11 +1,13 @@
 mod alarm;
 mod data;
+mod electricity;
 mod emu;
 mod field_binding;
 mod history;
 #[cfg(target_os = "linux")]
 mod network;
 mod planned_curve;
+mod project_info;
 #[cfg(target_os = "linux")]
 mod system;
 mod user;
@@ -25,8 +27,10 @@ pub(crate) fn root_router(eg25_rx: Option<watch::Receiver<Eg25Info>>) -> Router 
         .push(history::router())
         .push(alarm::router())
         .push(ws::router())
+        .push(electricity::router())
         .push(emu::router())
-        .push(field_binding::router());
+        .push(field_binding::router())
+        .push(project_info::router());
     if let Some(rx) = eg25_rx {
         v1 = v1.hoop(InjectEg25::new(rx));
     }

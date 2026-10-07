@@ -1,5 +1,6 @@
 pub mod alarm;
 pub mod data;
+pub mod electricity;
 pub mod emu;
 pub mod error;
 pub mod field_binding;
@@ -7,6 +8,7 @@ pub mod history;
 #[cfg(target_os = "linux")]
 pub mod network;
 pub mod planned_curve;
+pub mod project_info;
 #[cfg(target_os = "linux")]
 pub mod script;
 #[cfg(target_os = "linux")]

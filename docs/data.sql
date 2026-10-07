@@ -110,3 +110,29 @@ CREATE TABLE t_field_binding_override (
     created_at DATETIME DEFAULT (datetime('now', 'localtime')),
     updated_at DATETIME DEFAULT (datetime('now', 'localtime'))
 );
+
+-- 项目信息表：键值形式存放项目名称/标题/版本/额定功率/额定能量，图标以文件形式存放在 ./logo 目录
+CREATE TABLE t_project_info (
+    key VARCHAR(32) PRIMARY KEY,            -- name/title/version/rated_power_kw/rated_energy_kwh
+    value TEXT NOT NULL,
+    updated_by VARCHAR(50),
+    updated_at DATETIME DEFAULT (datetime('now', 'localtime'))
+);
+
+-- 电价表：尖/峰/平/谷四种时段类型的单价，固定四行，按 period_type 覆盖写入
+CREATE TABLE t_electricity_price (
+    period_type TINYINT PRIMARY KEY,        -- 1-尖 2-峰 3-平 4-谷
+    price REAL NOT NULL,                    -- 单价(元/kWh)
+    updated_by VARCHAR(50),
+    updated_at DATETIME DEFAULT (datetime('now', 'localtime'))
+);
+
+-- 电价时段表：一天内各时段所属的电价类型，整体替换写入，需首尾相接覆盖 00:00-24:00
+CREATE TABLE t_electricity_period (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    start_time VARCHAR(5) NOT NULL,         -- HH:MM，含
+    end_time VARCHAR(5) NOT NULL,           -- HH:MM，不含，最后一段为 24:00
+    period_type TINYINT NOT NULL,           -- 1-尖 2-峰 3-平 4-谷
+    updated_by VARCHAR(50),
+    updated_at DATETIME DEFAULT (datetime('now', 'localtime'))
+);

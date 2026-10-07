@@ -3,7 +3,7 @@ use std::time::Duration;
 use chrono::{Datelike, Timelike};
 use collector_core::{
     center::data_center,
-    core::point::{DataPoint, DownDataPoint, PointRef, Val},
+    core::point::{DataPoint, DownDataPoint, Val},
     field::field_registry,
     runtime::core::get_runtime,
 };
@@ -11,7 +11,7 @@ use sqlx::{SqlitePool, prelude::FromRow};
 
 use crate::{
     DataDriven,
-    emu::{ID_PLANNED_CURVE, KEY_PLANNED_CURVE},
+    emu::PLANNED_CURVE,
     strategy::{Schedule, Strategy, StrategyError},
 };
 
@@ -180,8 +180,8 @@ impl PlannedCurve {
     fn point(&self, bool: bool) -> DataPoint {
         let bool = if bool { 1 } else { 0 };
         DataPoint {
-            id: ID_PLANNED_CURVE,
-            key: KEY_PLANNED_CURVE,
+            id: PLANNED_CURVE.id,
+            key: PLANNED_CURVE.key,
             name: "计划曲线使能",
             value: Val::U8(bool),
             translator: None,
@@ -231,9 +231,7 @@ impl Strategy for PlannedCurve {
 impl DataDriven for PlannedCurve {
     async fn down(&self, points: &[DownDataPoint]) -> Result<(), StrategyError> {
         for p in points.iter() {
-            if p.point == PointRef::Id(ID_PLANNED_CURVE)
-                || p.point == PointRef::Key(KEY_PLANNED_CURVE.to_string())
-            {
+            if PLANNED_CURVE.matches(&p.point) {
                 let runtime = get_runtime().await?;
                 data_center().ingest("emu", vec![self.point(p.value.as_bool()?)]);
                 runtime

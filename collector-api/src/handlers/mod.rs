@@ -3,12 +3,14 @@ use serde::Deserialize;
 
 pub(crate) mod alarm;
 pub(crate) mod data;
+pub(crate) mod electricity;
 pub(crate) mod emu;
 pub(crate) mod field_binding;
 pub(crate) mod history;
 #[cfg(target_os = "linux")]
 pub(crate) mod network;
 pub(crate) mod planned_curve;
+pub(crate) mod project_info;
 #[cfg(target_os = "linux")]
 pub(crate) mod script;
 #[cfg(target_os = "linux")]
