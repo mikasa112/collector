@@ -4,8 +4,10 @@ use crate::{
     emu::{
         FIELDS,
         cmd::{self, Command},
-        emu_runtime, fault, planned_curve,
-        power_guard::{EmuPolicy, PowerDispatchGuard},
+        emu_runtime, fault,
+        guard_runtime::PowerGuardRuntime,
+        planned_curve,
+        power_guard::{AntiBackflowPolicy, DemandGuardPolicy, EmuPolicy, PowerDispatchGuard},
         taos, tms,
     },
     strategy::{Schedule, Strategy},
@@ -14,6 +16,7 @@ use collector_core::{
     center::{DataCenterError, data_center},
     core::point::DownDataPoint,
     dev::{DeviceError, Executable, Identifiable, Lifecycle, LifecycleState, state::SharedState},
+    runtime::core::get_runtime,
     utils::database::get_database,
 };
 use parking_lot::Mutex;
@@ -38,12 +41,25 @@ impl Emu {
         let commands: Arc<AsyncMutex<Vec<Box<dyn Command>>>> =
             Arc::new(AsyncMutex::new(vec![Box::new(cmd::EmuPower::new())]));
         let pool = get_database().expect("[engine] 数据库初始化失败");
+        // 有功功率下发前的限制策略，只在 EMU 被实际启用（即本构造函数被调用）时才
+        // 注册进 DataCenter；未启用 EMU 的部署完全不会触碰这里的钳位逻辑。
+        let guard_cfg = &get_runtime()
+            .await
+            .expect("[engine] 运行时初始化失败")
+            .emu_runtime
+            .power_guard;
+        let mut power_guard = PowerDispatchGuard::new("pcs_active_power");
+        power_guard.register(Box::new(EmuPolicy));
+        power_guard.register(Box::new(AntiBackflowPolicy::new(guard_cfg)));
+        power_guard.register(Box::new(DemandGuardPolicy::new(guard_cfg)));
+        let power_guard = Arc::new(power_guard);
         let strategies: Arc<AsyncMutex<Vec<Box<dyn Strategy>>>> = Arc::new(AsyncMutex::new(vec![
             Box::new(emu_runtime::EmuRuntime::new()),
             Box::new(fault::FaultDiagnosis::new(pool.clone())),
             Box::new(tms::Tms::new()),
             Box::new(planned_curve::PlannedCurve::new(pool.clone())),
             Box::new(taos::TaosWriter::new()),
+            Box::new(PowerGuardRuntime::new(power_guard.clone(), guard_cfg)),
         ]));
         // 统一注入 EMU 集中声明的字段清单，再让各策略补充注入自己独有的字段
         collector_core::field::field_registry().register(FIELDS);
@@ -57,12 +73,7 @@ impl Emu {
             tracing::warn!("[engine] 字段绑定覆盖表加载失败: {}", err);
         }
 
-        // 有功功率下发前的限制策略，只在 EMU 被实际启用（即本构造函数被调用）时才
-        // 注册进 DataCenter；未启用 EMU 的部署完全不会触碰这里的钳位逻辑。
-        let mut power_guard = PowerDispatchGuard::new("pcs_active_power");
-        power_guard.register(Box::new(EmuPolicy));
-        // 未来的防逆流/需量控制等策略在此继续 power_guard.register(...)
-        data_center().register_dispatch_interceptor(Arc::new(power_guard));
+        data_center().register_dispatch_interceptor(power_guard);
 
         let state = SharedState::new(LifecycleState::New);
         let (stop_tx, stop_rx) = watch::channel(false);

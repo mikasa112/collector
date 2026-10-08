@@ -1,4 +1,7 @@
-use collector_core::runtime::core::get_runtime;
+use collector_core::runtime::{
+    core::get_runtime,
+    emu::{PowerGuardConfig, PowerGuardUpdate},
+};
 use serde::Serialize;
 
 use crate::services::{ServiceError, ServiceResult};
@@ -7,6 +10,30 @@ use crate::services::{ServiceError, ServiceResult};
 pub struct SocProtectResp {
     pub charge_limit: f64,
     pub discharge_limit: f64,
+}
+
+/// 防逆流与需量保护参数，功率单位 kW
+#[derive(Debug, Serialize)]
+pub struct PowerGuardResp {
+    pub anti_backflow_enable: bool,
+    pub anti_backflow_threshold: f64,
+    pub anti_backflow_hysteresis: f64,
+    pub demand_guard_enable: bool,
+    pub demand_limit: f64,
+    pub demand_hysteresis: f64,
+}
+
+impl From<&PowerGuardConfig> for PowerGuardResp {
+    fn from(c: &PowerGuardConfig) -> Self {
+        Self {
+            anti_backflow_enable: c.anti_backflow_enable(),
+            anti_backflow_threshold: c.anti_backflow_threshold(),
+            anti_backflow_hysteresis: c.anti_backflow_hysteresis(),
+            demand_guard_enable: c.demand_guard_enable(),
+            demand_limit: c.demand_limit(),
+            demand_hysteresis: c.demand_hysteresis(),
+        }
+    }
 }
 
 pub struct EmuService {}
@@ -51,7 +78,8 @@ impl EmuService {
         }
         soc_protect.set_charge_limit(new_charge_limit);
         soc_protect.set_discharge_limit(new_discharge_limit);
-        soc_protect
+        runtime
+            .emu_runtime
             .save()
             .await
             .map_err(|e| ServiceError::InternalError(e.to_string()))?;
@@ -59,5 +87,27 @@ impl EmuService {
             charge_limit: new_charge_limit,
             discharge_limit: new_discharge_limit,
         })
+    }
+
+    pub async fn power_guard(&self) -> ServiceResult<PowerGuardResp> {
+        let runtime = get_runtime()
+            .await
+            .map_err(|e| ServiceError::InternalError(e.to_string()))?;
+        Ok(PowerGuardResp::from(&runtime.emu_runtime.power_guard))
+    }
+
+    /// 修改防逆流/需量保护参数，只改传入的字段；整体校验通过才生效并落盘
+    pub async fn set_power_guard(&self, update: PowerGuardUpdate) -> ServiceResult<PowerGuardResp> {
+        let runtime = get_runtime()
+            .await
+            .map_err(|e| ServiceError::InternalError(e.to_string()))?;
+        let cfg = &runtime.emu_runtime.power_guard;
+        cfg.update(update).map_err(ServiceError::InvalidParameter)?;
+        runtime
+            .emu_runtime
+            .save()
+            .await
+            .map_err(|e| ServiceError::InternalError(e.to_string()))?;
+        Ok(PowerGuardResp::from(cfg))
     }
 }

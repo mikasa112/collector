@@ -167,7 +167,7 @@ impl DataDriven for EmuRuntime {
                 tracing::info!("[EMU] 控制源修改为{}", p.value);
             }
         }
-        if changed && let Err(err) = runtime.emu_runtime.soc_protect.save().await {
+        if changed && let Err(err) = runtime.emu_runtime.save().await {
             tracing::error!("[EMU] 保存SOC保护配置失败: {}", err);
         }
         Ok(())
