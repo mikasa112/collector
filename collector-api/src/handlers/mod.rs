@@ -2,6 +2,7 @@ use salvo::Request;
 use serde::Deserialize;
 
 pub(crate) mod alarm;
+pub(crate) mod arbitrage;
 pub(crate) mod data;
 pub(crate) mod electricity;
 pub(crate) mod emu;

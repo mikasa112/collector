@@ -1,4 +1,5 @@
 pub mod alarm;
+pub mod arbitrage;
 pub mod data;
 pub mod electricity;
 pub mod emu;

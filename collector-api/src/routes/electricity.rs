@@ -15,6 +15,12 @@ pub(crate) fn router() -> Router {
                 ),
         )
         .push(
+            Router::with_path("arbitrage")
+                .hoop(require_role(Role::Admin))
+                .push(Router::with_path("preview").post(handlers::arbitrage::preview))
+                .push(Router::with_path("apply").post(handlers::arbitrage::apply)),
+        )
+        .push(
             Router::with_path("period")
                 .get(handlers::electricity::list_periods)
                 .push(

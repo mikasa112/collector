@@ -9,7 +9,9 @@ use crate::{
     services::{ServiceError, ServiceResult},
 };
 
-const MINUTES_PER_DAY: u32 = 24 * 60;
+pub(crate) const MINUTES_PER_DAY: u32 = 24 * 60;
+/// 计划曲线的时间粒度，时段边界必须与之对齐，套利曲线才能按时段准确取价
+const SLOT_MINUTES: u32 = 15;
 
 #[derive(Debug, Serialize)]
 pub struct PriceView {
@@ -20,7 +22,7 @@ pub struct PriceView {
 }
 
 /// 解析 `HH:MM` 为当天的分钟数，仅 `24:00` 可取到一天末尾
-fn parse_minutes(s: &str) -> Option<u32> {
+pub(crate) fn parse_minutes(s: &str) -> Option<u32> {
     let (h, m) = s.split_once(':')?;
     if h.len() != 2 || m.len() != 2 {
         return None;
@@ -119,6 +121,12 @@ impl ElectricityService {
                 return Err(ServiceError::InvalidParameter(format!(
                     "时段{}-{}结束时间必须晚于开始时间，跨零点的时段请拆成两段",
                     p.start_time, p.end_time
+                )));
+            }
+            if start % SLOT_MINUTES != 0 || end % SLOT_MINUTES != 0 {
+                return Err(ServiceError::InvalidParameter(format!(
+                    "时段{}-{}的边界必须是{}分钟的整数倍",
+                    p.start_time, p.end_time, SLOT_MINUTES
                 )));
             }
             parsed.push((start, end, p.period_type));
