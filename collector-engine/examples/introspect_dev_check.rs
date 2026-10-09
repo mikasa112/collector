@@ -15,7 +15,8 @@ async fn write(dir: &std::path::Path, name: &str, content: &str) {
 async fn main() {
     tracing_subscriber::fmt().with_env_filter("info").init();
 
-    let dir = std::env::temp_dir().join(format!("collector-introspect-check-{}", std::process::id()));
+    let dir =
+        std::env::temp_dir().join(format!("collector-introspect-check-{}", std::process::id()));
     tokio::fs::create_dir_all(&dir).await.unwrap();
     println!("脚本目录: {}", dir.display());
 
@@ -62,7 +63,9 @@ end)"#,
     println!(">>> 期望看到 'A 看到的脚本清单' 里包含 A 和 B");
     println!(">>> 期望看到 'A 查自己' 的 events/timers/coroutines 均为 0（A 自身没注册这些）");
     println!(">>> 期望看到 'A 查 B' 的 events/hooks_on/timers/coroutines 均非零");
-    println!(">>> 期望很快看到 'A 查不存在目标: ok=false err=...目标模块 NoSuchMod 不存在或未运行...'");
+    println!(
+        ">>> 期望很快看到 'A 查不存在目标: ok=false err=...目标模块 NoSuchMod 不存在或未运行...'"
+    );
 
     let shutdown = CancellationToken::new();
     let dir_clone = dir.clone();
@@ -77,7 +80,10 @@ end)"#,
     tokio::time::sleep(std::time::Duration::from_millis(500)).await;
 
     let snapshots = bus.snapshot_all().await;
-    println!(">>> Rust 侧 snapshot_all() 拿到 {} 个脚本的快照", snapshots.len());
+    println!(
+        ">>> Rust 侧 snapshot_all() 拿到 {} 个脚本的快照",
+        snapshots.len()
+    );
     for s in &snapshots {
         println!(
             ">>> 脚本 {} ({}): events={} hooks_on={} timers={} coroutines={} mqtt_conns={}",

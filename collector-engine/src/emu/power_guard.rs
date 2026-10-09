@@ -30,7 +30,6 @@ pub const PCS_POWER_FIELD: &str = "pcs_actual_power";
 /// 复评时目标功率变化小于该值（kW）则不重复下发，避免每秒向 PCS 写同一个值
 const REDISPATCH_DEADBAND: f64 = 0.5;
 
-
 /// 一条有功功率限制策略。
 ///
 /// 只负责“算出允许范围”，不直接修改下发点，方便与其它策略的结果做交集合并。

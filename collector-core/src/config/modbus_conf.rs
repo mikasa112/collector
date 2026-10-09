@@ -159,7 +159,9 @@ fn expand_row(row: &[Data]) -> Vec<Vec<Data>> {
         .zip(row.get(ID_STEP_COL).and_then(|cell| cell.get_float()))
         .zip(row.get(ADDR_STEP_COL).and_then(|cell| cell.get_float()));
     let Some((((base_id, base_addr), id_step), addr_step)) = steps else {
-        error!("配置了重复次数({repeat_count})但缺少序号/寄存器地址/序号步长/地址步长，按不展开处理");
+        error!(
+            "配置了重复次数({repeat_count})但缺少序号/寄存器地址/序号步长/地址步长，按不展开处理"
+        );
         return vec![row.to_vec()];
     };
 
@@ -287,8 +289,7 @@ impl ModbusConfig {
             return Err(anyhow::Error::msg("数量与数据类型不匹配"));
         }
 
-        let byte_order =
-            ByteOrder::try_from(row.get(8).and_then(|cell| cell.get_string())).ok();
+        let byte_order = ByteOrder::try_from(row.get(8).and_then(|cell| cell.get_string())).ok();
         let scale = required_f64(row, 9, "缩放")?;
         let offset = required_f64(row, 10, "偏移量")?;
         let enable = row
@@ -353,22 +354,22 @@ mod expand_row_tests {
 
     fn base_row() -> Vec<Data> {
         vec![
-            Data::Float(50.0),                        // 0: 序号
-            Data::String("簇{n}电压".to_string()),      // 1: 点位名称
-            Data::String("U16".to_string()),           // 2: 数据类型
-            Data::Empty,                               // 3: 单位
-            Data::Empty,                               // 4: 备注
-            Data::Float(2203.0),                       // 5: 寄存器地址
-            Data::String("HoldingRegisters".to_string()), // 6: 寄存器类型
-            Data::Float(1.0),                          // 7: 数量
-            Data::Empty,                               // 8: 字节序
-            Data::Float(1.0),                          // 9: 缩放
-            Data::Float(0.0),                           // 10: 偏移量
-            Data::Float(1.0),                          // 11: 启用
+            Data::Float(50.0),                             // 0: 序号
+            Data::String("簇{n}电压".to_string()),         // 1: 点位名称
+            Data::String("U16".to_string()),               // 2: 数据类型
+            Data::Empty,                                   // 3: 单位
+            Data::Empty,                                   // 4: 备注
+            Data::Float(2203.0),                           // 5: 寄存器地址
+            Data::String("HoldingRegisters".to_string()),  // 6: 寄存器类型
+            Data::Float(1.0),                              // 7: 数量
+            Data::Empty,                                   // 8: 字节序
+            Data::Float(1.0),                              // 9: 缩放
+            Data::Float(0.0),                              // 10: 偏移量
+            Data::Float(1.0),                              // 11: 启用
             Data::String("clusterVoltage{n}".to_string()), // 12: 键
-            Data::Empty,                               // 13: 点位名称翻译
-            Data::Empty,                               // 14: 状态字
-            Data::Empty,                               // 15: 告警位
+            Data::Empty,                                   // 13: 点位名称翻译
+            Data::Empty,                                   // 14: 状态字
+            Data::Empty,                                   // 15: 告警位
         ]
     }
 
@@ -403,10 +404,7 @@ mod expand_row_tests {
         assert_eq!(expanded[0][0], Data::Float(50.0));
         assert_eq!(expanded[0][5], Data::Float(2203.0));
         assert_eq!(expanded[0][1], Data::String("簇1电压".to_string()));
-        assert_eq!(
-            expanded[0][12],
-            Data::String("clusterVoltage1".to_string())
-        );
+        assert_eq!(expanded[0][12], Data::String("clusterVoltage1".to_string()));
 
         assert_eq!(expanded[11][0], Data::Float(61.0));
         assert_eq!(expanded[11][5], Data::Float(2709.0));

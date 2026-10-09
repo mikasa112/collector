@@ -40,5 +40,8 @@ fn list_modules(script_dir: &Path, subdir: &str) -> Vec<String> {
         })
         .collect();
     stems.sort();
-    stems.into_iter().map(|stem| format!("{subdir}.{stem}")).collect()
+    stems
+        .into_iter()
+        .map(|stem| format!("{subdir}.{stem}"))
+        .collect()
 }

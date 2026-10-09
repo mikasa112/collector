@@ -1,10 +1,6 @@
 use salvo::Router;
 
-use crate::{
-    handlers,
-    middleware::auth::require_role,
-    models::user::Role,
-};
+use crate::{handlers, middleware::auth::require_role, models::user::Role};
 
 /// 系统管理相关路由：配置读写、备份/回滚、重启、状态查询
 ///

@@ -24,7 +24,10 @@ pub struct SchedulerStats(Arc<(AtomicUsize, AtomicUsize)>);
 
 impl SchedulerStats {
     pub fn snapshot(&self) -> (usize, usize) {
-        (self.0.0.load(Ordering::Relaxed), self.0.1.load(Ordering::Relaxed))
+        (
+            self.0.0.load(Ordering::Relaxed),
+            self.0.1.load(Ordering::Relaxed),
+        )
     }
 
     fn sync(&self, timers: usize, coros: usize) {

@@ -127,8 +127,9 @@ impl SystemService {
 
         tokio::spawn(async move {
             tokio::time::sleep(std::time::Duration::from_millis(800)).await;
-            let _: Result<OwnedObjectPath, _> =
-                manager.call("RestartUnit", &(SYSTEMD_UNIT, "replace")).await;
+            let _: Result<OwnedObjectPath, _> = manager
+                .call("RestartUnit", &(SYSTEMD_UNIT, "replace"))
+                .await;
         });
 
         Ok(())
@@ -148,9 +149,14 @@ impl SystemService {
             .await
             .map_err(|e| ServiceError::InternalError(e.to_string()))?;
 
-        let unit = zbus::Proxy::new(&conn, SYSTEMD_SERVICE, unit_path.as_str(), SYSTEMD_UNIT_IFACE)
-            .await
-            .map_err(|e| ServiceError::InternalError(e.to_string()))?;
+        let unit = zbus::Proxy::new(
+            &conn,
+            SYSTEMD_SERVICE,
+            unit_path.as_str(),
+            SYSTEMD_UNIT_IFACE,
+        )
+        .await
+        .map_err(|e| ServiceError::InternalError(e.to_string()))?;
 
         let active_state: String = unit
             .get_property("ActiveState")

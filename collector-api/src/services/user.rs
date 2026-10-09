@@ -74,9 +74,7 @@ impl UserService {
         match caller_role {
             Role::SuperAdmin => Ok(()),
             Role::Admin if target_role == Role::User => Ok(()),
-            _ => Err(ServiceError::permission_denied(
-                "无权将账号设置为该角色",
-            )),
+            _ => Err(ServiceError::permission_denied("无权将账号设置为该角色")),
         }
     }
 

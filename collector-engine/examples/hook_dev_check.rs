@@ -74,7 +74,12 @@ log.info("D 存档计数 = " .. tostring(count))"#,
     )
     .await;
 
-    write(&dir, "_manifest.lua", r#"return { "a.lua", "c.lua", "d.lua" }"#).await;
+    write(
+        &dir,
+        "_manifest.lua",
+        r#"return { "a.lua", "c.lua", "d.lua" }"#,
+    )
+    .await;
 
     println!(
         ">>> 阶段1：期望 A 的 override 生效日志('[A] emit 结果 = overridden:hi')；C 因 api_version 不兼容被跳过；\
@@ -82,7 +87,9 @@ log.info("D 存档计数 = " .. tostring(count))"#,
     );
     run_manager(&dir, 800).await;
 
-    println!(">>> 阶段2：把 b.lua 加入总纲并重启，期望 B 随后启动（依赖 a.lua 已注册），D 存档计数=2");
+    println!(
+        ">>> 阶段2：把 b.lua 加入总纲并重启，期望 B 随后启动（依赖 a.lua 已注册），D 存档计数=2"
+    );
     write(
         &dir,
         "_manifest.lua",

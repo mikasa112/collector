@@ -52,6 +52,8 @@ point!(ANTI_BACKFLOW_HYSTERESIS, 13, "anti_backflow_hysteresis");
 point!(DEMAND_GUARD_ENABLE, 14, "demand_guard_enable");
 point!(DEMAND_LIMIT, 15, "demand_limit");
 point!(DEMAND_HYSTERESIS, 16, "demand_hysteresis");
+// 并离网状态（只读），由 PCS 并网状态(1007)、VF离网状态(1008)联合得出
+point!(GRID_MODE, 17, "grid_mode");
 
 /// EMU 用到的全部逻辑字段，集中在此声明并统一注入 [`collector_core::field::field_registry`]，
 /// 不再由各策略各自声明、逐个注册。
@@ -59,6 +61,20 @@ pub(crate) const FIELDS: &[FieldSpec] = &[
     field_spec!("bcu_comm_status", "BCU通信状态", Read, "bcu", Id(34)),
     field_spec!("soc", "SOC", Read, "bcu", Id(32)),
     field_spec!("bcu_current", "BCU电流(负充正放)", Read, "bcu", Id(46)),
+    field_spec!(
+        "pcs_grid_connected",
+        "PCS并网状态(1并网)",
+        Read,
+        "pcs",
+        Id(1007)
+    ),
+    field_spec!(
+        "pcs_off_grid",
+        "PCS VF离网状态(1离网)",
+        Read,
+        "pcs",
+        Id(1008)
+    ),
     field_spec!(
         "pcs_active_power",
         "PCS有功功率设定(正充负放)",

@@ -33,8 +33,13 @@ impl GlobalBus {
 
     /// 广播给所有仍在运行的顶层脚本（包括发出者自身）
     pub fn broadcast(&self, name: &str, value: serde_json::Value) {
-        let handles: Vec<ModEngineHandle> =
-            self.0.lock().unwrap().iter().map(|e| e.handle.clone()).collect();
+        let handles: Vec<ModEngineHandle> = self
+            .0
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|e| e.handle.clone())
+            .collect();
         for h in handles {
             let _ = h.emit(name.to_owned(), value.clone());
         }
@@ -75,7 +80,11 @@ impl GlobalBus {
         let mut out = Vec::with_capacity(entries.len());
         for (name, path, handle) in entries {
             if let Ok(snapshot) = handle.introspect().await {
-                out.push(ScriptStatus { name, path, snapshot });
+                out.push(ScriptStatus {
+                    name,
+                    path,
+                    snapshot,
+                });
             }
         }
         out

@@ -15,7 +15,8 @@ const TEST_PASSWORD: &str = "test1234";
 
 fn main() {
     tokio::runtime::Runtime::new().unwrap().block_on(async {
-        let dir = std::env::temp_dir().join(format!("collector-system-test-{}", std::process::id()));
+        let dir =
+            std::env::temp_dir().join(format!("collector-system-test-{}", std::process::id()));
         tokio::fs::create_dir_all(&dir).await.unwrap();
         std::env::set_current_dir(&dir).unwrap();
         println!("工作目录: {}", dir.display());

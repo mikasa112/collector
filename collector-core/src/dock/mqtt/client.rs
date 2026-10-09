@@ -8,7 +8,7 @@ use tokio::{
     task::JoinHandle,
     time,
 };
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 use crate::{
     center::data_center,
@@ -206,6 +206,21 @@ async fn handle_incoming_publish(topic: &str, payload: &Bytes) -> Result<(), Mqt
     if points.is_empty() {
         return Ok(());
     }
+    // 控制源为本地时忽略下发，运行模式点位除外
+    let points = match crate::runtime::core::get_runtime().await {
+        Ok(runtime) if !runtime.emu_runtime.allow_remote_dispatch() => {
+            let allowed: Vec<_> = points
+                .into_iter()
+                .filter(|p| crate::runtime::emu::is_run_mode_down(&device_id, p))
+                .collect();
+            if allowed.is_empty() {
+                warn!("[MQTT] EMU控制源为本地, 已忽略下发 topic={}", topic);
+                return Ok(());
+            }
+            allowed
+        }
+        _ => points,
+    };
     if let Err(e) = data_center().dispatch(&device_id, points).await {
         error!("mqtt dispatch error on topic {}: {}", topic, e);
     }

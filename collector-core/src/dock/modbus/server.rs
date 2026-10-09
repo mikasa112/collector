@@ -258,10 +258,30 @@ async fn dispatch_write(
     holding_index: &HashMap<u16, usize>,
     req: WriteRequest,
 ) {
+    // EMU 控制源为本地时不允许北向下发（未启用 EMU 时默认放行），运行模式点位除外
+    let blocked = match crate::runtime::core::get_runtime().await {
+        Ok(runtime) => !runtime.emu_runtime.allow_remote_dispatch(),
+        Err(_) => false,
+    };
+    let allowed = |cfg: &NorthboundConfig| {
+        let ok = !blocked
+            || crate::runtime::emu::is_run_mode_point(
+                &cfg.point_source.source,
+                Some(cfg.point_source.point_id),
+                None,
+            );
+        if !ok {
+            tracing::warn!("[北向Modbus] EMU控制源为本地, 已忽略北向下发 {}", cfg.name);
+        }
+        ok
+    };
     match req {
         WriteRequest::SingleRegister(addr, value) => {
             if let Some(&ci) = holding_index.get(&addr) {
                 let cfg = &configs[ci];
+                if !allowed(cfg) {
+                    return;
+                }
                 tracing::info!("[北向Modbus] ↓ {}", cfg.name);
                 let _ = data_center()
                     .dispatch(
@@ -274,6 +294,9 @@ async fn dispatch_write(
         WriteRequest::SingleCoil(addr, value) => {
             if let Some(&ci) = coil_index.get(&addr) {
                 let cfg = &configs[ci];
+                if !allowed(cfg) {
+                    return;
+                }
                 tracing::info!("[北向Modbus] ↓ {}", cfg.name);
                 let _ = data_center()
                     .dispatch(
@@ -290,6 +313,9 @@ async fn dispatch_write(
                 let a = addr.saturating_add(offset as u16);
                 if let Some(&ci) = holding_index.get(&a) {
                     let cfg = &configs[ci];
+                    if !allowed(cfg) {
+                        continue;
+                    }
                     tracing::info!("[北向Modbus] ↓ {}", cfg.name);
                     let _ = data_center()
                         .dispatch(
@@ -305,6 +331,9 @@ async fn dispatch_write(
                 let a = addr.saturating_add(offset as u16);
                 if let Some(&ci) = coil_index.get(&a) {
                     let cfg = &configs[ci];
+                    if !allowed(cfg) {
+                        continue;
+                    }
                     tracing::info!("[北向Modbus] ↓ {}", cfg.name);
                     let _ = data_center()
                         .dispatch(&cfg.point_source.source, vec![down!(id: cfg.point_source.point_id, cfg.restore_val(u16::from(value)))])

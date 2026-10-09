@@ -1,11 +1,10 @@
 use salvo::Router;
 
-use crate::{handlers, middleware::auth::require_role, models::user::Role};
+use crate::handlers;
 
-/// 历史数据查询api
+/// 历史数据查询api，无需鉴权，任何人都可访问
 pub(crate) fn router() -> Router {
     Router::with_path("history")
-        .hoop(require_role(Role::Admin))
         .push(Router::with_path("pcs").get(handlers::history::pcs_history))
         .push(Router::with_path("bcu").get(handlers::history::bcu_history))
 }

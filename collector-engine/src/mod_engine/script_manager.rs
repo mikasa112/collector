@@ -214,7 +214,10 @@ impl ScriptManager {
 
         self.manifest = Manifest::load(&script_dir).await;
         if self.manifest.is_some() {
-            tracing::info!("[mod] 已启用模块注册总纲 {}，仅注册模块可执行", MANIFEST_FILE);
+            tracing::info!(
+                "[mod] 已启用模块注册总纲 {}，仅注册模块可执行",
+                MANIFEST_FILE
+            );
         } else {
             tracing::info!(
                 "[mod] 未找到模块注册总纲 {}，跳过注册限制（兼容模式，目录下脚本全部允许执行）",
@@ -232,14 +235,23 @@ impl ScriptManager {
                 if self.allows(&filename) {
                     true
                 } else {
-                    tracing::info!("[mod] 跳过未注册模块: {} ({})", meta.name, meta.path.display());
+                    tracing::info!(
+                        "[mod] 跳过未注册模块: {} ({})",
+                        meta.name,
+                        meta.path.display()
+                    );
                     false
                 }
             })
             .collect();
         let (ordered, skipped) = resolve_load_order(allowed);
         for (filename, path, reason) in skipped {
-            tracing::warn!("[mod] 跳过模块 {} ({}): {}", filename, path.display(), reason);
+            tracing::warn!(
+                "[mod] 跳过模块 {} ({}): {}",
+                filename,
+                path.display(),
+                reason
+            );
         }
         for meta in ordered {
             self.load(meta).await;
@@ -276,7 +288,11 @@ impl ScriptManager {
             if self.allows(&filename) {
                 allowed.push(meta);
             } else if self.scripts.contains_key(&meta.path) {
-                tracing::info!("[mod] 模块未注册，卸载: {} ({})", meta.name, meta.path.display());
+                tracing::info!(
+                    "[mod] 模块未注册，卸载: {} ({})",
+                    meta.name,
+                    meta.path.display()
+                );
                 self.unload(&meta.path).await;
             }
         }
@@ -311,7 +327,10 @@ impl ScriptManager {
                 self.last_reload.insert(path.clone(), now);
 
                 if file_name_of(&path) == MANIFEST_FILE {
-                    tracing::info!("[mod] 模块注册总纲变更，重新校验已加载脚本: {}", path.display());
+                    tracing::info!(
+                        "[mod] 模块注册总纲变更，重新校验已加载脚本: {}",
+                        path.display()
+                    );
                     self.manifest = Manifest::load(&self.script_dir).await;
                     self.reconcile().await;
                     return;
@@ -424,7 +443,10 @@ fn resolve_load_order(metas: Vec<ScriptMeta>) -> (Vec<ScriptMeta>, Vec<(String, 
         in_degree.entry(filename.clone()).or_insert(0);
         for dep in &meta.depends {
             *in_degree.entry(filename.clone()).or_insert(0) += 1;
-            dependents.entry(dep.clone()).or_default().push(filename.clone());
+            dependents
+                .entry(dep.clone())
+                .or_default()
+                .push(filename.clone());
         }
     }
 

@@ -12,7 +12,10 @@ async fn write(dir: &std::path::Path, name: &str, content: &str) {
 async fn main() {
     tracing_subscriber::fmt().with_env_filter("info").init();
 
-    let dir = std::env::temp_dir().join(format!("collector-cross-request-check-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!(
+        "collector-cross-request-check-{}",
+        std::process::id()
+    ));
     tokio::fs::create_dir_all(&dir).await.unwrap();
     println!("脚本目录: {}", dir.display());
 
@@ -42,7 +45,9 @@ end)"#,
     .await;
 
     println!(">>> 期望看到 'A 收到响应: {{\"echo\":1,\"status\":\"ok\"}}'");
-    println!(">>> 期望很快（不等 5000ms 默认超时）看到 'A 请求不存在目标: ok=false err=...目标模块 NoSuchMod 不存在或未运行...'");
+    println!(
+        ">>> 期望很快（不等 5000ms 默认超时）看到 'A 请求不存在目标: ok=false err=...目标模块 NoSuchMod 不存在或未运行...'"
+    );
 
     let shutdown = CancellationToken::new();
     let dir_clone = dir.clone();

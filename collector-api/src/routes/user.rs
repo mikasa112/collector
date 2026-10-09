@@ -1,8 +1,4 @@
-use crate::{
-    handlers,
-    middleware::auth::require_role,
-    models::user::Role,
-};
+use crate::{handlers, middleware::auth::require_role, models::user::Role};
 use salvo::Router;
 
 /// 用户相关路由：用户管理整组要求 Admin 及以上，越权细则在 service 层校验

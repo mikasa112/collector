@@ -2,12 +2,12 @@ pub mod alarm;
 pub mod arbitrage;
 pub mod data;
 pub mod electricity;
+pub mod emu;
+pub mod error;
 #[cfg(target_os = "linux")]
 pub mod ethernet;
 #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 pub mod ethernet_cfg;
-pub mod emu;
-pub mod error;
 pub mod field_binding;
 pub mod history;
 #[cfg(target_os = "linux")]

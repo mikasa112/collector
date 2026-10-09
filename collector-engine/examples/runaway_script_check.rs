@@ -30,7 +30,9 @@ end)"#,
     )
     .await;
 
-    println!(">>> 期望看到 '[boom] 开始死循环'，随后（约 200ms 后）出现一条超时警告日志，进程不应卡死");
+    println!(
+        ">>> 期望看到 '[boom] 开始死循环'，随后（约 200ms 后）出现一条超时警告日志，进程不应卡死"
+    );
 
     let shutdown = CancellationToken::new();
     let dir_clone = dir.clone();

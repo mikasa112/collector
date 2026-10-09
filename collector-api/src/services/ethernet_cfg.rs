@@ -68,7 +68,9 @@ pub fn validate_static(
                 return Err(invalid("网关不能与IP地址相同"));
             }
             if network(gw) != network(address) {
-                return Err(invalid(format!("网关 {gw} 与IP地址 {address} 不在同一网段")));
+                return Err(invalid(format!(
+                    "网关 {gw} 与IP地址 {address} 不在同一网段"
+                )));
             }
             if u32::from(gw) == network(gw) || u32::from(gw) == broadcast(gw) {
                 return Err(invalid(format!("网关 {gw} 是该网段的网络地址或广播地址")));

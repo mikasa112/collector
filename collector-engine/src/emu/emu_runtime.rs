@@ -13,8 +13,8 @@ use collector_core::{
 use crate::{
     DataDriven,
     emu::{
-        CHARGE_SOC_LIMIT, CONTROL_SOURCE, DISCHARGE_SOC_LIMIT, HEALTH_STATUS, OPERATION_MODE,
-        PERMISSION, RUN_MODE,
+        CHARGE_SOC_LIMIT, CONTROL_SOURCE, DISCHARGE_SOC_LIMIT, GRID_MODE, HEALTH_STATUS,
+        OPERATION_MODE, PERMISSION, RUN_MODE, planned_curve::planned_curve_point,
     },
     strategy::{Schedule, Strategy, StrategyError},
 };
@@ -38,6 +38,9 @@ impl Strategy for EmuRuntime {
     }
 
     async fn on_start(&mut self) -> Result<(), StrategyError> {
+        let runtime = get_runtime().await?;
+        //EMU启用后按控制源区分下发来源（本地：API；远程：北向/脚本引擎）
+        runtime.emu_runtime.enable_dispatch_gate();
         Ok(())
     }
 
@@ -88,24 +91,34 @@ impl Strategy for EmuRuntime {
             .emu_runtime
             .health()
             .unwrap_or(collector_core::runtime::emu::HealthStatus::Alarm);
-        //计划自动模式依赖计划曲线使能，计划曲线被关闭时自动切换为总功率模式
-        let rm = runtime
-            .emu_runtime
-            .run_mode()
-            .unwrap_or(RunMode::TotalPower);
-        let rm = if matches!(rm, RunMode::PlanAuto)
-            && !runtime.planned_curve.get_planned_curve_enable()
-        {
-            runtime.emu_runtime.set_run_mode(RunMode::TotalPower);
-            tracing::warn!("[EMU] 计划曲线已关闭, 运行模式自动切换为总功率");
-            RunMode::TotalPower
+        //运行模式与计划曲线使能双向联动，以使能（持久化）为准：开启即计划自动，关闭即总功率
+        let rm = if runtime.planned_curve.get_planned_curve_enable() {
+            RunMode::PlanAuto
         } else {
-            rm
+            RunMode::TotalPower
         };
+        runtime.emu_runtime.set_run_mode(rm);
         let cs = runtime
             .emu_runtime
             .control_source()
             .unwrap_or(ControlSource::Local);
+        //并离网状态由pcs并网状态(1007)与VF离网状态(1008)联合得出，任一读不到则不更新
+        let flag = |key: &str| -> Result<Option<bool>, StrategyError> {
+            Ok(field_registry()
+                .read(key)?
+                .and_then(|it| it.value.as_u32().ok())
+                .map(|v| v != 0))
+        };
+        let grid_mode_point = match (flag("pcs_grid_connected")?, flag("pcs_off_grid")?) {
+            (Some(on), Some(off)) => Some(grid_mode(match (on, off) {
+                (false, false) => 0,
+                (true, false) => 1,
+                (false, true) => 2,
+                (true, true) => 3,
+            })),
+            _ => None,
+        };
+        center.ingest("emu", grid_mode_point.into_iter().collect::<Vec<_>>());
         center.ingest(
             "emu",
             vec![
@@ -149,14 +162,17 @@ impl DataDriven for EmuRuntime {
                     tracing::warn!("[EMU] 无效的运行模式取值: {}", p.value);
                     continue;
                 };
-                if matches!(mode, RunMode::PlanAuto)
-                    && !runtime.planned_curve.get_planned_curve_enable()
-                {
-                    tracing::warn!("[EMU] 计划曲线未开启, 无法切换为计划自动模式");
-                } else {
-                    runtime.emu_runtime.set_run_mode(mode);
-                    tracing::info!("[EMU] 运行模式修改为{}", p.value);
+                //切到计划自动即开启计划曲线使能，切到总功率即关闭，并持久化
+                let enable = matches!(mode, RunMode::PlanAuto);
+                if runtime.planned_curve.get_planned_curve_enable() != enable {
+                    if let Err(err) = runtime.planned_curve.set_planned_curve_enable(enable).await {
+                        tracing::error!("[EMU] 同步计划曲线使能失败: {}", err);
+                        continue;
+                    }
+                    data_center().ingest("emu", vec![planned_curve_point(enable)]);
                 }
+                runtime.emu_runtime.set_run_mode(mode);
+                tracing::info!("[EMU] 运行模式修改为{}", p.value);
             }
             if CONTROL_SOURCE.matches(&p.point) {
                 let Ok(source) = ControlSource::try_from(p.value.as_u32()? as u8) else {
@@ -263,6 +279,20 @@ fn discharge_soc_limit(data: f64) -> DataPoint {
         key: DISCHARGE_SOC_LIMIT.key,
         name: "放电SOC限制",
         value: Val::F64(data),
+        translator: None,
+        bits: None,
+        words: None,
+        unit: None,
+        level: None,
+    }
+}
+
+fn grid_mode(data: u8) -> DataPoint {
+    DataPoint {
+        id: GRID_MODE.id,
+        key: GRID_MODE.key,
+        name: "并离网状态",
+        value: Val::U8(data),
         translator: None,
         bits: None,
         words: None,

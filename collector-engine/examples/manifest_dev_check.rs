@@ -17,10 +17,20 @@ async fn main() {
     tokio::fs::create_dir_all(&dir).await.unwrap();
     println!("脚本目录: {}", dir.display());
 
-    write(&dir, "a.lua", r#"MOD = { name = "A", description = "总纲已登记" }
-log.info("A 已启动")"#).await;
-    write(&dir, "b.lua", r#"MOD = { name = "B", description = "总纲未登记" }
-log.info("B 已启动")"#).await;
+    write(
+        &dir,
+        "a.lua",
+        r#"MOD = { name = "A", description = "总纲已登记" }
+log.info("A 已启动")"#,
+    )
+    .await;
+    write(
+        &dir,
+        "b.lua",
+        r#"MOD = { name = "B", description = "总纲未登记" }
+log.info("B 已启动")"#,
+    )
+    .await;
     write(&dir, "_manifest.lua", r#"return { "a.lua" }"#).await;
 
     let shutdown = CancellationToken::new();
@@ -39,7 +49,9 @@ log.info("B 已启动")"#).await;
     tokio::time::sleep(std::time::Duration::from_millis(800)).await;
 
     println!(">>> 阶段3：删除总纲，回退兼容模式（应无额外变化，两者已经都在跑）");
-    tokio::fs::remove_file(dir.join("_manifest.lua")).await.unwrap();
+    tokio::fs::remove_file(dir.join("_manifest.lua"))
+        .await
+        .unwrap();
     tokio::time::sleep(std::time::Duration::from_millis(800)).await;
 
     shutdown.cancel();

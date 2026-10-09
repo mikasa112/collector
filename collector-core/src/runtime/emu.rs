@@ -325,6 +325,9 @@ pub struct RuntimeEmu {
     run_mode: AtomicU8,
     #[serde(skip)]
     control_source: AtomicU8,
+    /// 下发来源闸门是否生效；仅在 EMU 启用后置位，未启用 EMU 的部署不限制任何下发来源
+    #[serde(skip)]
+    dispatch_gate: AtomicBool,
     pub soc_protect: SocProtect,
     pub power_guard: PowerGuardConfig,
 }
@@ -350,12 +353,10 @@ impl PersistedConfig {
             return default();
         }
         match serde_json::from_str::<serde_json::Value>(content) {
-            Ok(v) if v.get("soc_protect").is_none() && v.get("charge_limit").is_some() => {
-                Self {
-                    soc_protect: serde_json::from_value(v).unwrap_or_default(),
-                    power_guard: PowerGuardConfig::default(),
-                }
-            }
+            Ok(v) if v.get("soc_protect").is_none() && v.get("charge_limit").is_some() => Self {
+                soc_protect: serde_json::from_value(v).unwrap_or_default(),
+                power_guard: PowerGuardConfig::default(),
+            },
             Ok(v) => serde_json::from_value(v).unwrap_or_else(|err| {
                 tracing::warn!("[EMU] 解析运行配置失败, 使用默认配置: {}", err);
                 default()
@@ -387,6 +388,7 @@ impl RuntimeEmu {
             health: AtomicU8::new(2),
             run_mode: AtomicU8::new(1),
             control_source: AtomicU8::new(0),
+            dispatch_gate: AtomicBool::new(false),
             soc_protect,
             power_guard,
         };
@@ -440,6 +442,24 @@ impl RuntimeEmu {
         self.control_source.store(source as u8, Relaxed);
     }
 
+    /// 启用按控制源区分下发来源的闸门（EMU 启动时调用）
+    pub fn enable_dispatch_gate(&self) {
+        self.dispatch_gate.store(true, Relaxed);
+    }
+
+    /// 北向（Modbus/MQTT）与脚本引擎是否允许下发：仅控制源为远程时允许。
+    /// 运行模式点位不受此限，见 [`is_run_mode_point`]
+    pub fn allow_remote_dispatch(&self) -> bool {
+        !self.dispatch_gate.load(Relaxed)
+            || matches!(self.control_source(), Ok(ControlSource::Remote))
+    }
+
+    /// API 是否允许下发：仅控制源为本地时允许
+    pub fn allow_api_dispatch(&self) -> bool {
+        !self.dispatch_gate.load(Relaxed)
+            || matches!(self.control_source(), Ok(ControlSource::Local))
+    }
+
     pub fn health(&self) -> Result<HealthStatus, RuntimeEmuError> {
         let h = self.health.load(Relaxed);
         let hl = HealthStatus::try_from(h)?;
@@ -448,6 +468,22 @@ impl RuntimeEmu {
 
     pub fn set_health(&self, h: HealthStatus) {
         self.health.store(h as u8, Relaxed);
+    }
+}
+
+/// 是否为 EMU 运行模式点位（emu 设备 8 号点位 `run_mode`）。
+/// 运行模式不受控制源限制，本地/远程下任何下发通道都可以修改
+pub fn is_run_mode_point(dev_id: &str, id: Option<u32>, key: Option<&str>) -> bool {
+    dev_id == "emu" && (id == Some(8) || key == Some("run_mode"))
+}
+
+/// 下发点是否为 EMU 运行模式点位，供按 [`DownDataPoint`] 下发的通道使用
+pub fn is_run_mode_down(dev_id: &str, p: &crate::core::point::DownDataPoint) -> bool {
+    use crate::core::point::PointRef;
+    match &p.point {
+        PointRef::Id(id) => is_run_mode_point(dev_id, Some(*id), None),
+        PointRef::Key(key) => is_run_mode_point(dev_id, None, Some(key)),
+        PointRef::Name(_) => false,
     }
 }
 
@@ -500,8 +536,8 @@ mod tests {
         let saved = SocProtect::new();
         saved.set_charge_limit(90.0);
         saved.set_discharge_limit(10.0);
-        let json = serde_json::to_string_pretty(&serde_json::json!({ "soc_protect": saved }))
-            .unwrap();
+        let json =
+            serde_json::to_string_pretty(&serde_json::json!({ "soc_protect": saved })).unwrap();
 
         let loaded = PersistedConfig::parse(&json).soc_protect;
         assert_eq!(
@@ -522,7 +558,10 @@ mod tests {
     fn legacy_soc_only_config_is_migrated() {
         let c = PersistedConfig::parse(r#"{"charge_limit": 90.0, "discharge_limit": 10.0}"#);
         assert_eq!(
-            (c.soc_protect.charge_limit(), c.soc_protect.discharge_limit()),
+            (
+                c.soc_protect.charge_limit(),
+                c.soc_protect.discharge_limit()
+            ),
             (90.0, 10.0)
         );
         assert!(!c.power_guard.anti_backflow_enable());

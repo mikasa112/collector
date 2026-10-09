@@ -265,6 +265,12 @@ struct HomeEmuData {
     operation_mode: u8,
     permission: u8,
     health_status: u8,
+    /// 并离网状态：0非并网非离网 1并网 2离网 3状态冲突
+    grid_mode: u8,
+    /// EMU运行模式：0计划自动 1总功率
+    run_mode: u8,
+    /// EMU控制源：0本地 1远程
+    control_source: u8,
 }
 
 impl HomeEmuData {
@@ -282,10 +288,25 @@ impl HomeEmuData {
             .read("emu", 3)
             .map(|it| it.value.as_u32().unwrap_or(2))
             .unwrap_or(2) as u8;
+        let grid_mode = center
+            .read("emu", 17)
+            .map(|it| it.value.as_u32().unwrap_or(0))
+            .unwrap_or(0) as u8;
+        let run_mode = center
+            .read("emu", 8)
+            .map(|it| it.value.as_u32().unwrap_or(1))
+            .unwrap_or(1) as u8;
+        let control_source = center
+            .read("emu", 9)
+            .map(|it| it.value.as_u32().unwrap_or(0))
+            .unwrap_or(0) as u8;
         Self {
             operation_mode,
             permission,
             health_status,
+            grid_mode,
+            run_mode,
+            control_source,
         }
     }
 }

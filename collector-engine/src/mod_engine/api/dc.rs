@@ -183,6 +183,12 @@ pub fn create_dc_table(
                         }
                         _ => return Err(mlua::Error::runtime("point_mark 必须是整数或字符串")),
                     };
+                    if let Ok(runtime) = collector_core::runtime::core::get_runtime().await
+                        && !runtime.emu_runtime.allow_remote_dispatch()
+                        && !collector_core::runtime::emu::is_run_mode_down(&dev_id, &down)
+                    {
+                        return Err(mlua::Error::runtime("EMU控制源为本地，脚本引擎不允许下发"));
+                    }
                     c.dispatch(&dev_id, vec![down])
                         .await
                         .map_err(|e| mlua::Error::runtime(e.to_string()))?;

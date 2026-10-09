@@ -269,7 +269,9 @@ impl ModEngine {
                 mlua::HookTriggers::new().every_nth_instruction(HOOK_INSTRUCTION_COUNT),
                 move |_lua, _debug| {
                     if budget.is_expired() {
-                        Err(mlua::Error::runtime("[mod] 脚本执行超时（可能陷入死循环），已被中断"))
+                        Err(mlua::Error::runtime(
+                            "[mod] 脚本执行超时（可能陷入死循环），已被中断",
+                        ))
                     } else {
                         Ok(mlua::VmState::Continue)
                     }
@@ -368,7 +370,11 @@ impl ModEngine {
     /// `on_request`/`request` 实现跨 VM 请求-响应：`request` 只能在协程上下文调用
     /// （`task.spawn`、`event.on`/`timer`/`mqtt` 等回调，均由 `call_async`/`exec_async`
     /// 派发，内部会创建协程线程），不能在 `hook.on`/`hook.override`（同步 `call`）里用。
-    fn register_event(&self, bus: GlobalBus, self_handle: ModEngineHandle) -> mod_engine::Result<()> {
+    fn register_event(
+        &self,
+        bus: GlobalBus,
+        self_handle: ModEngineHandle,
+    ) -> mod_engine::Result<()> {
         let globals = self.lua.globals();
         let event = self.lua.create_table()?;
         let events = self.events.clone();
@@ -404,7 +410,12 @@ impl ModEngine {
             self.lua
                 .create_function(move |lua, (name, func): (String, mlua::Function)| {
                     let key = lua.create_registry_value(func)?;
-                    if requests.write().unwrap().insert(name.clone(), key).is_some() {
+                    if requests
+                        .write()
+                        .unwrap()
+                        .insert(name.clone(), key)
+                        .is_some()
+                    {
                         tracing::warn!("[mod] 请求处理器 {} 被重复注册，旧处理器已失效", name);
                     }
                     Ok(())
@@ -418,8 +429,12 @@ impl ModEngine {
                     let json: serde_json::Value = lua.from_value(payload)?;
                     match bus2.find_by_name(&target) {
                         Some(target_handle) => {
-                            let _ =
-                                target_handle.cross_request(self_handle.clone(), req_id, name, json);
+                            let _ = target_handle.cross_request(
+                                self_handle.clone(),
+                                req_id,
+                                name,
+                                json,
+                            );
                         }
                         None => {
                             let pending: mlua::Table = lua.globals().get("__pending_responses")?;
@@ -501,8 +516,17 @@ impl ModEngine {
                 self.lua
                     .create_function(move |lua, (name, func): (String, mlua::Function)| {
                         let key = lua.create_registry_value(func)?;
-                        if hooks.write().unwrap().override_.insert(name.clone(), key).is_some() {
-                            tracing::warn!("[mod] 钩子 {} 的替换处理器被重复注册，旧处理器已失效", name);
+                        if hooks
+                            .write()
+                            .unwrap()
+                            .override_
+                            .insert(name.clone(), key)
+                            .is_some()
+                        {
+                            tracing::warn!(
+                                "[mod] 钩子 {} 的替换处理器被重复注册，旧处理器已失效",
+                                name
+                            );
                         }
                         Ok(())
                     })?,
@@ -515,14 +539,19 @@ impl ModEngine {
                 "emit",
                 self.lua
                     .create_function(move |lua, (name, payload): (String, mlua::Value)| {
-                        let (on_funcs, override_func): (Vec<mlua::Function>, Option<mlua::Function>) = {
+                        let (on_funcs, override_func): (
+                            Vec<mlua::Function>,
+                            Option<mlua::Function>,
+                        ) = {
                             let binding = hooks.read().unwrap();
                             let on_funcs = binding
                                 .on
                                 .get(&name)
                                 .map(|list| {
                                     list.iter()
-                                        .filter_map(|k| lua.registry_value::<mlua::Function>(k).ok())
+                                        .filter_map(|k| {
+                                            lua.registry_value::<mlua::Function>(k).ok()
+                                        })
                                         .collect()
                                 })
                                 .unwrap_or_default();
@@ -882,10 +911,16 @@ impl ModEngine {
                     let bus = bus.clone();
                     let own_name = own_name.clone();
                     async move {
-                        let is_self = target.is_none() || target.as_deref() == Some(own_name.as_str());
+                        let is_self =
+                            target.is_none() || target.as_deref() == Some(own_name.as_str());
                         if is_self {
                             let snap = build_snapshot_from_parts(
-                                &events, &requests, &hooks, &mqtt_subs, &mqtt_conns, &stats,
+                                &events,
+                                &requests,
+                                &hooks,
+                                &mqtt_subs,
+                                &mqtt_conns,
+                                &stats,
                             );
                             return lua.to_value(&snap);
                         }

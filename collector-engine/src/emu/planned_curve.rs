@@ -5,7 +5,7 @@ use collector_core::{
     center::data_center,
     core::point::{DataPoint, DownDataPoint, Val},
     field::field_registry,
-    runtime::core::get_runtime,
+    runtime::{core::get_runtime, emu::RunMode},
 };
 use sqlx::{SqlitePool, prelude::FromRow};
 
@@ -105,6 +105,19 @@ impl PlannedCurve {
         Ok(details)
     }
 
+    /// 仅在使能且运行模式为计划自动时才执行曲线；
+    /// 其余模式清空去重记录，保证重新切回计划自动时当前时段会重新下发
+    async fn run(&mut self, enable: bool) -> Result<(), StrategyError> {
+        let runtime = get_runtime().await?;
+        let plan_auto = matches!(runtime.emu_runtime.run_mode(), Ok(RunMode::PlanAuto));
+        if enable && plan_auto {
+            self.apply().await;
+        } else {
+            self.last = None;
+        }
+        Ok(())
+    }
+
     /// 根据当前生效曲线与时间段，下发对应的有功功率设定
     async fn apply(&mut self) {
         let center = data_center();
@@ -177,19 +190,23 @@ impl PlannedCurve {
         self.last = Some(key);
     }
 
-    fn point(&self, bool: bool) -> DataPoint {
-        let bool = if bool { 1 } else { 0 };
-        DataPoint {
-            id: PLANNED_CURVE.id,
-            key: PLANNED_CURVE.key,
-            name: "计划曲线使能",
-            value: Val::U8(bool),
-            translator: None,
-            bits: None,
-            words: None,
-            unit: None,
-            level: None,
-        }
+    fn point(&self, enable: bool) -> DataPoint {
+        planned_curve_point(enable)
+    }
+}
+
+/// 计划曲线使能点位，供本策略与运行模式联动（切到计划自动时自动使能）共用
+pub(crate) fn planned_curve_point(enable: bool) -> DataPoint {
+    DataPoint {
+        id: PLANNED_CURVE.id,
+        key: PLANNED_CURVE.key,
+        name: "计划曲线使能",
+        value: Val::U8(enable as u8),
+        translator: None,
+        bits: None,
+        words: None,
+        unit: None,
+        level: None,
     }
 }
 
@@ -207,10 +224,7 @@ impl Strategy for PlannedCurve {
         let runtime = get_runtime().await?;
         let enable = runtime.planned_curve.get_planned_curve_enable();
         data_center().ingest("emu", vec![self.point(enable)]);
-        if !enable {
-            return Ok(());
-        }
-        self.apply().await;
+        self.run(enable).await?;
         data_center().ingest("emu", vec![self.point(enable)]);
         Ok(())
     }
@@ -219,11 +233,7 @@ impl Strategy for PlannedCurve {
         let runtime = get_runtime().await?;
         let enable = runtime.planned_curve.get_planned_curve_enable();
         data_center().ingest("emu", vec![self.point(enable)]);
-        if !enable {
-            return Ok(());
-        }
-        self.apply().await;
-        Ok(())
+        self.run(enable).await
     }
 }
 
@@ -238,6 +248,12 @@ impl DataDriven for PlannedCurve {
                     .planned_curve
                     .set_planned_curve_enable(p.value.as_bool()?)
                     .await?;
+                //运行模式联动：开启使能即计划自动，关闭使能即总功率
+                runtime.emu_runtime.set_run_mode(if p.value.as_bool()? {
+                    RunMode::PlanAuto
+                } else {
+                    RunMode::TotalPower
+                });
                 let text = if p.value.as_bool()? {
                     "开启"
                 } else {

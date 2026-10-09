@@ -106,12 +106,15 @@ impl FieldBindingService {
         params: SetFieldBindingParams,
         updated_by: Option<String>,
     ) -> ServiceResult<()> {
-        let spec = field_registry().spec(&params.field_key).ok_or_else(|| {
-            ServiceError::NotFound(format!("字段`{}`未注册", params.field_key))
-        })?;
+        let spec = field_registry()
+            .spec(&params.field_key)
+            .ok_or_else(|| ServiceError::NotFound(format!("字段`{}`未注册", params.field_key)))?;
         // DataCenter 本身不支持按 Name 读取，可读字段绑定为 Name 会导致读取永远返回空
         if params.point_kind == PointKind::Name
-            && matches!(spec.direction, FieldDirection::Read | FieldDirection::ReadWrite)
+            && matches!(
+                spec.direction,
+                FieldDirection::Read | FieldDirection::ReadWrite
+            )
         {
             return Err(ServiceError::InvalidParameter(
                 "该字段可读，不支持绑定为 Name 引用".to_string(),
