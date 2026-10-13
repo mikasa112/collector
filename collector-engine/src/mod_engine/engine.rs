@@ -18,11 +18,13 @@ use crate::mod_engine::{
         dc::create_dc_table,
         json::create_json_table,
         log::create_log_table,
+        modbus_client::create_modbus_table,
         mqtt::create_mqtt_table,
         mqtt_client::{ConnEntry, MqttConns, MqttSubs, create_mqtt_conn_table, topic_matches},
         plugin::create_plugin_table,
         save::create_save_table,
         store::{LuaStore, create_store_table},
+        vdev::{VDevs, down_points_to_lua, extend_dc_table, shutdown_all as shutdown_vdevs},
     },
     budget::{Budget, HOOK_INSTRUCTION_COUNT},
     errors::Error,
@@ -56,6 +58,11 @@ pub enum EngineCmd {
         conn_id: u64,
         topic: String,
         payload: Vec<u8>,
+    },
+    /// 数据中心向脚本注册的设备（`dc.register`）下发点位，触发其 on_write 回调
+    DeviceWrite {
+        dev_id: String,
+        points: Vec<collector_core::core::point::DownDataPoint>,
     },
     /// 跨 VM 请求：由 `event.request` 触发，投递到目标脚本的 VM，处理结果通过 `CrossResponse` 送回 `from`
     CrossRequest {
@@ -174,6 +181,7 @@ pub struct ModEngine {
     mqtt_subs: MqttSubs,
     mqtt_conns: MqttConns,
     mqtt_next_id: Arc<AtomicU64>,
+    vdevs: VDevs,
 }
 
 /// 拼装运行时自省快照的公共逻辑，被 `ModEngine::build_snapshot`（跨引擎查询路径，process_cmd
@@ -294,6 +302,7 @@ impl ModEngine {
             mqtt_subs: Arc::new(Mutex::new(Vec::new())),
             mqtt_conns: Arc::new(Mutex::new(Vec::new())),
             mqtt_next_id: Arc::new(AtomicU64::new(1)),
+            vdevs: Arc::new(Mutex::new(Default::default())),
         };
         engine.register_require(&script_dir)?;
         engine.register_api(RegisterApiArgs {
@@ -337,7 +346,10 @@ impl ModEngine {
         let globals = self.lua.globals();
         globals.set("log", create_log_table(&self.lua)?)?;
         globals.set("json", create_json_table(&self.lua)?)?;
-        globals.set("dc", create_dc_table(&self.lua, watch_tx)?)?;
+        let dc_table = create_dc_table(&self.lua, watch_tx)?;
+        extend_dc_table(&self.lua, &dc_table, cmd_tx.clone(), self.vdevs.clone())?;
+        globals.set("dc", dc_table)?;
+        globals.set("modbus", create_modbus_table(&self.lua)?)?;
         globals.set("store", create_store_table(&self.lua, store)?)?;
         globals.set("save", create_save_table(&self.lua, data_file)?)?;
         globals.set("plugin", create_plugin_table(&self.lua, script_dir)?)?;
@@ -679,6 +691,9 @@ impl ModEngine {
             } => {
                 self.emit_mqtt_message(conn_id, &topic, &payload).await?;
             }
+            EngineCmd::DeviceWrite { dev_id, points } => {
+                self.emit_device_write(&dev_id, &points).await?;
+            }
             EngineCmd::CrossRequest {
                 req_id,
                 from,
@@ -696,6 +711,7 @@ impl ModEngine {
             EngineCmd::Shutdown => {
                 self.run_lifecycle_hook("on_unload").await;
                 self.shutdown_mqtt_conns().await;
+                shutdown_vdevs(&self.vdevs);
                 return Ok(true);
             }
         }
@@ -801,6 +817,31 @@ impl ModEngine {
             {
                 tracing::warn!("[mod] mqtt 订阅回调执行出错: {}", e);
             }
+        }
+        Ok(())
+    }
+
+    /// 把下发点位交给 `dc.register` 注册的 on_write 回调；回调出错只记录日志，不影响引擎主循环
+    async fn emit_device_write(
+        &self,
+        dev_id: &str,
+        points: &[collector_core::core::point::DownDataPoint],
+    ) -> mod_engine::Result<()> {
+        let func: Option<mlua::Function> = {
+            let vdevs = self.vdevs.lock().unwrap();
+            vdevs
+                .get(dev_id)
+                .and_then(|e| e.callback.as_ref())
+                .and_then(|k| self.lua.registry_value::<mlua::Function>(k).ok())
+        };
+        let Some(func) = func else {
+            tracing::warn!("[mod] 脚本设备 {} 未设置 on_write，丢弃下发", dev_id);
+            return Ok(());
+        };
+        let arg = down_points_to_lua(&self.lua, points)?;
+        self.budget.reset();
+        if let Err(e) = func.call_async::<()>(arg).await {
+            tracing::warn!("[mod] 脚本设备 {} on_write 执行出错: {}", dev_id, e);
         }
         Ok(())
     }

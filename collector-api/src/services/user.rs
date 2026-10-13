@@ -173,11 +173,10 @@ impl UserService {
             None => None,
         };
 
-        if let Some(password) = &params.password {
-            if password.len() < 6 {
+        if let Some(password) = &params.password
+            && password.len() < 6 {
                 return Err(ServiceError::invalid_parameter("密码长度不能少于 6 位"));
             }
-        }
 
         let password_hash = match params.password.clone() {
             Some(password) => Some(

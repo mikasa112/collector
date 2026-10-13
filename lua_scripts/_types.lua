@@ -70,6 +70,44 @@ function dc.read(dev_id, point_id) end
 ---@param value      number         要写入的值（仅支持数值类型）
 function dc.dispatch(dev_id, point_mark, value) end
 
+---@class VDevPoint
+---@field id    integer  数据点 ID（设备内唯一）
+---@field key   string   数据点 key（英文标识）
+---@field name  string?  数据点名称（中文描述），缺省同 key
+---@field value number|boolean 值；boolean 按 0/1 上报
+---@field unit  string?  单位
+---@field type  "u8"|"i8"|"u16"|"i16"|"u32"|"i32"|"f64"|nil 数值类型；缺省时整数按 i32、小数按 f64
+
+---@class VDevWritePoint
+---@field id    integer?  按 ID 下发时有值
+---@field key   string?   按 key 下发时有值
+---@field name  string?   按名称下发时有值
+---@field value number
+
+---@class VDev
+local VDev = {}
+
+--- 上报点位到数据中心，与内置设备的点位完全等价（可被 dc.read/watch、上行、告警、历史消费）。
+--- 值未变化的点位不会触发更新。
+---@param points VDevPoint[]
+function VDev:ingest(points) end
+
+--- 上报通讯状态（key=communicationStatus, id=0xFFFF，与 modbus_dev/can_dev 一致）。
+---@param online boolean true=有通讯，false=通讯故障
+function VDev:set_comm(online) end
+
+--- 注销设备。脚本卸载/热更新时引擎也会自动注销。
+function VDev:unregister() end
+
+--- 把当前脚本注册为数据中心里的一个设备。
+--- 其他模块对该设备 dc.dispatch 时，会触发 on_write 回调（在本脚本 VM 内执行，可直接调用 modbus 读写）。
+--- dev_id 已被占用（如存在同名 modbus_dev 设备）时返回 nil, err——内置设备优先。
+---@param dev_id   string
+---@param on_write fun(points: VDevWritePoint[])?
+---@return VDev|nil dev
+---@return string|nil err
+function dc.register(dev_id, on_write) end
+
 --- 订阅设备数据变化。调用后，该设备数据每次变化时会触发 "dc:changed" 事件。
 --- 同一设备重复调用无副作用。设备不存在时记录警告并忽略。
 ---@param dev_id string 设备 ID
@@ -346,3 +384,80 @@ mqtt = {}
 ---@return MqttConn|nil conn
 ---@return string|nil   err
 function mqtt.connect(opts) end
+
+-----------------------------------------------------------------------
+-- modbus - 脚本直连 Modbus TCP/RTU（不依赖点表配置）
+-----------------------------------------------------------------------
+
+---@class ModbusConnectOpts
+---@field type      "tcp"|"rtu"  默认 "tcp"
+---@field host      string?   [tcp] 地址
+---@field port      integer?  [tcp] 端口，默认 502
+---@field serial    string?   [rtu] 串口设备，如 "/dev/ttyS1"
+---@field baud      integer?  [rtu] 波特率，默认 9600
+---@field parity    "N"|"E"|"O"? [rtu] 校验，默认 "N"
+---@field data_bits integer?  [rtu] 数据位，默认 8
+---@field stop_bits integer?  [rtu] 停止位，默认 1
+---@field slave     integer?  默认从站地址，默认 1
+---@field timeout   integer?  单次请求超时（毫秒），默认 1000
+
+--- 读写方法的失败约定：返回 nil, err（不抛异常）。
+--- 传输层错误/超时会丢弃连接，下次调用自动重连；从站返回的异常码不影响连接。
+--- 每个方法最后一个可选参数 slave 用于临时访问同一链路上的其他从站。
+---@class ModbusConn
+local ModbusConn = {}
+
+---@param addr integer
+---@param count integer 1~2000
+---@param slave integer?
+---@return boolean[]|nil, string|nil
+function ModbusConn:read_coils(addr, count, slave) end
+---@return boolean[]|nil, string|nil
+function ModbusConn:read_discrete(addr, count, slave) end
+---@param count integer 1~125
+---@return integer[]|nil, string|nil
+function ModbusConn:read_holding(addr, count, slave) end
+---@return integer[]|nil, string|nil
+function ModbusConn:read_input(addr, count, slave) end
+
+---@return true|nil, string|nil
+function ModbusConn:write_coil(addr, value, slave) end
+---@param values boolean[]
+---@return true|nil, string|nil
+function ModbusConn:write_coils(addr, values, slave) end
+---@param value integer -32768~65535
+---@return true|nil, string|nil
+function ModbusConn:write_register(addr, value, slave) end
+---@param values integer[]
+---@return true|nil, string|nil
+function ModbusConn:write_registers(addr, values, slave) end
+
+---@return boolean
+function ModbusConn:is_connected() end
+--- 主动断开；之后再调用读写方法会自动重连
+function ModbusConn:close() end
+
+---@class ModbusApi
+modbus = {}
+
+--- 建立连接。失败返回 nil, err。
+---@param opts ModbusConnectOpts
+---@return ModbusConn|nil conn
+---@return string|nil err
+function modbus.connect(opts) end
+
+--- 寄存器解码。type: U16/I16/U32/I32/F32；
+--- order: 16 位用 AB/BA，32 位用 ABCD/CDAB/BADC/DCBA（默认 AB / ABCD）；index 为 1 基起始下标。
+---@param regs  integer[]
+---@param type  "U16"|"I16"|"U32"|"I32"|"F32"
+---@param order string?
+---@param index integer?
+---@return number
+function modbus.decode(regs, type, order, index) end
+
+--- 寄存器编码，返回可直接传给 write_registers 的数组
+---@param value number
+---@param type  "U16"|"I16"|"U32"|"I32"|"F32"
+---@param order string?
+---@return integer[]
+function modbus.encode(value, type, order) end

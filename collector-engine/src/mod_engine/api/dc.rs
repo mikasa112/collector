@@ -11,7 +11,7 @@ use mlua::{Lua, Table, Value};
 use tokio::sync::mpsc;
 
 /// 将 Val 转为 Lua 值
-fn val_to_lua(lua: &Lua, val: &Val) -> mlua::Result<Value> {
+pub(super) fn val_to_lua(lua: &Lua, val: &Val) -> mlua::Result<Value> {
     match val {
         Val::U8(v) => Ok(Value::Number(*v as f64)),
         Val::I8(v) => Ok(Value::Number(*v as f64)),
