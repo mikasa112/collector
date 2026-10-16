@@ -1,0 +1,60 @@
+{
+  "product_type": "开发机测试",
+  "project": "开发机测试",
+  "program": {
+    "emu": {
+      "enable": false
+    },
+    "http": {
+      "enable": true,
+      "ip": "0.0.0.0",
+      "port": 9091
+    },
+    "mod": {
+      "enable": true,
+      "path": "lua_scripts"
+    },
+    "north_modbus": {
+      "enable": false
+    },
+    "eg25_gl": {
+      "enable": false
+    },
+    "mqtt": {
+      "enable": false
+    }
+  },
+  "devices": {
+    "pcs_dev": {
+      "id": "pcs_dev",
+      "type": "IEC61850",
+      "desc": "IEC61850 联调设备(瑞山 RS100 PCS)",
+      "config": {
+        "type": "IEC61850",
+        "com_type": "IEC61850",
+        "register_file": "./config/iec61850/iec61850_示例点表.xlsx",
+        "interval": 60000,
+        "timeout": 5000,
+        "ip": "127.0.0.1",
+        "port": 9102,
+        "iso": {
+          "remote_ap_title": "1 3 9999 106",
+          "remote_ae_qualifier": 33,
+          "remote_psel": "00 00 00 01",
+          "remote_ssel": "00 01",
+          "remote_tsel": "00 01"
+        },
+        "slave": null,
+        "serial_tty": null,
+        "baud_rate": null,
+        "data_bits": null,
+        "parity": null,
+        "stop_bits": null,
+        "interface": null,
+        "desc": null,
+        "request_interval": null,
+        "max_gap": null
+      }
+    }
+  }
+}

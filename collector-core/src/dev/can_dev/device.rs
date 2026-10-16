@@ -41,6 +41,7 @@ impl CanDev {
         let configs = match configs {
             config::ProtocolConfigs::Modbus(_)
             | config::ProtocolConfigs::Iec104(_)
+            | config::ProtocolConfigs::Iec61850(_)
             | config::ProtocolConfigs::GPIO(_) => {
                 return Err(DeviceError::UnSupportedComType);
             }

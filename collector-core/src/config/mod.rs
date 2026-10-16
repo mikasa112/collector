@@ -10,6 +10,7 @@ pub mod can_conf;
 pub mod config_provider;
 pub mod gpio_conf;
 pub mod iec104_conf;
+pub mod iec61850_conf;
 pub mod modbus_conf;
 pub mod north_modbus_conf;
 pub mod program_conf;
@@ -88,7 +89,15 @@ async fn load_protocol_configs(dev: &Device) -> ProtocolConfigs {
             )
             .await
         }
-        ComType::IEC61850 => ProtocolConfigs::None,
+        ComType::IEC61850 => {
+            load_configs(
+                file,
+                dev_id,
+                iec61850_conf::build_configs,
+                ProtocolConfigs::Iec61850,
+            )
+            .await
+        }
         #[cfg(target_os = "linux")]
         ComType::GPIO => {
             load_configs(
@@ -191,12 +200,51 @@ pub struct DeviceConfig {
     pub stop_bits: Option<u8>,
     pub interface: Option<String>,
     pub desc: Option<String>,
+    /// IEC 61850 的 ISO 层地址参数(AP-Title、选择器), 不填则用库默认值
+    #[serde(default)]
+    pub iso: Option<IsoConfig>,
+}
+
+/// IEC 61850 MMS 连接的 ISO 层地址参数, 数值取自 ICD 里该 IED 的 `<Address>` 段。
+///
+/// `remote_*` 是对端 IED 的地址, `local_*` 是采集器自己的; 没填的项保持库的默认值。
+/// 选择器是十六进制字节串(`"00 01"`), AP-Title 是空格或点分隔的 OID(`"1 3 9999 106"`)。
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct IsoConfig {
+    pub remote_ap_title: Option<String>,
+    pub remote_ae_qualifier: Option<i32>,
+    pub remote_psel: Option<String>,
+    pub remote_ssel: Option<String>,
+    pub remote_tsel: Option<String>,
+    pub local_ap_title: Option<String>,
+    pub local_ae_qualifier: Option<i32>,
+    pub local_psel: Option<String>,
+    pub local_ssel: Option<String>,
+    pub local_tsel: Option<String>,
+}
+
+impl From<IsoConfig> for collector_iec61850::IsoParams {
+    fn from(c: IsoConfig) -> Self {
+        Self {
+            remote_ap_title: c.remote_ap_title,
+            remote_ae_qualifier: c.remote_ae_qualifier,
+            remote_psel: c.remote_psel,
+            remote_ssel: c.remote_ssel,
+            remote_tsel: c.remote_tsel,
+            local_ap_title: c.local_ap_title,
+            local_ae_qualifier: c.local_ae_qualifier,
+            local_psel: c.local_psel,
+            local_ssel: c.local_ssel,
+            local_tsel: c.local_tsel,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
 pub enum ProtocolConfigs {
     Modbus(modbus_conf::ModbusConfigs),
     Iec104(iec104_conf::Iec104Configs),
+    Iec61850(iec61850_conf::Iec61850Configs),
     #[cfg(target_os = "linux")]
     CAN(can_conf::CanConfigs),
     #[cfg(target_os = "linux")]

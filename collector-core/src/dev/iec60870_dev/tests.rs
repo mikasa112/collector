@@ -97,6 +97,7 @@ fn device(id: &str, port: u16) -> Iec60870Dev {
         stop_bits: None,
         interface: None,
         desc: None,
+        iso: None,
     };
     Iec60870Dev::new(Device {
         id: Some(id.into()),

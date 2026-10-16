@@ -776,6 +776,7 @@ dependencies = [
  "calamine",
  "chrono",
  "collector-iec60870",
+ "collector-iec61850",
  "dashmap 6.2.1",
  "futures",
  "gpio-cdev",

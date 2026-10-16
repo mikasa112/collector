@@ -5,6 +5,7 @@ edition = "2024"
 
 [dependencies]
 collector-iec60870 = { path = "../collector-iec60870" }
+collector-iec61850 = { path = "../collector-iec61850" }
 tokio = { workspace = true }
 tokio-util = { workspace = true }
 thiserror = { workspace = true }
@@ -31,3 +32,7 @@ calamine = "0.32.0"
 [target.'cfg(target_os = "linux")'.dependencies]
 socketcan = { version = "3.5.0", features = ["tokio"] }
 gpio-cdev = { version = "0.6.0", features = ["async-tokio"] }
+
+[dev-dependencies]
+# 联调测试用: 启用 `server` 后可以起一个与真实 PCS 同模型的本地模拟 IED(构建时需要本机有 java)
+collector-iec61850 = { path = "../collector-iec61850", features = ["server"] }

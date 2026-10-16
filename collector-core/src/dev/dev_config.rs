@@ -205,3 +205,61 @@ impl TryFrom<DeviceConfig> for Iec104DeviceConfig {
         })
     }
 }
+
+#[derive(Debug, thiserror::Error)]
+pub enum Iec61850ConfError {
+    #[error("{0}不能为空")]
+    ValueNotNone(String),
+    #[error("无效的IP:{0}地址")]
+    InvalidIp(String),
+    #[error("ISO参数无效: {0}")]
+    InvalidIso(String),
+}
+
+/// IEC 61850 主站（MMS 客户端）连接参数。
+#[derive(Clone)]
+pub struct Iec61850DeviceConfig {
+    pub ip: String,
+    pub port: u16,
+    /// 周期任务间隔：定期重新触发总召、轮询未被报告覆盖的点；为 0 表示只在连接建立后做一次
+    pub interval: Duration,
+    /// 连接超时，同时作为单次 MMS 请求的超时
+    pub timeout: Duration,
+    /// ISO 层地址参数；`None` 使用库默认值
+    pub iso: Option<collector_iec61850::IsoParams>,
+}
+
+impl TryFrom<DeviceConfig> for Iec61850DeviceConfig {
+    type Error = Iec61850ConfError;
+
+    fn try_from(value: DeviceConfig) -> Result<Self, Self::Error> {
+        let Some(ip) = value.ip else {
+            return Err(Iec61850ConfError::ValueNotNone(String::from("IP")));
+        };
+        let Some(port) = value.port else {
+            return Err(Iec61850ConfError::ValueNotNone(String::from("端口")));
+        };
+        let Some(interval) = value.interval else {
+            return Err(Iec61850ConfError::ValueNotNone(String::from("间隔时间")));
+        };
+        let Some(timeout) = value.timeout else {
+            return Err(Iec61850ConfError::ValueNotNone(String::from("超时时间")));
+        };
+        if ip.parse::<IpAddr>().is_err() {
+            return Err(Iec61850ConfError::InvalidIp(ip));
+        }
+        let iso: Option<collector_iec61850::IsoParams> = value.iso.map(Into::into);
+        if let Some(iso) = &iso {
+            iso.validate()
+                .map_err(|e| Iec61850ConfError::InvalidIso(e.to_string()))?;
+        }
+        Ok(Self {
+            ip,
+            port,
+            interval: Duration::from_millis(interval),
+            // 太短的超时在真实网络里没有意义, 与 104 一样至少 1 秒
+            timeout: Duration::from_millis(timeout).max(Duration::from_secs(1)),
+            iso,
+        })
+    }
+}
