@@ -165,7 +165,7 @@ impl Blocks {
     pub(super) fn describe(&self) -> String {
         self.blocks
             .iter()
-            .map(|b| Self::describe_block(b))
+            .map(Self::describe_block)
             .collect::<Vec<_>>()
             .join(", ")
     }
