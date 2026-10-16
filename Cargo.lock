@@ -845,6 +845,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "collector-iec61850"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "bindgen",
+ "calamine",
+ "cc",
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "colorchoice"
 version = "1.0.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"

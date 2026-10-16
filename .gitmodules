@@ -1,3 +1,6 @@
 [submodule "collector-iec60870/vendor/lib60870"]
 	path = collector-iec60870/vendor/lib60870
 	url = https://github.com/mz-automation/lib60870
+[submodule "collector-iec61850/vendor/libiec61850"]
+	path = collector-iec61850/vendor/libiec61850
+	url = https://github.com/mz-automation/libiec61850

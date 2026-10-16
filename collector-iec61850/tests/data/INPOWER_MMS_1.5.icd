@@ -1,0 +1,1056 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<SCL xmlns="http://www.iec.ch/61850/2003/SCL"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.iec.ch/61850/2003/SCL SCL.xsd">
+	<Header id="RUISHAN-RS100" toolID="AI_Builder" nameStructure="IEDName">
+		<History>
+			<Hitem version="2.0.0" revision="1.0.0" when="2026-03-10" who="AI" what="Split from merged V1.7. Pure MMS Server with original datasets preserved." />
+		</History>
+	</Header>
+	<Substation name="inPower">
+		<VoltageLevel name="110kV">
+			<Bay name="PCS" />
+		</VoltageLevel>
+	</Substation>
+	<Communication>
+		<SubNetwork desc="StationBus" name="SubNetwork_Stationbus" type="8-MMS">
+			<ConnectedAP iedName="PCS0001" apName="S1">
+				<Address>
+					<P type="OSI-AP-Title">1 3 9999 106</P>
+					<P type="OSI-AE-Qualifier">33</P>
+					<P type="OSI-PSEL">00 00 00 01</P>
+					<P type="OSI-SSEL">00 01</P>
+					<P type="OSI-TSEL">00 01</P>
+					<P type="IP">192.168.1.136</P>
+					<P type="IP-SUBNET">255.255.255.0</P>
+					<P type="IP-GATEWAY">192.168.1.1</P>
+				</Address>
+				<!-- GOOSE 组播配置已移除 -->
+				<PhysConn type="Connection">
+					<P type="Port">9-A</P>
+					<P type="Type">100BaseT</P>
+					<P type="Cable">D1</P>
+					<P type="Plug">RJ45</P>
+				</PhysConn>
+				<PhysConn type="RedConn">
+					<P type="Port">9-B</P>
+					<P type="Type">100BaseT</P>
+					<P type="Cable">D2</P>
+					<P type="Plug">RJ45</P>
+				</PhysConn>
+			</ConnectedAP>
+		</SubNetwork>
+	</Communication>
+	<IED name="PCS0001" desc="RS100_PCS" type="RS-100" manufacturer="RUISHAN" configVersion="2.0">
+		<Services>
+			<DynAssociation />
+			<GetDirectory />
+			<GetDataObjectDefinition />
+			<DataObjectDirectory />
+			<GetDataSetValue />
+			<DataSetDirectory />
+			<ConfDataSet max="15" maxAttributes="300" />
+			<DynDataSet max="15" maxAttributes="300" />
+			<ReadWrite />
+			<ConfReportControl max="12" />
+			<GetCBValues />
+			<ReportSettings cbName="Fix" datSet="Fix" rptID="Fix" optFields="Dyn" bufTime="Dyn" trgOps="Dyn" intgPd="Dyn" />
+			<FileHandling />
+			<ConfLNs fixPrefix="true" fixLnInst="true" />
+		</Services>
+		<AccessPoint desc="MMS_Server" name="S1">
+			<Server>
+				<Authentication none="true" />
+				<LDevice inst="MONT" desc="PCS_MMS">
+					<LN0 inst="" lnClass="LLN0" lnType="RS100_LLN0">
+
+						<DataSet name="dsDin" desc="状态量数据集">
+							<FCDA ldInst="MONT" prefix="sta" lnInst="1" lnClass="GGIO" doName="Ind1" fc="ST" />
+							<FCDA ldInst="MONT" prefix="sta" lnInst="1" lnClass="GGIO" doName="Ind2" fc="ST" />
+							<FCDA ldInst="MONT" prefix="sta" lnInst="1" lnClass="GGIO" doName="Ind3" fc="ST" />
+							<FCDA ldInst="MONT" prefix="sta" lnInst="1" lnClass="GGIO" doName="Ind4" fc="ST" />
+							<FCDA ldInst="MONT" prefix="sta" lnInst="1" lnClass="GGIO" doName="Ind5" fc="ST" />
+							<FCDA ldInst="MONT" prefix="sta" lnInst="1" lnClass="GGIO" doName="Ind6" fc="ST" />
+							<FCDA ldInst="MONT" prefix="sta" lnInst="1" lnClass="GGIO" doName="Ind7" fc="ST" />
+							<FCDA ldInst="MONT" prefix="sta" lnInst="1" lnClass="GGIO" doName="Ind8" fc="ST" />
+							<FCDA ldInst="MONT" prefix="sta" lnInst="1" lnClass="GGIO" doName="Ind9" fc="ST" />
+							<FCDA ldInst="MONT" prefix="sta" lnInst="1" lnClass="GGIO" doName="Ind10" fc="ST" />
+							<FCDA ldInst="MONT" prefix="sta" lnInst="1" lnClass="GGIO" doName="Ind11" fc="ST" />
+							<FCDA ldInst="MONT" prefix="sta" lnInst="1" lnClass="GGIO" doName="Ind12" fc="ST" />
+							<FCDA ldInst="MONT" prefix="sta" lnInst="1" lnClass="GGIO" doName="Ind13" fc="ST" />
+							<FCDA ldInst="MONT" prefix="sta" lnInst="1" lnClass="GGIO" doName="Ind14" fc="ST" />
+							<FCDA ldInst="MONT" prefix="sta" lnInst="1" lnClass="GGIO" doName="Ind15" fc="ST" />
+							<FCDA ldInst="MONT" prefix="sta" lnInst="1" lnClass="GGIO" doName="Ind16" fc="ST" />
+							<FCDA ldInst="MONT" prefix="sta" lnInst="2" lnClass="GGIO" doName="Ind1" fc="ST" />
+							<FCDA ldInst="MONT" prefix="sta" lnInst="2" lnClass="GGIO" doName="Ind2" fc="ST" />
+							<FCDA ldInst="MONT" prefix="sta" lnInst="2" lnClass="GGIO" doName="Ind3" fc="ST" />
+							<FCDA ldInst="MONT" prefix="sta" lnInst="2" lnClass="GGIO" doName="Ind4" fc="ST" />
+							<FCDA ldInst="MONT" prefix="sta" lnInst="2" lnClass="GGIO" doName="Ind5" fc="ST" />
+							<!-- 新增: 主断路器分合闸状态 -->
+							<FCDA ldInst="MONT" prefix="sta" lnInst="2" lnClass="GGIO" doName="Ind6" fc="ST" />
+							
+							<FCDA ldInst="MONT" prefix="ctl" lnInst="1" lnClass="GAPC" doName="SPCSO1" fc="ST" />
+							<FCDA ldInst="MONT" prefix="ctl" lnInst="1" lnClass="GAPC" doName="SPCSO2" fc="ST" />
+							<FCDA ldInst="MONT" prefix="ctl" lnInst="1" lnClass="GAPC" doName="SPCSO3" fc="ST" />
+							<FCDA ldInst="MONT" prefix="ctl" lnInst="1" lnClass="GAPC" doName="SPCSO4" fc="ST" />
+							<FCDA ldInst="MONT" prefix="ctl" lnInst="1" lnClass="GAPC" doName="SPCSO5" fc="ST" />
+							<FCDA ldInst="MONT" prefix="ctl" lnInst="1" lnClass="GAPC" doName="SPCSO6" fc="ST" />
+						</DataSet>
+
+						<DataSet name="dsAin" desc="测量值数据集">
+							<FCDA ldInst="MONT" prefix="" lnInst="1" lnClass="MMXU" doName="Hz" fc="MX" />
+							<FCDA ldInst="MONT" prefix="" lnInst="1" lnClass="MMXU" doName="PPV.phsAB" fc="MX" />
+							<FCDA ldInst="MONT" prefix="" lnInst="1" lnClass="MMXU" doName="PPV.phsBC" fc="MX" />
+							<FCDA ldInst="MONT" prefix="" lnInst="1" lnClass="MMXU" doName="PPV.phsCA" fc="MX" />
+							<FCDA ldInst="MONT" prefix="" lnInst="1" lnClass="MMXU" doName="A.phsA" fc="MX" />
+							<FCDA ldInst="MONT" prefix="" lnInst="1" lnClass="MMXU" doName="A.phsB" fc="MX" />
+							<FCDA ldInst="MONT" prefix="" lnInst="1" lnClass="MMXU" doName="A.phsC" fc="MX" />
+							<FCDA ldInst="MONT" prefix="dc" lnInst="1" lnClass="MMXN" doName="Vol" fc="MX" />
+							<FCDA ldInst="MONT" prefix="dc" lnInst="1" lnClass="MMXN" doName="Amp" fc="MX" />
+							<FCDA ldInst="MONT" prefix="dc" lnInst="1" lnClass="MMXN" doName="Watt" fc="MX" />
+							<FCDA ldInst="MONT" prefix="" lnInst="1" lnClass="MMXU" doName="TotPF" fc="MX" />
+							<FCDA ldInst="MONT" prefix="" lnInst="1" lnClass="MMXU" doName="TotVA" fc="MX" />
+							<FCDA ldInst="MONT" prefix="" lnInst="1" lnClass="MMXU" doName="TotW" fc="MX" />
+							<FCDA ldInst="MONT" prefix="" lnInst="1" lnClass="MMXU" doName="TotVAr" fc="MX" />
+							<FCDA ldInst="MONT" prefix="kw" lnInst="1" lnClass="GGIO" doName="AnIn1" fc="MX" />
+							<FCDA ldInst="MONT" prefix="kw" lnInst="1" lnClass="GGIO" doName="AnIn2" fc="MX" />
+							<FCDA ldInst="MONT" prefix="kw" lnInst="1" lnClass="GGIO" doName="AnIn3" fc="MX" />
+							<FCDA ldInst="MONT" prefix="kw" lnInst="1" lnClass="GGIO" doName="AnIn4" fc="MX" />
+							<FCDA ldInst="MONT" prefix="dev" lnInst="1" lnClass="GGIO" doName="AnIn1" fc="MX" />
+							<FCDA ldInst="MONT" prefix="dev" lnInst="1" lnClass="GGIO" doName="AnIn2" fc="MX" />
+							<FCDA ldInst="MONT" prefix="dev" lnInst="1" lnClass="GGIO" doName="AnIn3" fc="MX" />
+							<FCDA ldInst="MONT" prefix="dev" lnInst="1" lnClass="GGIO" doName="AnIn4" fc="MX" />
+							<FCDA ldInst="MONT" prefix="dev" lnInst="1" lnClass="GGIO" doName="AnIn5" fc="MX" />
+							<FCDA ldInst="MONT" prefix="dev" lnInst="1" lnClass="GGIO" doName="AnIn6" fc="MX" />
+							<FCDA ldInst="MONT" prefix="dev" lnInst="1" lnClass="GGIO" doName="AnIn7" fc="MX" />
+							<FCDA ldInst="MONT" prefix="dev" lnInst="1" lnClass="GGIO" doName="AnIn8" fc="MX" />
+							<FCDA ldInst="MONT" prefix="dev" lnInst="1" lnClass="GGIO" doName="AnIn9" fc="MX" />
+							<FCDA ldInst="MONT" prefix="dev" lnInst="1" lnClass="GGIO" doName="AnIn10" fc="MX" />
+							<FCDA ldInst="MONT" prefix="dev" lnInst="1" lnClass="GGIO" doName="AnIn11" fc="MX" />
+							<FCDA ldInst="MONT" prefix="dev" lnInst="1" lnClass="GGIO" doName="AnIn12" fc="MX" />
+							<FCDA ldInst="MONT" prefix="dev" lnInst="1" lnClass="GGIO" doName="AnIn13" fc="MX" />
+							<FCDA ldInst="MONT" prefix="dev" lnInst="1" lnClass="GGIO" doName="AnIn14" fc="MX" />
+							<FCDA ldInst="MONT" prefix="dev" lnInst="1" lnClass="GGIO" doName="AnIn15" fc="MX" />
+							<FCDA ldInst="MONT" prefix="dev" lnInst="1" lnClass="GGIO" doName="AnIn16" fc="MX" />
+							<FCDA ldInst="MONT" prefix="dev" lnInst="1" lnClass="GGIO" doName="AnIn17" fc="MX" />
+							<FCDA ldInst="MONT" prefix="dev" lnInst="1" lnClass="GGIO" doName="AnIn18" fc="MX" />
+							<FCDA ldInst="MONT" prefix="dev" lnInst="1" lnClass="GGIO" doName="AnIn19" fc="MX" />
+							<FCDA ldInst="MONT" prefix="dev" lnInst="1" lnClass="GGIO" doName="AnIn20" fc="MX" />
+							<FCDA ldInst="MONT" prefix="dev" lnInst="2" lnClass="GGIO" doName="AnIn1" fc="MX" />
+							<FCDA ldInst="MONT" prefix="dev" lnInst="2" lnClass="GGIO" doName="AnIn2" fc="MX" />
+							<FCDA ldInst="MONT" prefix="dev" lnInst="2" lnClass="GGIO" doName="AnIn3" fc="MX" />
+							<FCDA ldInst="MONT" prefix="dev" lnInst="2" lnClass="GGIO" doName="AnIn4" fc="MX" />
+							<FCDA ldInst="MONT" prefix="dev" lnInst="2" lnClass="GGIO" doName="AnIn5" fc="MX" />
+							<FCDA ldInst="MONT" prefix="dev" lnInst="2" lnClass="GGIO" doName="AnIn6" fc="MX" />
+							<FCDA ldInst="MONT" prefix="dev" lnInst="2" lnClass="GGIO" doName="AnIn7" fc="MX" />
+							<FCDA ldInst="MONT" prefix="dev" lnInst="2" lnClass="GGIO" doName="AnIn8" fc="MX" />
+							<FCDA ldInst="MONT" prefix="dev" lnInst="2" lnClass="GGIO" doName="AnIn9" fc="MX" />
+							<FCDA ldInst="MONT" prefix="dev" lnInst="2" lnClass="GGIO" doName="AnIn10" fc="MX" />
+							<FCDA ldInst="MONT" prefix="dev" lnInst="2" lnClass="GGIO" doName="AnIn11" fc="MX" />
+							<FCDA ldInst="MONT" prefix="dev" lnInst="2" lnClass="GGIO" doName="AnIn12" fc="MX" />
+							<FCDA ldInst="MONT" prefix="dev" lnInst="2" lnClass="GGIO" doName="AnIn13" fc="MX" />
+							<FCDA ldInst="MONT" prefix="dev" lnInst="2" lnClass="GGIO" doName="AnIn14" fc="MX" />
+							<FCDA ldInst="MONT" prefix="dev" lnInst="2" lnClass="GGIO" doName="AnIn15" fc="MX" />
+							<FCDA ldInst="MONT" prefix="dev" lnInst="2" lnClass="GGIO" doName="AnIn16" fc="MX" />
+							<FCDA ldInst="MONT" prefix="dev" lnInst="2" lnClass="GGIO" doName="AnIn17" fc="MX" />
+							<FCDA ldInst="MONT" prefix="dev" lnInst="2" lnClass="GGIO" doName="AnIn18" fc="MX" />
+							<FCDA ldInst="MONT" prefix="dev" lnInst="2" lnClass="GGIO" doName="AnIn19" fc="MX" />
+							<FCDA ldInst="MONT" prefix="dev" lnInst="2" lnClass="GGIO" doName="AnIn20" fc="MX" />
+							<FCDA ldInst="MONT" prefix="dev" lnInst="3" lnClass="GGIO" doName="AnIn1" fc="MX" />
+							<FCDA ldInst="MONT" prefix="dev" lnInst="3" lnClass="GGIO" doName="AnIn2" fc="MX" />
+							<FCDA ldInst="MONT" prefix="dev" lnInst="3" lnClass="GGIO" doName="AnIn3" fc="MX" />
+							<FCDA ldInst="MONT" prefix="dev" lnInst="3" lnClass="GGIO" doName="AnIn4" fc="MX" />
+							<FCDA ldInst="MONT" prefix="dev" lnInst="3" lnClass="GGIO" doName="AnIn5" fc="MX" />
+							<FCDA ldInst="MONT" prefix="dev" lnInst="3" lnClass="GGIO" doName="AnIn6" fc="MX" />
+							<FCDA ldInst="MONT" prefix="dev" lnInst="3" lnClass="GGIO" doName="AnIn7" fc="MX" />
+							<FCDA ldInst="MONT" prefix="dev" lnInst="3" lnClass="GGIO" doName="AnIn8" fc="MX" />
+							<FCDA ldInst="MONT" prefix="dev" lnInst="3" lnClass="GGIO" doName="AnIn9" fc="MX" />
+							<FCDA ldInst="MONT" prefix="dev" lnInst="3" lnClass="GGIO" doName="AnIn10" fc="MX" />
+							<FCDA ldInst="MONT" prefix="dev" lnInst="3" lnClass="GGIO" doName="AnIn11" fc="MX" />
+							<FCDA ldInst="MONT" prefix="dev" lnInst="3" lnClass="GGIO" doName="AnIn12" fc="MX" />
+							<!-- 新增: 液冷机组故障、SCC DI故障、SCC 配置故障 -->
+							<FCDA ldInst="MONT" prefix="dev" lnInst="3" lnClass="GGIO" doName="AnIn13" fc="MX" />
+							<FCDA ldInst="MONT" prefix="dev" lnInst="3" lnClass="GGIO" doName="AnIn14" fc="MX" />
+							<FCDA ldInst="MONT" prefix="dev" lnInst="3" lnClass="GGIO" doName="AnIn15" fc="MX" />
+
+							<!-- 保留已加入MMS遥测的额定功率和状态 -->
+							<FCDA ldInst="MONT" prefix="dev" lnInst="4" lnClass="GGIO" doName="AnIn1" fc="MX" />
+							<FCDA ldInst="MONT" prefix="dev" lnInst="4" lnClass="GGIO" doName="AnIn2" fc="MX" />
+						</DataSet>
+
+						<DataSet name="dsParameter" desc="参数数据集">
+							<FCDA ldInst="MONT" prefix="set" lnInst="1" lnClass="GAPC" doName="StrVal1" daName="mxVal.f" fc="MX" />
+							<FCDA ldInst="MONT" prefix="set" lnInst="1" lnClass="GAPC" doName="StrVal2" daName="mxVal.f" fc="MX" />
+							<FCDA ldInst="MONT" prefix="set" lnInst="1" lnClass="GAPC" doName="StrVal3" daName="mxVal.f" fc="MX" />
+							<FCDA ldInst="MONT" prefix="set" lnInst="1" lnClass="GAPC" doName="StrVal4" daName="mxVal.f" fc="MX" />
+							<FCDA ldInst="MONT" prefix="set" lnInst="1" lnClass="GAPC" doName="StrVal5" daName="mxVal.f" fc="MX" />
+							<FCDA ldInst="MONT" prefix="set" lnInst="1" lnClass="GAPC" doName="StrVal6" daName="mxVal.f" fc="MX" />
+							<FCDA ldInst="MONT" prefix="set" lnInst="1" lnClass="GAPC" doName="StrVal7" daName="mxVal.f" fc="MX" />
+							<FCDA ldInst="MONT" prefix="set" lnInst="1" lnClass="GAPC" doName="StrVal8" daName="mxVal.f" fc="MX" />
+							<FCDA ldInst="MONT" prefix="set" lnInst="1" lnClass="GAPC" doName="StrVal9" daName="mxVal.f" fc="MX" />
+							<FCDA ldInst="MONT" prefix="set" lnInst="1" lnClass="GAPC" doName="StrVal10" daName="mxVal.f" fc="MX" />
+							<FCDA ldInst="MONT" prefix="set" lnInst="1" lnClass="GAPC" doName="StrVal11" daName="mxVal.f" fc="MX" />
+							<FCDA ldInst="MONT" prefix="set" lnInst="1" lnClass="GAPC" doName="StrVal12" daName="mxVal.f" fc="MX" />
+							<FCDA ldInst="MONT" prefix="set" lnInst="1" lnClass="GAPC" doName="StrVal13" daName="mxVal.f" fc="MX" />
+							<FCDA ldInst="MONT" prefix="set" lnInst="1" lnClass="GAPC" doName="StrVal14" daName="mxVal.f" fc="MX" />
+							<FCDA ldInst="MONT" prefix="set" lnInst="1" lnClass="GAPC" doName="StrVal15" daName="mxVal.f" fc="MX" />
+							<FCDA ldInst="MONT" prefix="set" lnInst="1" lnClass="GAPC" doName="StrVal16" daName="mxVal.f" fc="MX" />
+							<FCDA ldInst="MONT" prefix="set" lnInst="2" lnClass="GAPC" doName="StrVal1" daName="mxVal.f" fc="MX" />
+							<FCDA ldInst="MONT" prefix="set" lnInst="2" lnClass="GAPC" doName="StrVal2" daName="mxVal.f" fc="MX" />
+							<FCDA ldInst="MONT" prefix="set" lnInst="2" lnClass="GAPC" doName="StrVal3" daName="mxVal.f" fc="MX" />
+							<FCDA ldInst="MONT" prefix="set" lnInst="2" lnClass="GAPC" doName="StrVal4" daName="mxVal.f" fc="MX" />
+							<FCDA ldInst="MONT" prefix="set" lnInst="2" lnClass="GAPC" doName="StrVal5" daName="mxVal.f" fc="MX" />
+							<FCDA ldInst="MONT" prefix="set" lnInst="2" lnClass="GAPC" doName="StrVal6" daName="mxVal.f" fc="MX" />
+							<FCDA ldInst="MONT" prefix="set" lnInst="2" lnClass="GAPC" doName="StrVal7" daName="mxVal.f" fc="MX" />
+							<FCDA ldInst="MONT" prefix="set" lnInst="2" lnClass="GAPC" doName="StrVal8" daName="mxVal.f" fc="MX" />
+							<FCDA ldInst="MONT" prefix="set" lnInst="2" lnClass="GAPC" doName="StrVal9" daName="mxVal.f" fc="MX" />
+							<FCDA ldInst="MONT" prefix="set" lnInst="2" lnClass="GAPC" doName="StrVal10" daName="mxVal.f" fc="MX" />
+							<FCDA ldInst="MONT" prefix="set" lnInst="2" lnClass="GAPC" doName="StrVal11" daName="mxVal.f" fc="MX" />
+							<FCDA ldInst="MONT" prefix="set" lnInst="2" lnClass="GAPC" doName="StrVal12" daName="mxVal.f" fc="MX" />
+							<FCDA ldInst="MONT" prefix="set" lnInst="2" lnClass="GAPC" doName="StrVal13" daName="mxVal.f" fc="MX" />
+							<FCDA ldInst="MONT" prefix="set" lnInst="2" lnClass="GAPC" doName="StrVal14" daName="mxVal.f" fc="MX" />
+							<FCDA ldInst="MONT" prefix="set" lnInst="2" lnClass="GAPC" doName="StrVal15" daName="mxVal.f" fc="MX" />
+							<FCDA ldInst="MONT" prefix="set" lnInst="2" lnClass="GAPC" doName="StrVal16" daName="mxVal.f" fc="MX" />
+							<FCDA ldInst="MONT" prefix="set" lnInst="3" lnClass="GAPC" doName="StrVal1" daName="mxVal.f" fc="MX" />
+							<FCDA ldInst="MONT" prefix="set" lnInst="3" lnClass="GAPC" doName="StrVal2" daName="mxVal.f" fc="MX" />
+							<FCDA ldInst="MONT" prefix="set" lnInst="3" lnClass="GAPC" doName="StrVal3" daName="mxVal.f" fc="MX" />
+							<FCDA ldInst="MONT" prefix="set" lnInst="3" lnClass="GAPC" doName="StrVal4" daName="mxVal.f" fc="MX" />
+							<FCDA ldInst="MONT" prefix="set" lnInst="3" lnClass="GAPC" doName="StrVal5" daName="mxVal.f" fc="MX" />
+							<FCDA ldInst="MONT" prefix="set" lnInst="3" lnClass="GAPC" doName="StrVal6" daName="mxVal.f" fc="MX" />
+							<FCDA ldInst="MONT" prefix="set" lnInst="3" lnClass="GAPC" doName="StrVal7" daName="mxVal.f" fc="MX" />
+							<!-- 新增: 最低高效负载率、状态切换防震荡闭锁时间 -->
+							<FCDA ldInst="MONT" prefix="set" lnInst="3" lnClass="GAPC" doName="StrVal8" daName="mxVal.f" fc="MX" />
+							<FCDA ldInst="MONT" prefix="set" lnInst="3" lnClass="GAPC" doName="StrVal9" daName="mxVal.f" fc="MX" />
+						</DataSet>
+
+						<ReportControl name="brcbDin" rptID="MONT/LLN0$BR$brcbDin" datSet="dsDin" intgPd="13000" confRev="1" buffered="true">
+							<TrgOps dchg="true" qchg="false" period="true" />
+							<OptFields seqNum="true" timeStamp="true" dataSet="true" reasonCode="true" dataRef="true" entryID="true" configRef="true" />
+							<RptEnabled max="16" />
+						</ReportControl>
+						<ReportControl name="urcbAin" rptID="MONT/LLN0$RP$urcbAin" datSet="dsAin" intgPd="5000" confRev="1" buffered="false">
+							<TrgOps dchg="true" period="true" qchg="false" />
+							<OptFields seqNum="true" timeStamp="true" dataSet="true" reasonCode="true" dataRef="true" entryID="true" configRef="true" />
+							<RptEnabled max="16" />
+						</ReportControl>
+						<ReportControl name="urcbParameter" rptID="MONT/LLN0$RP$urcbParameter" datSet="dsParameter" intgPd="15000" confRev="1" buffered="false">
+							<TrgOps dchg="true" qchg="false" period="true" />
+							<OptFields seqNum="true" timeStamp="true" dataSet="true" reasonCode="true" dataRef="true" entryID="true" configRef="true" />
+							<RptEnabled max="16" />
+						</ReportControl>
+
+						<DOI name="Mod" desc="Mode">
+							<DAI name="ctlModel">
+								<Val>status-only</Val>
+							</DAI>
+						</DOI>
+					</LN0>
+
+					<LN inst="1" prefix="" desc="设备描述" lnClass="LPHD" lnType="RS100_LPHD1" />
+
+					<LN inst="1" prefix="sta" desc="系统遥信状态1" lnClass="GGIO" lnType="RS100_GGIO_16IND">
+						<DOI name="Ind1" desc="工作状态-停机">
+							<DAI name="stVal" sAddr="yx 1 0" />
+						</DOI>
+						<DOI name="Ind2" desc="工作状态-待机">
+							<DAI name="stVal" sAddr="yx 1 1" />
+						</DOI>
+						<DOI name="Ind3" desc="工作状态-充电运行">
+							<DAI name="stVal" sAddr="yx 1 2" />
+						</DOI>
+						<DOI name="Ind4" desc="工作状态-放电运行">
+							<DAI name="stVal" sAddr="yx 1 3" />
+						</DOI>
+						<DOI name="Ind5" desc="工作状态-故障">
+							<DAI name="stVal" sAddr="yx 1 4" />
+						</DOI>
+						<DOI name="Ind6" desc="工作状态-零功率">
+							<DAI name="stVal" sAddr="yx 1 5" />
+						</DOI>
+						<DOI name="Ind7" desc="工作状态-告警">
+							<DAI name="stVal" sAddr="yx 1 6" />
+						</DOI>
+						<DOI name="Ind8" desc="PCS并离网状态">
+							<DAI name="stVal" sAddr="yx 1 7" />
+						</DOI>
+						<DOI name="Ind9" desc="IN0告警">
+							<DAI name="stVal" sAddr="yx 1 8" />
+						</DOI>
+						<DOI name="Ind10" desc="IN1告警">
+							<DAI name="stVal" sAddr="yx 1 9" />
+						</DOI>
+						<DOI name="Ind11" desc="IN2告警">
+							<DAI name="stVal" sAddr="yx 1 10" />
+						</DOI>
+						<DOI name="Ind12" desc="IN3告警">
+							<DAI name="stVal" sAddr="yx 1 11" />
+						</DOI>
+						<DOI name="Ind13" desc="IN4告警">
+							<DAI name="stVal" sAddr="yx 1 12" />
+						</DOI>
+						<DOI name="Ind14" desc="IN5告警">
+							<DAI name="stVal" sAddr="yx 1 13" />
+						</DOI>
+						<DOI name="Ind15" desc="IN6告警">
+							<DAI name="stVal" sAddr="yx 1 14" />
+						</DOI>
+						<DOI name="Ind16" desc="IN7告警">
+							<DAI name="stVal" sAddr="yx 1 15" />
+						</DOI>
+					</LN>
+
+					<!-- 修改点: 将类型从 5IND 改为了 6IND，并加入Ind6 -->
+					<LN inst="2" prefix="sta" desc="系统遥信状态2" lnClass="GGIO" lnType="RS100_GGIO_6IND">
+						<DOI name="Ind1" desc="IN8告警">
+							<DAI name="stVal" sAddr="yx 1 16" />
+						</DOI>
+						<DOI name="Ind2" desc="IN9告警">
+							<DAI name="stVal" sAddr="yx 1 17" />
+						</DOI>
+						<DOI name="Ind3" desc="IN10告警">
+							<DAI name="stVal" sAddr="yx 1 18" />
+						</DOI>
+						<DOI name="Ind4" desc="IN11告警">
+							<DAI name="stVal" sAddr="yx 1 19" />
+						</DOI>
+						<DOI name="Ind5" desc="通信告警">
+							<DAI name="stVal" sAddr="yx 1 20" />
+						</DOI>
+						<!-- 新增: 主断路器分合闸状态 -->
+						<DOI name="Ind6" desc="主断路器分合闸状态">
+							<DAI name="stVal" sAddr="yx 1 21" />
+						</DOI>
+					</LN>
+
+					<LN inst="1" prefix="ctl" desc="MMS遥控指令" lnClass="GAPC" lnType="RS100_GAPC_CTRL_6">
+						<DOI name="SPCSO1" desc="远程启停控制">
+							<SDI name="Oper">
+								<DAI name="ctlVal" sAddr="ykexe 1 0" />
+							</SDI>
+							<DAI name="stVal" sAddr="yx 0 1" />
+							<DAI name="ctlModel"><Val>direct-with-normal-security</Val></DAI>
+						</DOI>
+						<DOI name="SPCSO2" desc="远程复位">
+							<SDI name="Oper">
+								<DAI name="ctlVal" sAddr="ykexe 1 1" />
+							</SDI>
+							<DAI name="stVal" sAddr="yx 0 2" />
+							<DAI name="ctlModel"><Val>direct-with-normal-security</Val></DAI>
+						</DOI>
+						<DOI name="SPCSO3" desc="远程急停">
+							<SDI name="Oper">
+								<DAI name="ctlVal" sAddr="ykexe 1 2" />
+							</SDI>
+							<DAI name="stVal" sAddr="yx 0 3" />
+							<DAI name="ctlModel"><Val>direct-with-normal-security</Val></DAI>
+						</DOI>
+						<DOI name="SPCSO4" desc="远程重启">
+							<SDI name="Oper">
+								<DAI name="ctlVal" sAddr="ykexe 1 3" />
+							</SDI>
+							<DAI name="stVal" sAddr="yx 0 4" />
+							<DAI name="ctlModel"><Val>direct-with-normal-security</Val></DAI>
+						</DOI>
+						<DOI name="SPCSO5" desc="并离网模式切换">
+							<SDI name="Oper">
+								<DAI name="ctlVal" sAddr="ykexe 1 4" />
+							</SDI>
+							<DAI name="stVal" sAddr="yx 0 5" />
+							<DAI name="ctlModel"><Val>direct-with-normal-security</Val></DAI>
+						</DOI>
+						<DOI name="SPCSO6" desc="主断路器分合闸控制">
+							<SDI name="Oper">
+								<DAI name="ctlVal" sAddr="ykexe 1 5" />
+							</SDI>
+							<DAI name="stVal" sAddr="yx 0 6" />
+							<DAI name="ctlModel"><Val>direct-with-normal-security</Val></DAI>
+						</DOI>
+					</LN>
+
+					<LN inst="1" prefix="set" desc="遥调参数区1" lnClass="GAPC" lnType="RS100_GAPC_SET_16">
+						<DOI name="StrVal1" desc="远程就地控制模式">
+							<SDI name="Oper"><SDI name="ctlVal"><DAI name="f" sAddr="ytexe 2 0" /></SDI></SDI>
+							<SDI name="mxVal"><DAI name="f" sAddr="ytsp 2 0" /></SDI>
+							<DAI name="ctlModel"><Val>direct-with-normal-security</Val></DAI>
+						</DOI>
+						<DOI name="StrVal2" desc="最大输出功率限制">
+							<SDI name="Oper"><SDI name="ctlVal"><DAI name="f" sAddr="ytexe 2 1" /></SDI></SDI>
+							<SDI name="mxVal"><DAI name="f" sAddr="ytsp 2 1" /></SDI>
+							<DAI name="ctlModel"><Val>direct-with-normal-security</Val></DAI>
+						</DOI>
+						<DOI name="StrVal3" desc="运行模式选择">
+							<SDI name="Oper"><SDI name="ctlVal"><DAI name="f" sAddr="ytexe 2 2" /></SDI></SDI>
+							<SDI name="mxVal"><DAI name="f" sAddr="ytsp 2 2" /></SDI>
+							<DAI name="ctlModel"><Val>direct-with-normal-security</Val></DAI>
+						</DOI>
+						<DOI name="StrVal4" desc="并网无功调节方式">
+							<SDI name="Oper"><SDI name="ctlVal"><DAI name="f" sAddr="ytexe 2 3" /></SDI></SDI>
+							<SDI name="mxVal"><DAI name="f" sAddr="ytsp 2 3" /></SDI>
+							<DAI name="ctlModel"><Val>direct-with-normal-security</Val></DAI>
+						</DOI>
+						<DOI name="StrVal5" desc="有功/无功优先使能">
+							<SDI name="Oper"><SDI name="ctlVal"><DAI name="f" sAddr="ytexe 2 4" /></SDI></SDI>
+							<SDI name="mxVal"><DAI name="f" sAddr="ytsp 2 4" /></SDI>
+							<DAI name="ctlModel"><Val>direct-with-normal-security</Val></DAI>
+						</DOI>
+						<DOI name="StrVal6" desc="并网有功给定">
+							<SDI name="Oper"><SDI name="ctlVal"><DAI name="f" sAddr="ytexe 2 5" /></SDI></SDI>
+							<SDI name="mxVal"><DAI name="f" sAddr="ytsp 2 5" /></SDI>
+							<DAI name="ctlModel"><Val>direct-with-normal-security</Val></DAI>
+						</DOI>
+						<DOI name="StrVal7" desc="并网无功给定">
+							<SDI name="Oper"><SDI name="ctlVal"><DAI name="f" sAddr="ytexe 2 6" /></SDI></SDI>
+							<SDI name="mxVal"><DAI name="f" sAddr="ytsp 2 6" /></SDI>
+							<DAI name="ctlModel"><Val>direct-with-normal-security</Val></DAI>
+						</DOI>
+						<DOI name="StrVal8" desc="并网功率因数给定">
+							<SDI name="Oper"><SDI name="ctlVal"><DAI name="f" sAddr="ytexe 2 7" /></SDI></SDI>
+							<SDI name="mxVal"><DAI name="f" sAddr="ytsp 2 7" /></SDI>
+							<DAI name="ctlModel"><Val>direct-with-normal-security</Val></DAI>
+						</DOI>
+						<DOI name="StrVal9" desc="VF电压给定">
+							<SDI name="Oper"><SDI name="ctlVal"><DAI name="f" sAddr="ytexe 2 8" /></SDI></SDI>
+							<SDI name="mxVal"><DAI name="f" sAddr="ytsp 2 8" /></SDI>
+							<DAI name="ctlModel"><Val>direct-with-normal-security</Val></DAI>
+						</DOI>
+						<DOI name="StrVal10" desc="VF频率给定">
+							<SDI name="Oper"><SDI name="ctlVal"><DAI name="f" sAddr="ytexe 2 9" /></SDI></SDI>
+							<SDI name="mxVal"><DAI name="f" sAddr="ytsp 2 9" /></SDI>
+							<DAI name="ctlModel"><Val>direct-with-normal-security</Val></DAI>
+						</DOI>
+						<DOI name="StrVal11" desc="并网恒流电流">
+							<SDI name="Oper"><SDI name="ctlVal"><DAI name="f" sAddr="ytexe 2 10" /></SDI></SDI>
+							<SDI name="mxVal"><DAI name="f" sAddr="ytsp 2 10" /></SDI>
+							<DAI name="ctlModel"><Val>direct-with-normal-security</Val></DAI>
+						</DOI>
+						<DOI name="StrVal12" desc="并网恒压电压值">
+							<SDI name="Oper"><SDI name="ctlVal"><DAI name="f" sAddr="ytexe 2 11" /></SDI></SDI>
+							<SDI name="mxVal"><DAI name="f" sAddr="ytsp 2 11" /></SDI>
+							<DAI name="ctlModel"><Val>direct-with-normal-security</Val></DAI>
+						</DOI>
+						<DOI name="StrVal13" desc="VSG电压给定">
+							<SDI name="Oper"><SDI name="ctlVal"><DAI name="f" sAddr="ytexe 2 12" /></SDI></SDI>
+							<SDI name="mxVal"><DAI name="f" sAddr="ytsp 2 12" /></SDI>
+							<DAI name="ctlModel"><Val>direct-with-normal-security</Val></DAI>
+						</DOI>
+						<DOI name="StrVal14" desc="VSG频率给定">
+							<SDI name="Oper"><SDI name="ctlVal"><DAI name="f" sAddr="ytexe 2 13" /></SDI></SDI>
+							<SDI name="mxVal"><DAI name="f" sAddr="ytsp 2 13" /></SDI>
+							<DAI name="ctlModel"><Val>direct-with-normal-security</Val></DAI>
+						</DOI>
+						<DOI name="StrVal15" desc="VSG二次有功给定">
+							<SDI name="Oper"><SDI name="ctlVal"><DAI name="f" sAddr="ytexe 2 14" /></SDI></SDI>
+							<SDI name="mxVal"><DAI name="f" sAddr="ytsp 2 14" /></SDI>
+							<DAI name="ctlModel"><Val>direct-with-normal-security</Val></DAI>
+						</DOI>
+						<DOI name="StrVal16" desc="VSG二次无功给定">
+							<SDI name="Oper"><SDI name="ctlVal"><DAI name="f" sAddr="ytexe 2 15" /></SDI></SDI>
+							<SDI name="mxVal"><DAI name="f" sAddr="ytsp 2 15" /></SDI>
+							<DAI name="ctlModel"><Val>direct-with-normal-security</Val></DAI>
+						</DOI>
+					</LN>
+
+					<LN inst="2" prefix="set" desc="遥调参数区2" lnClass="GAPC" lnType="RS100_GAPC_SET_16">
+						<DOI name="StrVal1" desc="储能直流允许充电电压">
+							<SDI name="Oper"><SDI name="ctlVal"><DAI name="f" sAddr="ytexe 2 16" /></SDI></SDI>
+							<SDI name="mxVal"><DAI name="f" sAddr="ytsp 2 16" /></SDI>
+							<DAI name="ctlModel"><Val>direct-with-normal-security</Val></DAI>
+						</DOI>
+						<DOI name="StrVal2" desc="储能直流允许放电电压">
+							<SDI name="Oper"><SDI name="ctlVal"><DAI name="f" sAddr="ytexe 2 17" /></SDI></SDI>
+							<SDI name="mxVal"><DAI name="f" sAddr="ytsp 2 17" /></SDI>
+							<DAI name="ctlModel"><Val>direct-with-normal-security</Val></DAI>
+						</DOI>
+						<DOI name="StrVal3" desc="储能直流允许充电电流">
+							<SDI name="Oper"><SDI name="ctlVal"><DAI name="f" sAddr="ytexe 2 18" /></SDI></SDI>
+							<SDI name="mxVal"><DAI name="f" sAddr="ytsp 2 18" /></SDI>
+							<DAI name="ctlModel"><Val>direct-with-normal-security</Val></DAI>
+						</DOI>
+						<DOI name="StrVal4" desc="储能直流允许放电电流">
+							<SDI name="Oper"><SDI name="ctlVal"><DAI name="f" sAddr="ytexe 2 19" /></SDI></SDI>
+							<SDI name="mxVal"><DAI name="f" sAddr="ytsp 2 19" /></SDI>
+							<DAI name="ctlModel"><Val>direct-with-normal-security</Val></DAI>
+						</DOI>
+						<DOI name="StrVal5" desc="单台PCS启停控制">
+							<SDI name="Oper"><SDI name="ctlVal"><DAI name="f" sAddr="ytexe 2 20" /></SDI></SDI>
+							<SDI name="mxVal"><DAI name="f" sAddr="ytsp 2 20" /></SDI>
+							<DAI name="ctlModel"><Val>direct-with-normal-security</Val></DAI>
+						</DOI>
+						<DOI name="StrVal6" desc="待机使能">
+							<SDI name="Oper"><SDI name="ctlVal"><DAI name="f" sAddr="ytexe 2 21" /></SDI></SDI>
+							<SDI name="mxVal"><DAI name="f" sAddr="ytsp 2 21" /></SDI>
+							<DAI name="ctlModel"><Val>direct-with-normal-security</Val></DAI>
+						</DOI>
+						<DOI name="StrVal7" desc="SOC均衡控制">
+							<SDI name="Oper"><SDI name="ctlVal"><DAI name="f" sAddr="ytexe 2 22" /></SDI></SDI>
+							<SDI name="mxVal"><DAI name="f" sAddr="ytsp 2 22" /></SDI>
+							<DAI name="ctlModel"><Val>direct-with-normal-security</Val></DAI>
+						</DOI>
+						<DOI name="StrVal8" desc="功率调节死区">
+							<SDI name="Oper"><SDI name="ctlVal"><DAI name="f" sAddr="ytexe 2 23" /></SDI></SDI>
+							<SDI name="mxVal"><DAI name="f" sAddr="ytsp 2 23" /></SDI>
+							<DAI name="ctlModel"><Val>direct-with-normal-security</Val></DAI>
+						</DOI>
+						<DOI name="StrVal9" desc="功率调节周期">
+							<SDI name="Oper"><SDI name="ctlVal"><DAI name="f" sAddr="ytexe 2 24" /></SDI></SDI>
+							<SDI name="mxVal"><DAI name="f" sAddr="ytsp 2 24" /></SDI>
+							<DAI name="ctlModel"><Val>direct-with-normal-security</Val></DAI>
+						</DOI>
+						<DOI name="StrVal10" desc="功率调节速率/功率爬坡系数">
+							<SDI name="Oper"><SDI name="ctlVal"><DAI name="f" sAddr="ytexe 2 25" /></SDI></SDI>
+							<SDI name="mxVal"><DAI name="f" sAddr="ytsp 2 25" /></SDI>
+							<DAI name="ctlModel"><Val>direct-with-normal-security</Val></DAI>
+						</DOI>
+						<DOI name="StrVal11" desc="SOC均衡死区">
+							<SDI name="Oper"><SDI name="ctlVal"><DAI name="f" sAddr="ytexe 2 26" /></SDI></SDI>
+							<SDI name="mxVal"><DAI name="f" sAddr="ytsp 2 26" /></SDI>
+							<DAI name="ctlModel"><Val>direct-with-normal-security</Val></DAI>
+						</DOI>
+						<DOI name="StrVal12" desc="充电涓流阈值">
+							<SDI name="Oper"><SDI name="ctlVal"><DAI name="f" sAddr="ytexe 2 27" /></SDI></SDI>
+							<SDI name="mxVal"><DAI name="f" sAddr="ytsp 2 27" /></SDI>
+							<DAI name="ctlModel"><Val>direct-with-normal-security</Val></DAI>
+						</DOI>
+						<DOI name="StrVal13" desc="放电涓流阈值">
+							<SDI name="Oper"><SDI name="ctlVal"><DAI name="f" sAddr="ytexe 2 28" /></SDI></SDI>
+							<SDI name="mxVal"><DAI name="f" sAddr="ytsp 2 28" /></SDI>
+							<DAI name="ctlModel"><Val>direct-with-normal-security</Val></DAI>
+						</DOI>
+						<DOI name="StrVal14" desc="系统时间（秒）">
+							<SDI name="Oper"><SDI name="ctlVal"><DAI name="f" sAddr="ytexe 2 29" /></SDI></SDI>
+							<SDI name="mxVal"><DAI name="f" sAddr="ytsp 2 29" /></SDI>
+							<DAI name="ctlModel"><Val>direct-with-normal-security</Val></DAI>
+						</DOI>
+						<DOI name="StrVal15" desc="系统时间（分）">
+							<SDI name="Oper"><SDI name="ctlVal"><DAI name="f" sAddr="ytexe 2 30" /></SDI></SDI>
+							<SDI name="mxVal"><DAI name="f" sAddr="ytsp 2 30" /></SDI>
+							<DAI name="ctlModel"><Val>direct-with-normal-security</Val></DAI>
+						</DOI>
+						<DOI name="StrVal16" desc="系统时间（时）">
+							<SDI name="Oper"><SDI name="ctlVal"><DAI name="f" sAddr="ytexe 2 31" /></SDI></SDI>
+							<SDI name="mxVal"><DAI name="f" sAddr="ytsp 2 31" /></SDI>
+							<DAI name="ctlModel"><Val>direct-with-normal-security</Val></DAI>
+						</DOI>
+					</LN>
+
+					<!-- 修改点: 将类型从 SET_7 改为了 SET_9，并加入 StrVal8、StrVal9 -->
+					<LN inst="3" prefix="set" desc="遥调参数区3" lnClass="GAPC" lnType="RS100_GAPC_SET_9">
+						<DOI name="StrVal1" desc="系统时间（日）">
+							<SDI name="Oper"><SDI name="ctlVal"><DAI name="f" sAddr="ytexe 2 32" /></SDI></SDI>
+							<SDI name="mxVal"><DAI name="f" sAddr="ytsp 2 32" /></SDI>
+							<DAI name="ctlModel"><Val>direct-with-normal-security</Val></DAI>
+						</DOI>
+						<DOI name="StrVal2" desc="系统时间（月）">
+							<SDI name="Oper"><SDI name="ctlVal"><DAI name="f" sAddr="ytexe 2 33" /></SDI></SDI>
+							<SDI name="mxVal"><DAI name="f" sAddr="ytsp 2 33" /></SDI>
+							<DAI name="ctlModel"><Val>direct-with-normal-security</Val></DAI>
+						</DOI>
+						<DOI name="StrVal3" desc="系统时间（年）">
+							<SDI name="Oper"><SDI name="ctlVal"><DAI name="f" sAddr="ytexe 2 34" /></SDI></SDI>
+							<SDI name="mxVal"><DAI name="f" sAddr="ytsp 2 34" /></SDI>
+							<DAI name="ctlModel"><Val>direct-with-normal-security</Val></DAI>
+						</DOI>
+						<DOI name="StrVal4" desc="一键对时指令">
+							<SDI name="Oper"><SDI name="ctlVal"><DAI name="f" sAddr="ytexe 2 35" /></SDI></SDI>
+							<SDI name="mxVal"><DAI name="f" sAddr="ytsp 2 35" /></SDI>
+							<DAI name="ctlModel"><Val>direct-with-normal-security</Val></DAI>
+						</DOI>
+						<DOI name="StrVal5" desc="报警输出是否跳闸">
+							<SDI name="Oper"><SDI name="ctlVal"><DAI name="f" sAddr="ytexe 2 36" /></SDI></SDI>
+							<SDI name="mxVal"><DAI name="f" sAddr="ytsp 2 36" /></SDI>
+							<DAI name="ctlModel"><Val>direct-with-normal-security</Val></DAI>
+						</DOI>
+						<DOI name="StrVal6" desc="PCS ARM复位">
+							<SDI name="Oper"><SDI name="ctlVal"><DAI name="f" sAddr="ytexe 2 37" /></SDI></SDI>
+							<SDI name="mxVal"><DAI name="f" sAddr="ytsp 2 37" /></SDI>
+							<DAI name="ctlModel"><Val>direct-with-normal-security</Val></DAI>
+						</DOI>
+						<DOI name="StrVal7" desc="子站控制器恢复出厂设置">
+							<SDI name="Oper"><SDI name="ctlVal"><DAI name="f" sAddr="ytexe 2 38" /></SDI></SDI>
+							<SDI name="mxVal"><DAI name="f" sAddr="ytsp 2 38" /></SDI>
+							<DAI name="ctlModel"><Val>direct-with-normal-security</Val></DAI>
+						</DOI>
+						<!-- 新增: 最低高效负载率 -->
+						<DOI name="StrVal8" desc="最低高效负载率">
+							<SDI name="Oper"><SDI name="ctlVal"><DAI name="f" sAddr="ytexe 2 39" /></SDI></SDI>
+							<SDI name="mxVal"><DAI name="f" sAddr="ytsp 2 39" /></SDI>
+							<DAI name="ctlModel"><Val>direct-with-normal-security</Val></DAI>
+						</DOI>
+						<!-- 新增: 状态切换防震荡闭锁时间 -->
+						<DOI name="StrVal9" desc="状态切换防震荡闭锁时间">
+							<SDI name="Oper"><SDI name="ctlVal"><DAI name="f" sAddr="ytexe 2 40" /></SDI></SDI>
+							<SDI name="mxVal"><DAI name="f" sAddr="ytsp 2 40" /></SDI>
+							<DAI name="ctlModel"><Val>direct-with-normal-security</Val></DAI>
+						</DOI>
+					</LN>
+
+					<LN inst="1" prefix="" desc="交流测量" lnClass="MMXU" lnType="RS100_MMXU">
+						<DOI name="Hz" desc="电网频率"><SDI name="mag"><DAI name="f" sAddr="yc 1 0" /></SDI></DOI>
+						<DOI name="PPV" desc="线电压">
+							<SDI name="phsAB"><SDI name="cVal"><SDI name="mag"><DAI name="f" sAddr="yc 1 1" /></SDI></SDI></SDI>
+							<SDI name="phsBC"><SDI name="cVal"><SDI name="mag"><DAI name="f" sAddr="yc 1 2" /></SDI></SDI></SDI>
+							<SDI name="phsCA"><SDI name="cVal"><SDI name="mag"><DAI name="f" sAddr="yc 1 3" /></SDI></SDI></SDI>
+						</DOI>
+						<DOI name="A" desc="相电流">
+							<SDI name="phsA"><SDI name="cVal"><SDI name="mag"><DAI name="f" sAddr="yc 1 4" /></SDI></SDI></SDI>
+							<SDI name="phsB"><SDI name="cVal"><SDI name="mag"><DAI name="f" sAddr="yc 1 5" /></SDI></SDI></SDI>
+							<SDI name="phsC"><SDI name="cVal"><SDI name="mag"><DAI name="f" sAddr="yc 1 6" /></SDI></SDI></SDI>
+						</DOI>
+						<DOI name="TotPF" desc="总功率因数"><SDI name="mag"><DAI name="f" sAddr="yc 1 10" /></SDI></DOI>
+						<DOI name="TotVA" desc="总视在功率"><SDI name="mag"><DAI name="f" sAddr="yc 1 11" /></SDI></DOI>
+						<DOI name="TotW" desc="PCS实时有功功率"><SDI name="mag"><DAI name="f" sAddr="yc 1 12" /></SDI></DOI>
+						<DOI name="TotVAr" desc="PCS实时无功功率"><SDI name="mag"><DAI name="f" sAddr="yc 1 13" /></SDI></DOI>
+					</LN>
+
+					<LN inst="1" prefix="dc" desc="直流测量" lnClass="MMXN" lnType="RS100_MMXN">
+						<DOI name="Vol" desc="直流电压典型值"><SDI name="mag"><DAI name="f" sAddr="yc 1 7" /></SDI></DOI>
+						<DOI name="Amp" desc="直流总电流"><SDI name="mag"><DAI name="f" sAddr="yc 1 8" /></SDI></DOI>
+						<DOI name="Watt" desc="直流总功率"><SDI name="mag"><DAI name="f" sAddr="yc 1 9" /></SDI></DOI>
+					</LN>
+
+					<LN inst="1" prefix="kw" desc="电能数据" lnClass="GGIO" lnType="RS100_GGIO_KW">
+						<DOI name="AnIn1" desc="累计日充电量"><SDI name="mag"><DAI name="f" sAddr="yc 1 14" /></SDI></DOI>
+						<DOI name="AnIn2" desc="累计日放电量"><SDI name="mag"><DAI name="f" sAddr="yc 1 15" /></SDI></DOI>
+						<DOI name="AnIn3" desc="系统累计充电量"><SDI name="mag"><DAI name="f" sAddr="yc 1 16" /></SDI></DOI>
+						<DOI name="AnIn4" desc="系统累计放电量"><SDI name="mag"><DAI name="f" sAddr="yc 1 17" /></SDI></DOI>
+					</LN>
+
+					<LN inst="1" prefix="dev" desc="设备测量1" lnClass="GGIO" lnType="RS100_GGIO_DEV_20">
+						<DOI name="AnIn1" desc="PCS最大可充有功功率"><SDI name="mag"><DAI name="f" sAddr="yc 1 18" /></SDI></DOI>
+						<DOI name="AnIn2" desc="PCS最大可放有功功率"><SDI name="mag"><DAI name="f" sAddr="yc 1 19" /></SDI></DOI>
+						<DOI name="AnIn3" desc="PCS最大可用容性无功功率"><SDI name="mag"><DAI name="f" sAddr="yc 1 20" /></SDI></DOI>
+						<DOI name="AnIn4" desc="PCS最大可用感性无功功率"><SDI name="mag"><DAI name="f" sAddr="yc 1 21" /></SDI></DOI>
+						<DOI name="AnIn5" desc="SOC"><SDI name="mag"><DAI name="f" sAddr="yc 1 22" /></SDI></DOI>
+						<DOI name="AnIn6" desc="SOH"><SDI name="mag"><DAI name="f" sAddr="yc 1 23" /></SDI></DOI>
+						<DOI name="AnIn7" desc="电网电压不平衡度"><SDI name="mag"><DAI name="f" sAddr="yc 1 24" /></SDI></DOI>
+						<DOI name="AnIn8" desc="输出电压不平衡度"><SDI name="mag"><DAI name="f" sAddr="yc 1 25" /></SDI></DOI>
+						<DOI name="AnIn9" desc="输出电流不平衡度"><SDI name="mag"><DAI name="f" sAddr="yc 1 26" /></SDI></DOI>
+						<DOI name="AnIn10" desc="PCS IGBT最大温度站点"><SDI name="mag"><DAI name="f" sAddr="yc 1 27" /></SDI></DOI>
+						<DOI name="AnIn11" desc="PCS IGBT最大温度"><SDI name="mag"><DAI name="f" sAddr="yc 1 28" /></SDI></DOI>
+						<DOI name="AnIn12" desc="PCS IGBT最小温度站点"><SDI name="mag"><DAI name="f" sAddr="yc 1 29" /></SDI></DOI>
+						<DOI name="AnIn13" desc="PCS IGBT最小温度"><SDI name="mag"><DAI name="f" sAddr="yc 1 30" /></SDI></DOI>
+						<DOI name="AnIn14" desc="PCS 环境最大温度站点"><SDI name="mag"><DAI name="f" sAddr="yc 1 31" /></SDI></DOI>
+						<DOI name="AnIn15" desc="PCS 环境最大温度"><SDI name="mag"><DAI name="f" sAddr="yc 1 32" /></SDI></DOI>
+						<DOI name="AnIn16" desc="PCS 环境最小温度站点"><SDI name="mag"><DAI name="f" sAddr="yc 1 33" /></SDI></DOI>
+						<DOI name="AnIn17" desc="PCS 环境最小温度"><SDI name="mag"><DAI name="f" sAddr="yc 1 34" /></SDI></DOI>
+						<DOI name="AnIn18" desc="环境湿度"><SDI name="mag"><DAI name="f" sAddr="yc 1 35" /></SDI></DOI>
+						<DOI name="AnIn19" desc="系统正极绝缘电阻最小值站点"><SDI name="mag"><DAI name="f" sAddr="yc 1 36" /></SDI></DOI>
+						<DOI name="AnIn20" desc="系统正极绝缘电阻最小值"><SDI name="mag"><DAI name="f" sAddr="yc 1 37" /></SDI></DOI>
+					</LN>
+
+					<LN inst="2" prefix="dev" desc="设备测量2" lnClass="GGIO" lnType="RS100_GGIO_DEV_20">
+						<DOI name="AnIn1" desc="系统负极绝缘电阻最小值站点"><SDI name="mag"><DAI name="f" sAddr="yc 1 38" /></SDI></DOI>
+						<DOI name="AnIn2" desc="系统负极绝缘电阻最小值"><SDI name="mag"><DAI name="f" sAddr="yc 1 39" /></SDI></DOI>
+						<DOI name="AnIn3" desc="功率调节死区"><SDI name="mag"><DAI name="f" sAddr="yc 1 40" /></SDI></DOI>
+						<DOI name="AnIn4" desc="SOC均衡死区"><SDI name="mag"><DAI name="f" sAddr="yc 1 41" /></SDI></DOI>
+						<DOI name="AnIn5" desc="功率调节周期"><SDI name="mag"><DAI name="f" sAddr="yc 1 42" /></SDI></DOI>
+						<DOI name="AnIn6" desc="功率调节速率"><SDI name="mag"><DAI name="f" sAddr="yc 1 43" /></SDI></DOI>
+						<DOI name="AnIn7" desc="充电涓流阈值"><SDI name="mag"><DAI name="f" sAddr="yc 1 44" /></SDI></DOI>
+						<DOI name="AnIn8" desc="放电涓流阈值"><SDI name="mag"><DAI name="f" sAddr="yc 1 45" /></SDI></DOI>
+						<DOI name="AnIn9" desc="系统时间（秒）"><SDI name="mag"><DAI name="f" sAddr="yc 1 46" /></SDI></DOI>
+						<DOI name="AnIn10" desc="系统时间（分）"><SDI name="mag"><DAI name="f" sAddr="yc 1 47" /></SDI></DOI>
+						<DOI name="AnIn11" desc="系统时间（时）"><SDI name="mag"><DAI name="f" sAddr="yc 1 48" /></SDI></DOI>
+						<DOI name="AnIn12" desc="系统时间（日）"><SDI name="mag"><DAI name="f" sAddr="yc 1 49" /></SDI></DOI>
+						<DOI name="AnIn13" desc="系统时间（月）"><SDI name="mag"><DAI name="f" sAddr="yc 1 50" /></SDI></DOI>
+						<DOI name="AnIn14" desc="系统时间（年）"><SDI name="mag"><DAI name="f" sAddr="yc 1 51" /></SDI></DOI>
+						<DOI name="AnIn15" desc="子站控制器告警"><SDI name="mag"><DAI name="f" sAddr="yc 1 52" /></SDI></DOI>
+						<DOI name="AnIn16" desc="ECAT事件告警"><SDI name="mag"><DAI name="f" sAddr="yc 1 53" /></SDI></DOI>
+						<DOI name="AnIn17" desc="TCP事件告警"><SDI name="mag"><DAI name="f" sAddr="yc 1 54" /></SDI></DOI>
+						<DOI name="AnIn18" desc="RTU事件告警"><SDI name="mag"><DAI name="f" sAddr="yc 1 55" /></SDI></DOI>
+						<DOI name="AnIn19" desc="EMU-IO状态1"><SDI name="mag"><DAI name="f" sAddr="yc 1 56" /></SDI></DOI>
+						<DOI name="AnIn20" desc="EMU-IO状态2"><SDI name="mag"><DAI name="f" sAddr="yc 1 57" /></SDI></DOI>
+					</LN>
+
+					<!-- 修改点: 将类型从 DEV_12 改为了 DEV_15，并加入 AnIn13、AnIn14、AnIn15 -->
+					<LN inst="3" prefix="dev" desc="设备测量3" lnClass="GGIO" lnType="RS100_GGIO_DEV_15">
+						<DOI name="AnIn1" desc="PCS1故障码"><SDI name="mag"><DAI name="f" sAddr="yc 1 58" /></SDI></DOI>
+						<DOI name="AnIn2" desc="PCS2故障码"><SDI name="mag"><DAI name="f" sAddr="yc 1 59" /></SDI></DOI>
+						<DOI name="AnIn3" desc="PCS3故障码"><SDI name="mag"><DAI name="f" sAddr="yc 1 60" /></SDI></DOI>
+						<DOI name="AnIn4" desc="PCS4故障码"><SDI name="mag"><DAI name="f" sAddr="yc 1 61" /></SDI></DOI>
+						<DOI name="AnIn5" desc="PCS5故障码"><SDI name="mag"><DAI name="f" sAddr="yc 1 62" /></SDI></DOI>
+						<DOI name="AnIn6" desc="PCS6故障码"><SDI name="mag"><DAI name="f" sAddr="yc 1 63" /></SDI></DOI>
+						<DOI name="AnIn7" desc="PCS7故障码"><SDI name="mag"><DAI name="f" sAddr="yc 1 64" /></SDI></DOI>
+						<DOI name="AnIn8" desc="PCS8故障码"><SDI name="mag"><DAI name="f" sAddr="yc 1 65" /></SDI></DOI>
+						<DOI name="AnIn9" desc="PCS9故障码"><SDI name="mag"><DAI name="f" sAddr="yc 1 66" /></SDI></DOI>
+						<DOI name="AnIn10" desc="PCS10故障码"><SDI name="mag"><DAI name="f" sAddr="yc 1 67" /></SDI></DOI>
+						<DOI name="AnIn11" desc="PCS11故障码"><SDI name="mag"><DAI name="f" sAddr="yc 1 68" /></SDI></DOI>
+						<DOI name="AnIn12" desc="PCS12故障码"><SDI name="mag"><DAI name="f" sAddr="yc 1 69" /></SDI></DOI>
+						<!-- 新增: 液冷机组故障、SCC DI故障、SCC 配置故障 -->
+						<DOI name="AnIn13" desc="液冷机组故障"><SDI name="mag"><DAI name="f" sAddr="yc 1 70" /></SDI></DOI>
+						<DOI name="AnIn14" desc="SCC DI故障"><SDI name="mag"><DAI name="f" sAddr="yc 1 71" /></SDI></DOI>
+						<DOI name="AnIn15" desc="SCC 配置故障"><SDI name="mag"><DAI name="f" sAddr="yc 1 72" /></SDI></DOI>
+					</LN>
+
+					<LN inst="4" prefix="dev" desc="系统额定与状态(保留MMS遥测要求)" lnClass="GGIO" lnType="RS100_GGIO_GOOSE_EXT">
+						<DOI name="AnIn1" desc="变电所.额定功率"><SDI name="mag"><DAI name="f" sAddr="yc 1 100" /></SDI></DOI>
+						<DOI name="AnIn2" desc="变电所.综合工作状态"><SDI name="mag"><DAI name="f" sAddr="yc 1 101" /></SDI></DOI>
+					</LN>
+
+				</LDevice>
+			</Server>
+		</AccessPoint>
+	</IED>
+
+	<DataTypeTemplates>
+		<LNodeType id="RS100_LPHD1" lnClass="LPHD">
+			<DO name="PhyNam" desc="物理装置铭牌" type="RS100_DPL" />
+			<DO name="PhyHealth" desc="健康状态" type="RS100_INS" />
+			<DO name="Proxy" desc="代理" type="RS100_SPS" />
+		</LNodeType>
+		<LNodeType id="RS100_LLN0" lnClass="LLN0">
+			<DO name="Mod" desc="模式" type="RS100_INC" />
+			<DO name="Beh" desc="性能" type="RS100_INS" />
+			<DO name="Health" desc="健康" type="RS100_INS" />
+			<DO name="NamPlt" desc="铭牌" type="RS100_LPL" />
+		</LNodeType>
+		<LNodeType id="RS100_MMXU" lnClass="MMXU" desc="交流测量">
+			<DO name="Mod" type="RS100_INC" />
+			<DO name="Beh" type="RS100_INS" />
+			<DO name="Health" type="RS100_INS" />
+			<DO name="NamPlt" type="RS100_LPL" />
+			<DO name="Hz" type="RS100_MV" />
+			<DO name="PPV" type="RS100_DEL" />
+			<DO name="A" type="RS100_WYE" />
+			<DO name="TotPF" type="RS100_MV" />
+			<DO name="TotVA" type="RS100_MV" />
+			<DO name="TotW" type="RS100_MV" />
+			<DO name="TotVAr" type="RS100_MV" />
+		</LNodeType>
+		<LNodeType id="RS100_MMXN" lnClass="MMXN" desc="直流测量">
+			<DO name="Mod" type="RS100_INC" />
+			<DO name="Beh" type="RS100_INS" />
+			<DO name="Health" type="RS100_INS" />
+			<DO name="NamPlt" type="RS100_LPL" />
+			<DO name="Vol" type="RS100_MV" />
+			<DO name="Amp" type="RS100_MV" />
+			<DO name="Watt" type="RS100_MV" />
+		</LNodeType>
+		<LNodeType id="RS100_GGIO_KW" lnClass="GGIO" desc="电能">
+			<DO name="Mod" type="RS100_INC" />
+			<DO name="Beh" type="RS100_INS" />
+			<DO name="Health" type="RS100_INS" />
+			<DO name="NamPlt" type="RS100_LPL" />
+			<DO name="AnIn1" type="RS100_MV" />
+			<DO name="AnIn2" type="RS100_MV" />
+			<DO name="AnIn3" type="RS100_MV" />
+			<DO name="AnIn4" type="RS100_MV" />
+		</LNodeType>
+		<LNodeType id="RS100_GGIO_DEV_20" lnClass="GGIO" desc="通用测量(20个)">
+			<DO name="Mod" type="RS100_INC" />
+			<DO name="Beh" type="RS100_INS" />
+			<DO name="Health" type="RS100_INS" />
+			<DO name="NamPlt" type="RS100_LPL" />
+			<DO name="AnIn1" type="RS100_MV" />
+			<DO name="AnIn2" type="RS100_MV" />
+			<DO name="AnIn3" type="RS100_MV" />
+			<DO name="AnIn4" type="RS100_MV" />
+			<DO name="AnIn5" type="RS100_MV" />
+			<DO name="AnIn6" type="RS100_MV" />
+			<DO name="AnIn7" type="RS100_MV" />
+			<DO name="AnIn8" type="RS100_MV" />
+			<DO name="AnIn9" type="RS100_MV" />
+			<DO name="AnIn10" type="RS100_MV" />
+			<DO name="AnIn11" type="RS100_MV" />
+			<DO name="AnIn12" type="RS100_MV" />
+			<DO name="AnIn13" type="RS100_MV" />
+			<DO name="AnIn14" type="RS100_MV" />
+			<DO name="AnIn15" type="RS100_MV" />
+			<DO name="AnIn16" type="RS100_MV" />
+			<DO name="AnIn17" type="RS100_MV" />
+			<DO name="AnIn18" type="RS100_MV" />
+			<DO name="AnIn19" type="RS100_MV" />
+			<DO name="AnIn20" type="RS100_MV" />
+		</LNodeType>
+
+		<!-- 修改点: 新增 15个通用测量 LNodeType 以兼容我们在 lnInst="3" 中的扩展 -->
+		<LNodeType id="RS100_GGIO_DEV_15" lnClass="GGIO" desc="通用测量(15个)">
+			<DO name="Mod" type="RS100_INC" />
+			<DO name="Beh" type="RS100_INS" />
+			<DO name="Health" type="RS100_INS" />
+			<DO name="NamPlt" type="RS100_LPL" />
+			<DO name="AnIn1" type="RS100_MV" />
+			<DO name="AnIn2" type="RS100_MV" />
+			<DO name="AnIn3" type="RS100_MV" />
+			<DO name="AnIn4" type="RS100_MV" />
+			<DO name="AnIn5" type="RS100_MV" />
+			<DO name="AnIn6" type="RS100_MV" />
+			<DO name="AnIn7" type="RS100_MV" />
+			<DO name="AnIn8" type="RS100_MV" />
+			<DO name="AnIn9" type="RS100_MV" />
+			<DO name="AnIn10" type="RS100_MV" />
+			<DO name="AnIn11" type="RS100_MV" />
+			<DO name="AnIn12" type="RS100_MV" />
+			<DO name="AnIn13" type="RS100_MV" />
+			<DO name="AnIn14" type="RS100_MV" />
+			<DO name="AnIn15" type="RS100_MV" />
+		</LNodeType>
+
+		<LNodeType id="RS100_GGIO_DEV_12" lnClass="GGIO" desc="通用测量(12个)">
+			<DO name="Mod" type="RS100_INC" />
+			<DO name="Beh" type="RS100_INS" />
+			<DO name="Health" type="RS100_INS" />
+			<DO name="NamPlt" type="RS100_LPL" />
+			<DO name="AnIn1" type="RS100_MV" />
+			<DO name="AnIn2" type="RS100_MV" />
+			<DO name="AnIn3" type="RS100_MV" />
+			<DO name="AnIn4" type="RS100_MV" />
+			<DO name="AnIn5" type="RS100_MV" />
+			<DO name="AnIn6" type="RS100_MV" />
+			<DO name="AnIn7" type="RS100_MV" />
+			<DO name="AnIn8" type="RS100_MV" />
+			<DO name="AnIn9" type="RS100_MV" />
+			<DO name="AnIn10" type="RS100_MV" />
+			<DO name="AnIn11" type="RS100_MV" />
+			<DO name="AnIn12" type="RS100_MV" />
+		</LNodeType>
+		<LNodeType id="RS100_GGIO_16IND" lnClass="GGIO" desc="16路遥信">
+			<DO name="Mod" type="RS100_INC" />
+			<DO name="Beh" type="RS100_INS" />
+			<DO name="Health" type="RS100_INS" />
+			<DO name="NamPlt" type="RS100_LPL" />
+			<DO name="Ind1" type="RS100_SPS" />
+			<DO name="Ind2" type="RS100_SPS" />
+			<DO name="Ind3" type="RS100_SPS" />
+			<DO name="Ind4" type="RS100_SPS" />
+			<DO name="Ind5" type="RS100_SPS" />
+			<DO name="Ind6" type="RS100_SPS" />
+			<DO name="Ind7" type="RS100_SPS" />
+			<DO name="Ind8" type="RS100_SPS" />
+			<DO name="Ind9" type="RS100_SPS" />
+			<DO name="Ind10" type="RS100_SPS" />
+			<DO name="Ind11" type="RS100_SPS" />
+			<DO name="Ind12" type="RS100_SPS" />
+			<DO name="Ind13" type="RS100_SPS" />
+			<DO name="Ind14" type="RS100_SPS" />
+			<DO name="Ind15" type="RS100_SPS" />
+			<DO name="Ind16" type="RS100_SPS" />
+		</LNodeType>
+
+		<!-- 修改点: 新增 6路遥信 LNodeType 以兼容我们在 lnInst="2" 中的扩展 -->
+		<LNodeType id="RS100_GGIO_6IND" lnClass="GGIO" desc="6路遥信">
+			<DO name="Mod" type="RS100_INC" />
+			<DO name="Beh" type="RS100_INS" />
+			<DO name="Health" type="RS100_INS" />
+			<DO name="NamPlt" type="RS100_LPL" />
+			<DO name="Ind1" type="RS100_SPS" />
+			<DO name="Ind2" type="RS100_SPS" />
+			<DO name="Ind3" type="RS100_SPS" />
+			<DO name="Ind4" type="RS100_SPS" />
+			<DO name="Ind5" type="RS100_SPS" />
+			<DO name="Ind6" type="RS100_SPS" />
+		</LNodeType>
+
+		<LNodeType id="RS100_GGIO_5IND" lnClass="GGIO" desc="5路遥信">
+			<DO name="Mod" type="RS100_INC" />
+			<DO name="Beh" type="RS100_INS" />
+			<DO name="Health" type="RS100_INS" />
+			<DO name="NamPlt" type="RS100_LPL" />
+			<DO name="Ind1" type="RS100_SPS" />
+			<DO name="Ind2" type="RS100_SPS" />
+			<DO name="Ind3" type="RS100_SPS" />
+			<DO name="Ind4" type="RS100_SPS" />
+			<DO name="Ind5" type="RS100_SPS" />
+		</LNodeType>
+		<LNodeType id="RS100_GAPC_CTRL_6" lnClass="GAPC" desc="6路遥控">
+			<DO name="Mod" type="RS100_INC" />
+			<DO name="Beh" type="RS100_INS" />
+			<DO name="Health" type="RS100_INS" />
+			<DO name="NamPlt" type="RS100_LPL" />
+			<DO name="SPCSO1" type="RS100_SPC" />
+			<DO name="SPCSO2" type="RS100_SPC" />
+			<DO name="SPCSO3" type="RS100_SPC" />
+			<DO name="SPCSO4" type="RS100_SPC" />
+			<DO name="SPCSO5" type="RS100_SPC" />
+			<DO name="SPCSO6" type="RS100_SPC" />
+		</LNodeType>
+		<LNodeType id="RS100_GAPC_SET_16" lnClass="GAPC" desc="16路遥调">
+			<DO name="Mod" type="RS100_INC" />
+			<DO name="Beh" type="RS100_INS" />
+			<DO name="Health" type="RS100_INS" />
+			<DO name="NamPlt" type="RS100_LPL" />
+			<DO name="StrVal1" type="RS100_APC" />
+			<DO name="StrVal2" type="RS100_APC" />
+			<DO name="StrVal3" type="RS100_APC" />
+			<DO name="StrVal4" type="RS100_APC" />
+			<DO name="StrVal5" type="RS100_APC" />
+			<DO name="StrVal6" type="RS100_APC" />
+			<DO name="StrVal7" type="RS100_APC" />
+			<DO name="StrVal8" type="RS100_APC" />
+			<DO name="StrVal9" type="RS100_APC" />
+			<DO name="StrVal10" type="RS100_APC" />
+			<DO name="StrVal11" type="RS100_APC" />
+			<DO name="StrVal12" type="RS100_APC" />
+			<DO name="StrVal13" type="RS100_APC" />
+			<DO name="StrVal14" type="RS100_APC" />
+			<DO name="StrVal15" type="RS100_APC" />
+			<DO name="StrVal16" type="RS100_APC" />
+		</LNodeType>
+
+		<!-- 修改点: 新增 9路遥调 LNodeType 以兼容我们在 lnInst="3" 中的扩展 -->
+		<LNodeType id="RS100_GAPC_SET_9" lnClass="GAPC" desc="9路遥调">
+			<DO name="Mod" type="RS100_INC" />
+			<DO name="Beh" type="RS100_INS" />
+			<DO name="Health" type="RS100_INS" />
+			<DO name="NamPlt" type="RS100_LPL" />
+			<DO name="StrVal1" type="RS100_APC" />
+			<DO name="StrVal2" type="RS100_APC" />
+			<DO name="StrVal3" type="RS100_APC" />
+			<DO name="StrVal4" type="RS100_APC" />
+			<DO name="StrVal5" type="RS100_APC" />
+			<DO name="StrVal6" type="RS100_APC" />
+			<DO name="StrVal7" type="RS100_APC" />
+			<DO name="StrVal8" type="RS100_APC" />
+			<DO name="StrVal9" type="RS100_APC" />
+		</LNodeType>
+
+		<LNodeType id="RS100_GAPC_SET_7" lnClass="GAPC" desc="7路遥调">
+			<DO name="Mod" type="RS100_INC" />
+			<DO name="Beh" type="RS100_INS" />
+			<DO name="Health" type="RS100_INS" />
+			<DO name="NamPlt" type="RS100_LPL" />
+			<DO name="StrVal1" type="RS100_APC" />
+			<DO name="StrVal2" type="RS100_APC" />
+			<DO name="StrVal3" type="RS100_APC" />
+			<DO name="StrVal4" type="RS100_APC" />
+			<DO name="StrVal5" type="RS100_APC" />
+			<DO name="StrVal6" type="RS100_APC" />
+			<DO name="StrVal7" type="RS100_APC" />
+		</LNodeType>
+		<LNodeType id="RS100_GGIO_GOOSE_EXT" lnClass="GGIO" desc="补充测量(2个)">
+			<DO name="Mod" type="RS100_INC" />
+			<DO name="Beh" type="RS100_INS" />
+			<DO name="Health" type="RS100_INS" />
+			<DO name="NamPlt" type="RS100_LPL" />
+			<DO name="AnIn1" type="RS100_MV" />
+			<DO name="AnIn2" type="RS100_MV" />
+		</LNodeType>
+		<DOType id="RS100_DPL" cdc="DPL">
+			<DA name="vendor" bType="VisString255" fc="DC"><Val>RUISHAN</Val></DA>
+			<DA name="hwRev" bType="VisString255" fc="DC"><Val>RS100</Val></DA>
+			<DA name="swRev" bType="VisString255" fc="DC"><Val>v1.2.0</Val></DA>
+		</DOType>
+		<DOType id="RS100_SPS" cdc="SPS">
+			<DA name="stVal" bType="BOOLEAN" dchg="true" fc="ST" />
+			<DA name="q" bType="Quality" qchg="true" fc="ST" />
+			<DA name="t" bType="Timestamp" fc="ST" />
+			<DA name="dU" bType="Unicode255" fc="DC" />
+		</DOType>
+		<DOType id="RS100_INC" cdc="INC">
+			<DA name="stVal" bType="Enum" type="Mod" fc="ST"><Val>on</Val></DA>
+			<DA name="q" bType="Quality" fc="ST" />
+			<DA name="t" bType="Timestamp" fc="ST" />
+			<DA name="ctlModel" bType="Enum" type="ctlModel" fc="CF"><Val>status-only</Val></DA>
+		</DOType>
+		<DOType id="RS100_INS" cdc="INS">
+			<DA name="stVal" bType="Enum" type="Beh" fc="ST"><Val>on</Val></DA>
+			<DA name="q" bType="Quality" fc="ST" />
+			<DA name="t" bType="Timestamp" fc="ST" />
+		</DOType>
+		<DOType id="RS100_LPL" cdc="LPL">
+			<DA name="vendor" bType="VisString255" fc="DC"><Val>RUISHAN</Val></DA>
+			<DA name="swRev" bType="VisString255" fc="DC"><Val>v1.2.0</Val></DA>
+			<DA name="d" bType="VisString255" fc="DC"><Val>RS100</Val></DA>
+			<DA name="configRev" bType="VisString255" fc="DC"><Val>2026-03-04</Val></DA>
+		</DOType>
+		<DOType id="RS100_MV" cdc="MV">
+			<DA name="mag" bType="Struct" type="RS100_AnalogueValue" dchg="true" fc="MX" />
+			<DA name="q" bType="Quality" qchg="true" fc="MX" />
+			<DA name="t" bType="Timestamp" fc="MX" />
+			<DA name="dU" bType="Unicode255" fc="DC" />
+		</DOType>
+		<DOType id="RS100_SPC" cdc="SPC">
+			<DA name="Oper" bType="Struct" type="RS100_SBOw" fc="CO" />
+			<DA name="stVal" bType="BOOLEAN" dchg="true" fc="ST" />
+			<DA name="q" bType="Quality" qchg="true" fc="ST" />
+			<DA name="t" bType="Timestamp" fc="ST" />
+			<DA name="ctlModel" bType="Enum" type="ctlModel" fc="CF" />
+			<DA name="dU" bType="Unicode255" fc="DC" />
+		</DOType>
+		<DOType id="RS100_DEL" cdc="DEL">
+			<SDO name="phsAB" type="RS100_CMV" />
+			<SDO name="phsBC" type="RS100_CMV" />
+			<SDO name="phsCA" type="RS100_CMV" />
+		</DOType>
+		<DOType id="RS100_WYE" cdc="WYE">
+			<SDO name="phsA" type="RS100_CMV" />
+			<SDO name="phsB" type="RS100_CMV" />
+			<SDO name="phsC" type="RS100_CMV" />
+		</DOType>
+		<DOType id="RS100_CMV" cdc="CMV">
+			<DA name="cVal" fc="MX" bType="Struct" dchg="true" type="RS100_Vector" />
+			<DA name="q" bType="Quality" qchg="true" fc="MX" />
+			<DA name="t" bType="Timestamp" fc="MX" />
+			<DA name="dU" bType="Unicode255" fc="DC" />
+		</DOType>
+		<DOType id="RS100_APC" cdc="APC">
+			<DA name="Oper" bType="Struct" type="RS100_SBOw_Analogue" fc="CO" />
+			<DA name="mxVal" bType="Struct" type="RS100_AnalogueValue" dchg="true" fc="MX" />
+			<DA name="q" bType="Quality" qchg="true" fc="MX" />
+			<DA name="t" bType="Timestamp" fc="MX" />
+			<DA name="ctlModel" bType="Enum" type="ctlModel" fc="CF" />
+			<DA name="dU" bType="Unicode255" fc="DC" />
+		</DOType>
+		<DAType id="RS100_Vector">
+			<BDA name="mag" bType="Struct" type="RS100_AnalogueValue" />
+		</DAType>
+		<DAType id="RS100_AnalogueValue">
+			<BDA name="f" bType="FLOAT32" />
+		</DAType>
+		<DAType id="RS100_SBOw">
+			<BDA name="ctlVal" bType="BOOLEAN" />
+			<BDA name="origin" bType="Struct" type="RS100_Originator" />
+			<BDA name="ctlNum" bType="INT8U" />
+			<BDA name="T" bType="Timestamp" />
+			<BDA name="Test" bType="BOOLEAN" />
+			<BDA name="Check" bType="Check" />
+		</DAType>
+		<DAType id="RS100_SBOw_Analogue">
+			<BDA name="ctlVal" bType="Struct" type="RS100_AnalogueValue" />
+			<BDA name="origin" bType="Struct" type="RS100_Originator" />
+			<BDA name="ctlNum" bType="INT8U" />
+			<BDA name="T" bType="Timestamp" />
+			<BDA name="Test" bType="BOOLEAN" />
+			<BDA name="Check" bType="Check" />
+		</DAType>
+		<DAType id="RS100_Originator">
+			<BDA name="orCat" bType="Enum" type="orCategory" />
+			<BDA name="orIdent" bType="Octet64" />
+		</DAType>
+		<EnumType id="ctlModel">
+			<EnumVal ord="0">status-only</EnumVal>
+			<EnumVal ord="1">direct-with-normal-security</EnumVal>
+			<EnumVal ord="2">sbo-with-normal-security</EnumVal>
+			<EnumVal ord="3">direct-with-enhanced-security</EnumVal>
+			<EnumVal ord="4">sbo-with-enhanced-security</EnumVal>
+		</EnumType>
+		<EnumType id="orCategory">
+			<EnumVal ord="0">not-supported</EnumVal>
+			<EnumVal ord="1">bay-control</EnumVal>
+			<EnumVal ord="2">station-control</EnumVal>
+			<EnumVal ord="3">remote-control</EnumVal>
+			<EnumVal ord="4">automatic-bay</EnumVal>
+			<EnumVal ord="5">automatic-station</EnumVal>
+			<EnumVal ord="6">automatic-remote</EnumVal>
+			<EnumVal ord="7">maintenance</EnumVal>
+			<EnumVal ord="8">process</EnumVal>
+		</EnumType>
+		<EnumType id="Mod">
+			<EnumVal ord="1">on</EnumVal>
+			<EnumVal ord="2">blocked</EnumVal>
+			<EnumVal ord="3">test</EnumVal>
+			<EnumVal ord="4">test/blocked</EnumVal>
+			<EnumVal ord="5">off</EnumVal>
+		</EnumType>
+		<EnumType id="Beh">
+			<EnumVal ord="1">on</EnumVal>
+			<EnumVal ord="2">blocked</EnumVal>
+			<EnumVal ord="3">test</EnumVal>
+			<EnumVal ord="4">test/blocked</EnumVal>
+			<EnumVal ord="5">off</EnumVal>
+		</EnumType>
+		<EnumType id="Health">
+			<EnumVal ord="1">Ok</EnumVal>
+			<EnumVal ord="2">Warning</EnumVal>
+			<EnumVal ord="3">Alarm</EnumVal>
+		</EnumType>
+	</DataTypeTemplates>
+</SCL>

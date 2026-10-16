@@ -1,0 +1,33 @@
+[package]
+name = "collector-iec61850"
+version = "0.1.0"
+edition = "2024"
+build = "src/build.rs"
+
+[features]
+# 公开 libiec61850 服务端的 FFI 绑定(仅用于 tests 里的测试 IED); 服务端 C 源码本身始终编译
+server = []
+
+[dependencies]
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+
+[build-dependencies]
+bindgen = "0.72.1"
+cc = "1.4.0"
+
+[[test]]
+name = "loopback"
+required-features = ["server"]
+
+[[test]]
+name = "pcs"
+required-features = ["server"]
+
+[dev-dependencies]
+# 测试里读取 scripts/icd_to_iec61850_points.py 生成的 xlsx 点表(与 collector-core 同版本)
+calamine = "0.32.0"
+
+[[example]]
+name = "pcs_sim"
+required-features = ["server"]
