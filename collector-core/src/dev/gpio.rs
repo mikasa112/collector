@@ -37,7 +37,7 @@ impl GpioDev {
             return Err(DeviceError::NotFoundConfigs(id));
         };
         let configs = match configs {
-            config::ProtocolConfigs::Modbus(_) => {
+            config::ProtocolConfigs::Modbus(_) | config::ProtocolConfigs::Iec104(_) => {
                 return Err(DeviceError::UnSupportedComType);
             }
             config::ProtocolConfigs::CAN(_) => {

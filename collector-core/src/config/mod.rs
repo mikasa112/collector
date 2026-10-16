@@ -9,6 +9,7 @@ use crate::core::point::PointId;
 pub mod can_conf;
 pub mod config_provider;
 pub mod gpio_conf;
+pub mod iec104_conf;
 pub mod modbus_conf;
 pub mod north_modbus_conf;
 pub mod program_conf;
@@ -78,7 +79,15 @@ async fn load_protocol_configs(dev: &Device) -> ProtocolConfigs {
             );
             ProtocolConfigs::None
         }
-        ComType::IEC104 => ProtocolConfigs::None,
+        ComType::IEC104 => {
+            load_configs(
+                file,
+                dev_id,
+                iec104_conf::build_configs,
+                ProtocolConfigs::Iec104,
+            )
+            .await
+        }
         ComType::IEC61850 => ProtocolConfigs::None,
         #[cfg(target_os = "linux")]
         ComType::GPIO => {
@@ -187,6 +196,7 @@ pub struct DeviceConfig {
 #[derive(Debug, Clone)]
 pub enum ProtocolConfigs {
     Modbus(modbus_conf::ModbusConfigs),
+    Iec104(iec104_conf::Iec104Configs),
     #[cfg(target_os = "linux")]
     CAN(can_conf::CanConfigs),
     #[cfg(target_os = "linux")]

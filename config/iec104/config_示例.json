@@ -1,0 +1,62 @@
+{
+  "product_type": "开发机测试",
+  "project": "开发机测试",
+  "program": {
+    "emu": {
+      "enable": false
+    },
+    "http": {
+      "enable": true,
+      "ip": "0.0.0.0",
+      "port": 9091
+    },
+    "mod": {
+      "enable": true,
+      "path": "lua_scripts"
+    },
+    "north_modbus": {
+      "enable": true,
+      "north_modbus_host": "0.0.0.0",
+      "north_modbus_port": 9092,
+      "north_modbus_conf": "./config/北向/MODBUS_REGISTERS.xlsx"
+    },
+    "eg25_gl": {
+      "enable": false
+    },
+    "mqtt": {
+      "enable": false,
+      "mqtt_host": "127.0.0.1",
+      "mqtt_port": 1883,
+      "mqtt_username": "root",
+      "mqtt_password": "inpower",
+      "mqtt_yt": "/asw/+/+/yt",
+      "mqtt_yk": "/asw/+/+/yk"
+    }
+  },
+  "devices": {
+    "iec104_dev": {
+      "id": "iec104_dev",
+      "type": "IEC104",
+      "desc": "IEC104 联调设备",
+      "config": {
+        "type": "IEC104",
+        "com_type": "IEC104",
+        "register_file": "./config/iec104/iec104_示例点表.xlsx",
+        "interval": 60000,
+        "timeout": 3000,
+        "ip": "127.0.0.1",
+        "port": 2404,
+        "slave": null,
+        "serial_tty": null,
+        "baud_rate": null,
+        "data_bits": null,
+        "parity": null,
+        "stop_bits": null,
+        "interface": null,
+        "desc": null,
+        "request_interval": null,
+        "max_gap": null
+      }
+    }
+  }
+}

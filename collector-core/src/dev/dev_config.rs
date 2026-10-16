@@ -158,3 +158,50 @@ impl TryFrom<DeviceConfig> for CanDeviceConfig {
         })
     }
 }
+
+#[derive(Debug, thiserror::Error)]
+pub enum Iec104ConfError {
+    #[error("{0}不能为空")]
+    ValueNotNone(String),
+    #[error("无效的IP:{0}地址")]
+    InvalidIp(String),
+}
+
+/// IEC 104 主站（客户端）连接参数。
+#[derive(Clone)]
+pub struct Iec104DeviceConfig {
+    pub ip: String,
+    pub port: u16,
+    /// 总召唤周期；为 0 表示仅在连接建立后召唤一次
+    pub interval: Duration,
+    /// 连接超时（t0）
+    pub timeout: Duration,
+}
+
+impl TryFrom<DeviceConfig> for Iec104DeviceConfig {
+    type Error = Iec104ConfError;
+
+    fn try_from(value: DeviceConfig) -> Result<Self, Self::Error> {
+        let Some(ip) = value.ip else {
+            return Err(Iec104ConfError::ValueNotNone(String::from("IP")));
+        };
+        let Some(port) = value.port else {
+            return Err(Iec104ConfError::ValueNotNone(String::from("端口")));
+        };
+        let Some(interval) = value.interval else {
+            return Err(Iec104ConfError::ValueNotNone(String::from("间隔时间")));
+        };
+        let Some(timeout) = value.timeout else {
+            return Err(Iec104ConfError::ValueNotNone(String::from("超时时间")));
+        };
+        if ip.parse::<IpAddr>().is_err() {
+            return Err(Iec104ConfError::InvalidIp(ip));
+        }
+        Ok(Self {
+            ip,
+            port,
+            interval: Duration::from_millis(interval),
+            timeout: Duration::from_millis(timeout),
+        })
+    }
+}

@@ -11,7 +11,7 @@ pub enum DoublePointValue {
 
 impl DoublePointValue {
     /// 将底层 FFI 常量转换为对应枚举值，未识别的值归为 `Intermediate`。
-    fn from_raw(raw: ffi::DoublePointValue) -> Self {
+    pub(crate) fn from_raw(raw: ffi::DoublePointValue) -> Self {
         match raw {
             ffi::DoublePointValue_IEC60870_DOUBLE_POINT_OFF => Self::Off,
             ffi::DoublePointValue_IEC60870_DOUBLE_POINT_ON => Self::On,

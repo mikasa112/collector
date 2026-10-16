@@ -12,6 +12,7 @@ use crate::dev::can_bus::SharedCanBus;
 use crate::dev::can_dev::CanDev;
 #[cfg(target_os = "linux")]
 use crate::dev::gpio::GpioDev;
+use crate::dev::iec60870_dev::Iec60870Dev;
 use crate::{
     config,
     dev::{DeviceError, Executable, modbus_dev::ModbusDev},
@@ -112,7 +113,7 @@ fn init_device(
             let _ = can_bus;
             return Err(DeviceError::UnSupportedComType);
         }
-        config::ComType::IEC104 => return Err(DeviceError::UnSupportedComType),
+        config::ComType::IEC104 => Box::new(Iec60870Dev::new(dev)?),
         config::ComType::IEC61850 => return Err(DeviceError::UnSupportedComType),
         #[cfg(target_os = "linux")]
         config::ComType::GPIO => Box::new(GpioDev::new(dev)?),

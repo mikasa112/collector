@@ -46,6 +46,9 @@ impl ModbusDev {
         };
         let configs = match configs {
             config::ProtocolConfigs::Modbus(modbus_configs) => modbus_configs,
+            config::ProtocolConfigs::Iec104(_) => {
+                return Err(DeviceError::UnSupportedComType);
+            }
             #[cfg(target_os = "linux")]
             config::ProtocolConfigs::CAN(_) | config::ProtocolConfigs::GPIO(_) => {
                 return Err(DeviceError::UnSupportedComType);

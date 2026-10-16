@@ -53,6 +53,10 @@ pub struct Client {
     connection_handler: Option<Box<ConnectionCallback>>,
 }
 
+// SAFETY: lib60870-C 的 CS104_Connection 内部自带线程与互斥，发送接口可在任意线程调用；
+// 回调闭包本身要求 `Send`，因此整体移动到其他线程是安全的。
+unsafe impl Send for Client {}
+
 impl Client {
     /// 仅创建连接对象，不建立 TCP 连接。APCI 参数、原发地址和回调都必须在 [`Client::connect`]
     /// 之前设置好，之后修改行为未定义（lib60870-C 文档要求）。
