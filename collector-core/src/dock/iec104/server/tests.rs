@@ -316,3 +316,82 @@ async fn forward_and_commands() {
     center.detach_downlink(DEV);
     let _ = PointValue::Single(false);
 }
+
+/// 北向门禁拒绝时必须回否定确认，且不下发；放行后恢复正常。
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn northbound_gate_rejects_with_negative_confirmation() {
+    use crate::dispatch::{NorthboundGate, register_northbound_gate};
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    const GATED: &str = "iec104-north-gate-it";
+    struct Gate(Arc<AtomicBool>);
+    impl NorthboundGate for Gate {
+        fn allow(&self, dev_id: &str, _: &DownDataPoint) -> bool {
+            dev_id != GATED || self.0.load(Ordering::SeqCst)
+        }
+    }
+    let open = Arc::new(AtomicBool::new(false));
+    register_northbound_gate(Arc::new(Gate(open.clone())));
+
+    let center = data_center();
+    center.ingest(GATED, vec![dp(1, Val::U8(0))]);
+    let (tx, mut down_rx) = mpsc::channel(8);
+    center.attach_downlink(GATED, tx).unwrap();
+
+    let mut cmd = cfg(1, 24577, ServerPointKind::Yk, 10);
+    cmd.source = GATED.into();
+    let port = free_port();
+    let mut options = SlaveOptions::new(port);
+    options.local_address = Some("127.0.0.1".into());
+    let server = Iec104Server {
+        configs: Arc::new(vec![cmd]),
+        options,
+        select_timeout: Duration::from_millis(300),
+        require_select: false,
+    };
+    let shutdown = ShutdownManager::new();
+    tokio::spawn(server.start_inner(shutdown.clone(), false));
+
+    let received: Received = Arc::default();
+    let mut client = Client::new("127.0.0.1", port).unwrap();
+    let sink = received.clone();
+    client.set_asdu_received_handler(move |_, asdu| {
+        sink.lock().unwrap().push(asdu);
+        true
+    });
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while client.connect().is_err() {
+        assert!(Instant::now() < deadline, "连接北向子站超时");
+        sleep(Duration::from_millis(100)).await;
+    }
+    client.start_data_transfer();
+
+    // 门禁关闭：选择和执行都是否定确认，没有任何下发
+    assert!(
+        command_result(&received, || client
+            .send_single_command(1, 24577, true, true, 0)
+            .unwrap())
+        .await
+    );
+    assert!(
+        command_result(&received, || client
+            .send_single_command(1, 24577, true, false, 0)
+            .unwrap())
+        .await
+    );
+    assert!(down_rx.try_recv().is_err());
+
+    // 门禁放行：肯定确认并下发
+    open.store(true, Ordering::SeqCst);
+    assert!(
+        !command_result(&received, || client
+            .send_single_command(1, 24577, true, false, 0)
+            .unwrap())
+        .await
+    );
+    assert_eq!(down_rx.recv().await.unwrap()[0].point, PointRef::Id(10));
+
+    client.disconnect();
+    shutdown.token().cancel();
+    center.detach_downlink(GATED);
+}

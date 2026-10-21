@@ -16,8 +16,8 @@ use collector_core::utils::database::close_database;
 use collector_core::utils::database::{DatabaseConfig, init_database};
 use collector_core::utils::eg25::{Eg25Info, Eg25Poller};
 use collector_core::utils::taos::init_taos;
-use collector_engine::emu::core::Emu;
 use collector_engine::mod_engine::ScriptManager;
+use collector_engine::{coordinator::Coordinator, emu::core::Emu};
 use tokio::sync::{Mutex, watch};
 use tracing::error;
 use tracing_error::ErrorLayer;
@@ -121,6 +121,16 @@ async fn build_dev_manager(
         manager
             .add_device(Arc::new(Mutex::new(Box::new(emu))))
             .await;
+    }
+
+    let coordinator = &config_provider().program().coordinator;
+    if coordinator.enable {
+        match Coordinator::new(coordinator) {
+            Ok(c) => {
+                manager.add_device(Arc::new(Mutex::new(Box::new(c)))).await;
+            }
+            Err(e) => error!("协调控制器配置错误: {}", e),
+        }
     }
 
     manager

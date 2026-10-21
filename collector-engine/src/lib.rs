@@ -2,6 +2,7 @@ use collector_core::core::point::DownDataPoint;
 
 use crate::strategy::StrategyError;
 
+pub mod coordinator;
 pub mod emu;
 pub mod mod_engine;
 pub mod strategy;

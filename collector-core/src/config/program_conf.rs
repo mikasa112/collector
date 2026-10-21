@@ -10,6 +10,7 @@ pub struct Program {
     pub mod_: ModProgram,
     pub north_modbus: NorthModbusProgram,
     pub north_iec104: NorthIec104Program,
+    pub coordinator: CoordinatorProgram,
     pub eg25_gl: Eg25Gl,
     pub mqtt: MqttProgram,
 }
@@ -95,6 +96,59 @@ impl Default for NorthIec104Program {
             require_select: false,
         }
     }
+}
+
+/// 协调控制器（AGC/AVC）：把多台下级控制器合并成一个，北向只面对合并后的虚拟设备。
+/// 说明见 `docs/coordinator.md`。
+#[derive(Deserialize, Debug, Clone)]
+#[serde(default)]
+pub struct CoordinatorProgram {
+    pub enable: bool,
+    /// 虚拟设备 id，北向点表的 `source` 填它
+    pub id: String,
+    /// 聚合、分配的周期
+    pub tick_ms: u64,
+    /// 远方+投入状态下，北向连接全部断开超过该时间后，总设定值清零；0 表示不启用
+    pub upstream_timeout_ms: u64,
+    /// 有功分配死区(kW)：新设定值与上次下发值之差小于它不重复下发
+    pub p_deadband: f64,
+    /// 无功分配死区(kvar)
+    pub q_deadband: f64,
+    pub members: Vec<CoordinatorMember>,
+}
+
+impl Default for CoordinatorProgram {
+    fn default() -> Self {
+        Self {
+            enable: false,
+            id: "agc".to_string(),
+            tick_ms: 500,
+            upstream_timeout_ms: 60_000,
+            p_deadband: 1.0,
+            q_deadband: 1.0,
+            members: Vec::new(),
+        }
+    }
+}
+
+/// 一台下级控制器。各点位都是该设备在 DataCenter 里的点 id，
+/// 设定值、实测值、限值采用同一符号约定（与北向一致）。
+#[derive(Deserialize, Debug, Clone)]
+pub struct CoordinatorMember {
+    /// DataCenter 里的设备 id
+    pub dev: String,
+    /// 额定视在容量(kVA)：既是分配权重，也用于 P²+Q²≤S² 约束
+    pub rated_kva: f64,
+    pub p_set: u32,
+    pub q_set: u32,
+    pub p_actual: u32,
+    pub q_actual: u32,
+    /// 有功上限、下限（由下级上送）
+    pub p_upper: u32,
+    pub p_lower: u32,
+    /// 无功上限、下限（由下级上送）
+    pub q_upper: u32,
+    pub q_lower: u32,
 }
 
 #[derive(Deserialize, Debug, Clone)]

@@ -30,6 +30,26 @@
       "select_timeout_ms": 30000,
       "require_select": false
     },
+    "coordinator": {
+      "enable": false,
+      "id": "agc",
+      "tick_ms": 500,
+      "upstream_timeout_ms": 60000,
+      "p_deadband": 1.0,
+      "q_deadband": 1.0,
+      "members": [
+        {
+          "dev": "ctrl_a", "rated_kva": 500.0,
+          "p_set": 1, "q_set": 2, "p_actual": 3, "q_actual": 4,
+          "p_upper": 5, "p_lower": 6, "q_upper": 7, "q_lower": 8
+        },
+        {
+          "dev": "ctrl_b", "rated_kva": 500.0,
+          "p_set": 1, "q_set": 2, "p_actual": 3, "q_actual": 4,
+          "p_upper": 5, "p_lower": 6, "q_upper": 7, "q_lower": 8
+        }
+      ]
+    },
     "eg25_gl": {
       "enable": false
     },

@@ -115,6 +115,22 @@ impl Iec104Server {
         );
         let slave = Arc::new(slave);
 
+        // 周期更新连接数，供协调控制器判断上级是否失联
+        let conn_task = {
+            let slave = slave.clone();
+            let shutdown = shutdown.clone();
+            tokio::spawn(async move {
+                loop {
+                    super::set_connected_masters(slave.open_connections());
+                    tokio::select! {
+                        _ = shutdown.wait_for_shutdown() => break,
+                        _ = tokio::time::sleep(Duration::from_millis(500)) => {}
+                    }
+                }
+                super::set_connected_masters(-1);
+            })
+        };
+
         // 按设备分组：dev -> point_id -> 配置下标
         let mut by_dev: HashMap<String, HashMap<PointId, Vec<usize>>> = HashMap::new();
         for (i, cfg) in self.configs.iter().enumerate() {
@@ -144,6 +160,7 @@ impl Iec104Server {
         for t in tasks {
             let _ = t.await;
         }
+        let _ = conn_task.await;
         // Slave 析构会停止监听并等待内部线程退出，放到阻塞线程里做
         let _ = tokio::task::spawn_blocking(move || drop(slave)).await;
     }
@@ -370,9 +387,14 @@ impl CommandCtl {
     }
 }
 
+/// 先问北向门禁（如协调控制器的远方/就地）；
 /// EMU 控制源为本地时不允许北向下发（未启用 EMU 时默认放行），运行模式点位除外；
 /// 目标设备没有下行通道时也无法下发。
 async fn can_dispatch(source: &str, down: &DownDataPoint, check_emu_gate: bool) -> bool {
+    if !crate::dispatch::northbound_allows(source, down) {
+        tracing::warn!("[北向IEC104] 设备 {} 当前不接受北向下发", source);
+        return false;
+    }
     if !data_center().has_downlink(source) {
         tracing::warn!("[北向IEC104] 设备 {} 没有下行通道", source);
         return false;
