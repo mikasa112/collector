@@ -8,6 +8,7 @@ use crate::core::point::PointId;
 
 pub mod can_conf;
 pub mod config_provider;
+pub mod dlt645_conf;
 pub mod gpio_conf;
 pub mod iec104_conf;
 pub mod iec61850_conf;
@@ -98,6 +99,15 @@ async fn load_protocol_configs(dev: &Device) -> ProtocolConfigs {
             )
             .await
         }
+        ComType::DLT645 => {
+            load_configs(
+                file,
+                dev_id,
+                dlt645_conf::build_configs,
+                ProtocolConfigs::Dlt645,
+            )
+            .await
+        }
         #[cfg(target_os = "linux")]
         ComType::GPIO => {
             load_configs(
@@ -178,6 +188,8 @@ pub enum ComType {
     IEC61850,
     #[serde(rename = "GPIO")]
     GPIO,
+    #[serde(rename = "DLT645")]
+    DLT645,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -193,6 +205,9 @@ pub struct DeviceConfig {
     pub ip: Option<String>,
     pub port: Option<u16>,
     pub slave: Option<u8>,
+    /// DL/T 645 电表地址(1~12 位十进制数字); 点表里没有单独写地址的点使用它
+    #[serde(default)]
+    pub meter_address: Option<String>,
     pub serial_tty: Option<String>,
     pub baud_rate: Option<u32>,
     pub data_bits: Option<u8>,
@@ -245,6 +260,7 @@ pub enum ProtocolConfigs {
     Modbus(modbus_conf::ModbusConfigs),
     Iec104(iec104_conf::Iec104Configs),
     Iec61850(iec61850_conf::Iec61850Configs),
+    Dlt645(dlt645_conf::Dlt645Configs),
     #[cfg(target_os = "linux")]
     CAN(can_conf::CanConfigs),
     #[cfg(target_os = "linux")]

@@ -263,3 +263,62 @@ impl TryFrom<DeviceConfig> for Iec61850DeviceConfig {
         })
     }
 }
+
+#[derive(Debug, thiserror::Error)]
+pub enum Dlt645ConfError {
+    #[error("{0}不能为空")]
+    ValueNotNone(String),
+    #[error("无效的电表地址: {0}")]
+    InvalidAddress(String),
+    #[error("点 {0} 没有电表地址, 点表和设备配置里都未提供")]
+    NoMeterAddress(String),
+    #[error("点表里没有可用的点")]
+    NoPoints,
+}
+
+/// DL/T 645-2007 主站参数: 一条 RS-485 串口总线, 上面可挂多块电表(地址在点表里区分)。
+#[derive(Clone)]
+pub struct Dlt645DeviceConfig {
+    pub serial_tty: String,
+    pub baudrate: u32,
+    pub data_bits: u8,
+    pub parity: String,
+    pub stop_bits: u8,
+    /// 点表里没写地址的点使用的电表地址
+    pub meter_address: Option<collector_dlt645::MeterAddress>,
+    /// 一整轮轮询的目标周期; 为 0 表示不额外等待, 只保留 `request_interval`
+    pub interval: Duration,
+    /// 单次请求的响应超时
+    pub timeout: Duration,
+    /// 每次请求收到响应(或超时)后的总线空闲间隔
+    pub request_interval: Duration,
+}
+
+impl TryFrom<DeviceConfig> for Dlt645DeviceConfig {
+    type Error = Dlt645ConfError;
+
+    /// 只有串口设备是必填项; 其余缺省取 DL/T 645-2007 的常见值: 2400bps 8E1、响应超时 1200ms、请求间隔 20ms。
+    fn try_from(value: DeviceConfig) -> Result<Self, Self::Error> {
+        let Some(serial_tty) = value.serial_tty else {
+            return Err(Dlt645ConfError::ValueNotNone(String::from("串口设备")));
+        };
+        let meter_address = value
+            .meter_address
+            .map(|s| {
+                collector_dlt645::MeterAddress::parse(s.trim())
+                    .map_err(|e| Dlt645ConfError::InvalidAddress(format!("{s}: {e}")))
+            })
+            .transpose()?;
+        Ok(Self {
+            serial_tty,
+            baudrate: value.baud_rate.unwrap_or(2400),
+            data_bits: value.data_bits.unwrap_or(8),
+            parity: value.parity.unwrap_or_else(|| String::from("E")),
+            stop_bits: value.stop_bits.unwrap_or(1),
+            meter_address,
+            interval: Duration::from_millis(value.interval.unwrap_or(0)),
+            timeout: Duration::from_millis(value.timeout.unwrap_or(1200)),
+            request_interval: Duration::from_millis(value.request_interval.unwrap_or(20)),
+        })
+    }
+}

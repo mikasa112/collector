@@ -1,0 +1,11 @@
+[package]
+name = "collector-dlt645"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+tokio = { workspace = true }
+tokio-util = { workspace = true, features = ["codec"] }
+futures = { workspace = true }
+bytes =  { workspace = true }
+thiserror = { workspace = true }

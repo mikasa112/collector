@@ -90,6 +90,7 @@ fn device(id: &str, port: u16) -> Iec60870Dev {
         ip: Some("127.0.0.1".into()),
         port: Some(port),
         slave: None,
+        meter_address: None,
         serial_tty: None,
         baud_rate: None,
         data_bits: None,

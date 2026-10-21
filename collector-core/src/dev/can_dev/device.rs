@@ -42,6 +42,7 @@ impl CanDev {
             config::ProtocolConfigs::Modbus(_)
             | config::ProtocolConfigs::Iec104(_)
             | config::ProtocolConfigs::Iec61850(_)
+            | config::ProtocolConfigs::Dlt645(_)
             | config::ProtocolConfigs::GPIO(_) => {
                 return Err(DeviceError::UnSupportedComType);
             }

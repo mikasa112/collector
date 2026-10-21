@@ -10,6 +10,7 @@ use crate::config::{ComType, Device};
 use crate::dev::can_bus::SharedCanBus;
 #[cfg(target_os = "linux")]
 use crate::dev::can_dev::CanDev;
+use crate::dev::dlt645_dev::Dlt645Dev;
 #[cfg(target_os = "linux")]
 use crate::dev::gpio::GpioDev;
 use crate::dev::iec60870_dev::Iec60870Dev;
@@ -116,6 +117,7 @@ fn init_device(
         }
         config::ComType::IEC104 => Box::new(Iec60870Dev::new(dev)?),
         config::ComType::IEC61850 => Box::new(Iec61850Dev::new(dev)?),
+        config::ComType::DLT645 => Box::new(Dlt645Dev::new(dev)?),
         #[cfg(target_os = "linux")]
         config::ComType::GPIO => Box::new(GpioDev::new(dev)?),
         #[cfg(not(target_os = "linux"))]

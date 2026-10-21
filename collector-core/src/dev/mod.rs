@@ -3,7 +3,8 @@ use std::fmt;
 use crate::{
     center::DataCenterError,
     dev::dev_config::{
-        CanConfError, Iec104ConfError, Iec61850ConfError, ModbusRtuConfError, ModbusTcpConfError,
+        CanConfError, Dlt645ConfError, Iec104ConfError, Iec61850ConfError, ModbusRtuConfError,
+        ModbusTcpConfError,
     },
 };
 
@@ -11,6 +12,7 @@ pub mod can_bus;
 #[cfg(target_os = "linux")]
 pub(crate) mod can_dev;
 pub(crate) mod dev_config;
+pub(crate) mod dlt645_dev;
 #[cfg(target_os = "linux")]
 pub(crate) mod gpio;
 pub(crate) mod iec60870_dev;
@@ -37,6 +39,8 @@ pub enum DeviceError {
     Iec104ConfigError(#[from] Iec104ConfError),
     #[error("IEC61850配置错误: {0}")]
     Iec61850ConfigError(#[from] Iec61850ConfError),
+    #[error("DL/T 645配置错误: {0}")]
+    Dlt645ConfigError(#[from] Dlt645ConfError),
     #[error("{0}找不到点位表")]
     NotFoundConfigs(String),
     #[error("数据中心错误: {0}")]

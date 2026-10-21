@@ -39,7 +39,8 @@ impl GpioDev {
         let configs = match configs {
             config::ProtocolConfigs::Modbus(_)
             | config::ProtocolConfigs::Iec104(_)
-            | config::ProtocolConfigs::Iec61850(_) => {
+            | config::ProtocolConfigs::Iec61850(_)
+            | config::ProtocolConfigs::Dlt645(_) => {
                 return Err(DeviceError::UnSupportedComType);
             }
             config::ProtocolConfigs::CAN(_) => {

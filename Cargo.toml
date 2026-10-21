@@ -1,7 +1,7 @@
 [workspace]
 resolver = "3"
 
-members = ["collector-api","collector-cmd", "collector-core", "collector-derive", "collector-engine", "collector-iec60870", "collector-iec61850"]
+members = ["collector-api","collector-cmd", "collector-core", "collector-derive", "collector-dlt645", "collector-engine", "collector-iec60870", "collector-iec61850"]
 
 [workspace.dependencies]
 # 序列化
@@ -43,6 +43,9 @@ parking_lot = "0.12.5"
 taos = { version = "*", default-features = false, features = ["ws"] }
 # MQTT
 rumqttc = "0.25.1"
+# tokio串口工具
+tokio-serial = "5.4.5"
+
 
 
 [profile.release]
