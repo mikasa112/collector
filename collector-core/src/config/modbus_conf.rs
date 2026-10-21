@@ -152,7 +152,8 @@ fn expand_row(row: &[Data]) -> Vec<Vec<Data>> {
         return vec![row.to_vec()];
     };
 
-    let steps = row.first()
+    let steps = row
+        .first()
         .and_then(|cell| cell.get_float())
         .zip(row.get(5).and_then(|cell| cell.get_float()))
         .zip(row.get(ID_STEP_COL).and_then(|cell| cell.get_float()))
@@ -179,9 +180,10 @@ fn expand_row(row: &[Data]) -> Vec<Vec<Data>> {
                     continue;
                 }
                 if let Data::String(s) = cell
-                    && s.contains("{n}") {
-                        *cell = Data::String(s.replace("{n}", &n.to_string()));
-                    }
+                    && s.contains("{n}")
+                {
+                    *cell = Data::String(s.replace("{n}", &n.to_string()));
+                }
             }
             new_row
         })

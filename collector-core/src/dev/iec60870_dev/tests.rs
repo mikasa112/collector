@@ -69,7 +69,7 @@ fn point_table() -> Vec<Iec104Config> {
 }
 
 fn slave_points(breaker: bool) -> Vec<SlavePoint> {
-    let p = |ioa, value| SlavePoint { ca: 1, ioa, value };
+    let p = |ioa, value| SlavePoint::new(1, ioa, value);
     vec![
         p(1, PointValue::Single(breaker)),
         p(2, PointValue::Double(DoublePointValue::On)),
@@ -149,11 +149,7 @@ async fn interrogation_spontaneous_and_commands() {
     assert_eq!(value(dev_id, COMM_FAULT_ID), Some(Val::U8(0)));
 
     // 2. 突发上送：子站变位后无需再次总召
-    slave.update(SlavePoint {
-        ca: 1,
-        ioa: 1,
-        value: PointValue::Single(false),
-    });
+    slave.update(SlavePoint::new(1, 1, PointValue::Single(false)));
     wait_until("突发变位入库", || {
         value(dev_id, 1001) == Some(Val::U8(0))
     })

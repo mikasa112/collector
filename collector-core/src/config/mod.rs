@@ -13,6 +13,7 @@ pub mod gpio_conf;
 pub mod iec104_conf;
 pub mod iec61850_conf;
 pub mod modbus_conf;
+pub mod north_iec104_conf;
 pub mod north_modbus_conf;
 pub mod program_conf;
 

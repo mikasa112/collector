@@ -72,7 +72,8 @@ unsafe extern "C" fn apc_handler(
             ctl_val
         };
         let f = ffi::MmsValue_toFloat(v) as f64;
-        st.apc_value_x1000.store((f * 1000.0).round() as i64, Ordering::SeqCst);
+        st.apc_value_x1000
+            .store((f * 1000.0).round() as i64, Ordering::SeqCst);
         st.apc_calls.fetch_add(1, Ordering::SeqCst);
     }
     ffi::ControlHandlerResult_CONTROL_RESULT_OK
@@ -80,7 +81,11 @@ unsafe extern "C" fn apc_handler(
 
 impl TestIed {
     fn start() -> TestIed {
-        let port = TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port();
+        let port = TcpListener::bind("127.0.0.1:0")
+            .unwrap()
+            .local_addr()
+            .unwrap()
+            .port();
         let state = Arc::new(ControlState::default());
         unsafe {
             let model = ffi::IedModel_create(c("testmodel").as_ptr());
@@ -90,7 +95,8 @@ impl TestIed {
             ffi::CDC_ENS_create(c("Health").as_ptr(), lln0 as *mut ffi::ModelNode, 0);
 
             let ttmp1 = ffi::LogicalNode_create(c("TTMP1").as_ptr(), ld);
-            let tmp = ffi::CDC_SAV_create(c("TmpSv").as_ptr(), ttmp1 as *mut ffi::ModelNode, 0, false);
+            let tmp =
+                ffi::CDC_SAV_create(c("TmpSv").as_ptr(), ttmp1 as *mut ffi::ModelNode, 0, false);
             let temp = ffi::ModelNode_getChild(tmp as *mut ffi::ModelNode, c("instMag.f").as_ptr())
                 as *mut ffi::DataAttribute;
             let temp_t = ffi::ModelNode_getChild(tmp as *mut ffi::ModelNode, c("t").as_ptr())
@@ -122,7 +128,9 @@ impl TestIed {
             ffi::DataSetEntry_create(ds, c("GGIO1$ST$Ind1").as_ptr(), -1, std::ptr::null());
             ffi::DataSetEntry_create(ds, c("GGIO1$ST$Ind2$stVal").as_ptr(), -1, std::ptr::null());
 
-            let opts = (ffi::RPT_OPT_SEQ_NUM | ffi::RPT_OPT_TIME_STAMP | ffi::RPT_OPT_REASON_FOR_INCLUSION) as u8;
+            let opts = (ffi::RPT_OPT_SEQ_NUM
+                | ffi::RPT_OPT_TIME_STAMP
+                | ffi::RPT_OPT_REASON_FOR_INCLUSION) as u8;
             for name in ["events01", "events02"] {
                 ffi::ReportControlBlock_create(
                     c(name).as_ptr(),
@@ -145,14 +153,26 @@ impl TestIed {
             ffi::IedServer_start(server, port as i32);
             assert!(ffi::IedServer_isRunning(server), "测试 IED 启动失败");
 
-            TestIed { server, model, temp, temp_t, ind, port, state }
+            TestIed {
+                server,
+                model,
+                temp,
+                temp_t,
+                ind,
+                port,
+                state,
+            }
         }
     }
 
     fn set_temp(&self, v: f32) {
         unsafe {
             ffi::IedServer_lockDataModel(self.server);
-            ffi::IedServer_updateUTCTimeAttributeValue(self.server, self.temp_t, ffi::iec61850_Hal_getTimeInMs());
+            ffi::IedServer_updateUTCTimeAttributeValue(
+                self.server,
+                self.temp_t,
+                ffi::iec61850_Hal_getTimeInMs(),
+            );
             ffi::IedServer_updateFloatAttributeValue(self.server, self.temp, v);
             ffi::IedServer_unlockDataModel(self.server);
         }
@@ -179,13 +199,15 @@ impl Drop for TestIed {
 
 fn connect(ied: &TestIed) -> Connection {
     let conn = Connection::new(ConnectOptions::default()).unwrap();
-    conn.connect("127.0.0.1", ied.port).expect("连接测试 IED 失败");
+    conn.connect("127.0.0.1", ied.port)
+        .expect("连接测试 IED 失败");
     assert!(conn.is_connected());
     conn
 }
 
 fn recv(rx: &mpsc::Receiver<Report>) -> Report {
-    rx.recv_timeout(Duration::from_secs(5)).expect("等待报告超时")
+    rx.recv_timeout(Duration::from_secs(5))
+        .expect("等待报告超时")
 }
 
 #[test]
@@ -196,13 +218,18 @@ fn connect_browse_read() {
 
     assert_eq!(conn.logical_devices().unwrap(), vec![LD.to_string()]);
     let lns = conn.logical_nodes(LD).unwrap();
-    assert!(lns.iter().any(|n| n == "TTMP1") && lns.iter().any(|n| n == "GGIO1"), "{lns:?}");
+    assert!(
+        lns.iter().any(|n| n == "TTMP1") && lns.iter().any(|n| n == "GGIO1"),
+        "{lns:?}"
+    );
     let dos = conn.data_objects(&format!("{LD}/TTMP1")).unwrap();
     assert!(dos.iter().any(|n| n == "TmpSv"), "{dos:?}");
     let das = conn.data_attributes(&format!("{LD}/TTMP1.TmpSv")).unwrap();
     assert!(das.iter().any(|n| n.starts_with("instMag")), "{das:?}");
 
-    let v = conn.read(&format!("{LD}/TTMP1.TmpSv.instMag.f"), Fc::Mx).unwrap();
+    let v = conn
+        .read(&format!("{LD}/TTMP1.TmpSv.instMag.f"), Fc::Mx)
+        .unwrap();
     assert_eq!(v, Value::Float(21.5));
 
     // 整个 DO 读出来是结构体, 其中 q 应被识别为品质。
@@ -214,7 +241,9 @@ fn connect_browse_read() {
     let values = conn.read_data_set(&format!("{LD}/LLN0.events")).unwrap();
     assert_eq!(values.len(), 3);
 
-    let err = conn.read(&format!("{LD}/TTMP1.NoSuch.f"), Fc::Mx).unwrap_err();
+    let err = conn
+        .read(&format!("{LD}/TTMP1.NoSuch.f"), Fc::Mx)
+        .unwrap_err();
     assert!(matches!(err, Error::DataAccess { code: 10, .. }), "{err:?}");
 }
 
@@ -245,7 +274,10 @@ fn report_expands_do_level_members() {
     let ds = format!("{LD}/LLN0.events");
     let layout = Arc::new(conn.prepare_data_set(&ds).unwrap());
     assert_eq!(layout.len(), 3);
-    assert_eq!(layout.member(0).unwrap().to_mms().unwrap(), format!("{LD}/TTMP1$MX$TmpSv"));
+    assert_eq!(
+        layout.member(0).unwrap().to_mms().unwrap(),
+        format!("{LD}/TTMP1$MX$TmpSv")
+    );
 
     let (tx, rx) = mpsc::channel();
     let rcb = format!("{LD}/LLN0.RP.events01");
@@ -258,12 +290,29 @@ fn report_expands_do_level_members() {
     let gi = recv(&rx);
     assert_eq!(gi.entries.len(), 3, "{gi:?}");
     let leaves = flatten(&layout, &gi);
-    assert_eq!(find(&leaves, &format!("{LD}/TTMP1.TmpSv.instMag.f[MX]")), Some(&Value::Float(10.0)));
-    assert!(matches!(find(&leaves, &format!("{LD}/TTMP1.TmpSv.q[MX]")), Some(Value::Quality(q)) if *q == Quality::GOOD));
-    assert!(matches!(find(&leaves, &format!("{LD}/TTMP1.TmpSv.t[MX]")), Some(Value::UtcTime(_))));
-    assert_eq!(find(&leaves, &format!("{LD}/GGIO1.Ind1.stVal[ST]")), Some(&Value::Bool(false)));
-    assert_eq!(find(&leaves, &format!("{LD}/GGIO1.Ind1.q[ST]")).map(|v| matches!(v, Value::Quality(_))), Some(true));
-    assert_eq!(find(&leaves, &format!("{LD}/GGIO1.Ind2.stVal[ST]")), Some(&Value::Bool(false)));
+    assert_eq!(
+        find(&leaves, &format!("{LD}/TTMP1.TmpSv.instMag.f[MX]")),
+        Some(&Value::Float(10.0))
+    );
+    assert!(
+        matches!(find(&leaves, &format!("{LD}/TTMP1.TmpSv.q[MX]")), Some(Value::Quality(q)) if *q == Quality::GOOD)
+    );
+    assert!(matches!(
+        find(&leaves, &format!("{LD}/TTMP1.TmpSv.t[MX]")),
+        Some(Value::UtcTime(_))
+    ));
+    assert_eq!(
+        find(&leaves, &format!("{LD}/GGIO1.Ind1.stVal[ST]")),
+        Some(&Value::Bool(false))
+    );
+    assert_eq!(
+        find(&leaves, &format!("{LD}/GGIO1.Ind1.q[ST]")).map(|v| matches!(v, Value::Quality(_))),
+        Some(true)
+    );
+    assert_eq!(
+        find(&leaves, &format!("{LD}/GGIO1.Ind2.stVal[ST]")),
+        Some(&Value::Bool(false))
+    );
 
     // 数据变化: 只带变化的成员, 原因是 data-change; 展开后仍能按叶子引用取到。
     ied.set_ind(true);
@@ -276,11 +325,17 @@ fn report_expands_do_level_members() {
     };
     assert_eq!(change.entries.len(), 1, "{change:?}");
     assert_eq!(change.entries[0].index, 1);
-    assert_eq!(change.entries[0].reason & REASON_DATA_CHANGE, REASON_DATA_CHANGE);
+    assert_eq!(
+        change.entries[0].reason & REASON_DATA_CHANGE,
+        REASON_DATA_CHANGE
+    );
     assert!(change.timestamp_ms.is_some());
     // 报告自带的 data_ref 是 DO 级成员的 MMS 式引用, 与布局里的成员一致。
     assert_eq!(
-        change.entries[0].data_ref.as_deref().map(|s| s.parse::<ObjectRef>().unwrap()),
+        change.entries[0]
+            .data_ref
+            .as_deref()
+            .map(|s| s.parse::<ObjectRef>().unwrap()),
         layout.member(1).cloned()
     );
 
@@ -300,26 +355,52 @@ fn rcb_wildcard_and_busy_detection() {
 
     // LD 用后缀 `SENSORS`, 通配 `events*` 展开成两个实例。
     let cands = a.resolve_rcbs("SENSORS/LLN0.RP.events*").unwrap();
-    assert_eq!(cands, vec![format!("{LD}/LLN0.RP.events01"), format!("{LD}/LLN0.RP.events02")]);
-    assert_eq!(a.rcb_data_set(&cands[0]).unwrap(), format!("{LD}/LLN0$events"));
+    assert_eq!(
+        cands,
+        vec![
+            format!("{LD}/LLN0.RP.events01"),
+            format!("{LD}/LLN0.RP.events02")
+        ]
+    );
+    assert_eq!(
+        a.rcb_data_set(&cands[0]).unwrap(),
+        format!("{LD}/LLN0$events")
+    );
     // 不带通配: 原样返回(只展开 LD)。
-    assert_eq!(a.resolve_rcbs("SENSORS/LLN0.RP.events02").unwrap(), vec![cands[1].clone()]);
+    assert_eq!(
+        a.resolve_rcbs("SENSORS/LLN0.RP.events02").unwrap(),
+        vec![cands[1].clone()]
+    );
     assert!(a.resolve_rcbs("SENSORS/LLN0.RP.nothere*").is_err());
     assert!(a.resolve_rcbs("SENSORS/LLN0.events").is_err());
 
     let noop: Arc<dyn Fn(&Report) + Send + Sync> = Arc::new(|_| {});
-    let cfg = ReportConfig { general_interrogation: false, ..Default::default() };
+    let cfg = ReportConfig {
+        general_interrogation: false,
+        ..Default::default()
+    };
 
     // 依次占用: a 拿 01, b 发现 01 被占用改拿 02, c 全部被占用。
-    assert_eq!(a.subscribe_report_any(&cands, &cfg, noop.clone()).unwrap(), cands[0]);
-    assert_eq!(b.subscribe_report_any(&cands, &cfg, noop.clone()).unwrap(), cands[1]);
-    let err = c.subscribe_report_any(&cands, &cfg, noop.clone()).unwrap_err();
+    assert_eq!(
+        a.subscribe_report_any(&cands, &cfg, noop.clone()).unwrap(),
+        cands[0]
+    );
+    assert_eq!(
+        b.subscribe_report_any(&cands, &cfg, noop.clone()).unwrap(),
+        cands[1]
+    );
+    let err = c
+        .subscribe_report_any(&cands, &cfg, noop.clone())
+        .unwrap_err();
     assert!(matches!(err, Error::RcbBusy(_)), "{err:?}");
 
     // a 释放后, c 能拿到 01。
     a.unsubscribe_report(&cands[0]).unwrap();
     drop(a);
-    assert_eq!(c.subscribe_report_any(&cands, &cfg, noop).unwrap(), cands[0]);
+    assert_eq!(
+        c.subscribe_report_any(&cands, &cfg, noop).unwrap(),
+        cands[0]
+    );
 }
 
 #[test]
@@ -329,7 +410,9 @@ fn ld_resolution() {
     assert_eq!(conn.resolve_ld("SENSORS").unwrap(), LD);
     assert_eq!(conn.resolve_ld(LD).unwrap(), LD);
     assert!(conn.resolve_ld("NOPE").is_err());
-    let resolved = conn.resolve_ref(&r("SENSORS/GGIO1.Ind1.stVal[ST]")).unwrap();
+    let resolved = conn
+        .resolve_ref(&r("SENSORS/GGIO1.Ind1.stVal[ST]"))
+        .unwrap();
     assert_eq!(resolved, r(&format!("{LD}/GGIO1.Ind1.stVal[ST]")));
     // 点表写短 LD 名时, 同样能读到值。
     assert_eq!(
@@ -350,22 +433,47 @@ fn iso_params_are_accepted_and_validated() {
         remote_tsel: Some("00 01".into()),
         ..Default::default()
     };
-    let conn = Connection::new(ConnectOptions { iso: Some(iso), ..Default::default() }).unwrap();
-    conn.connect("127.0.0.1", ied.port).expect("带 ISO 参数连接失败");
+    let conn = Connection::new(ConnectOptions {
+        iso: Some(iso),
+        ..Default::default()
+    })
+    .unwrap();
+    conn.connect("127.0.0.1", ied.port)
+        .expect("带 ISO 参数连接失败");
     assert!(conn.is_connected());
 
     // 非法参数在创建阶段就报错, 不会等到连接。
     for bad in [
-        IsoParams { remote_tsel: Some("zz".into()), ..Default::default() },
-        IsoParams { remote_ap_title: Some("not an oid".into()), ..Default::default() },
-        IsoParams { remote_psel: Some("00".repeat(17)), ..Default::default() },
+        IsoParams {
+            remote_tsel: Some("zz".into()),
+            ..Default::default()
+        },
+        IsoParams {
+            remote_ap_title: Some("not an oid".into()),
+            ..Default::default()
+        },
+        IsoParams {
+            remote_psel: Some("00".repeat(17)),
+            ..Default::default()
+        },
     ] {
-        let err = Connection::new(ConnectOptions { iso: Some(bad), ..Default::default() }).err();
+        let err = Connection::new(ConnectOptions {
+            iso: Some(bad),
+            ..Default::default()
+        })
+        .err();
         assert!(matches!(err, Some(Error::InvalidArgument(_))), "{err:?}");
     }
     assert_eq!(IsoParams::parse_selector("00:01").unwrap(), vec![0, 1]);
     assert!(IsoParams::default().validate().is_ok());
-    assert!(IsoParams { remote_tsel: Some("zz".into()), ..Default::default() }.validate().is_err());
+    assert!(
+        IsoParams {
+            remote_tsel: Some("zz".into()),
+            ..Default::default()
+        }
+        .validate()
+        .is_err()
+    );
 }
 
 #[test]
@@ -375,19 +483,24 @@ fn control_direct_and_sbo() {
     let opts = ControlOptions::default();
 
     // SPC, direct-normal: ctlVal 为布尔。
-    conn.control(&format!("{LD}/GGIO1.SPCSO1"), 1.0, &opts).expect("SPC 控制失败");
+    conn.control(&format!("{LD}/GGIO1.SPCSO1"), 1.0, &opts)
+        .expect("SPC 控制失败");
     assert_eq!(ied.state.spc_calls.load(Ordering::SeqCst), 1);
     assert!(ied.state.spc_value.load(Ordering::SeqCst));
-    conn.control(&format!("{LD}/GGIO1.SPCSO1"), 0.0, &opts).unwrap();
+    conn.control(&format!("{LD}/GGIO1.SPCSO1"), 0.0, &opts)
+        .unwrap();
     assert!(!ied.state.spc_value.load(Ordering::SeqCst));
 
     // APC, SBO-enhanced: selectWithValue + operate, ctlVal 为浮点。
-    conn.control(&format!("{LD}/GGIO1.AnOut1"), 12.5, &opts).expect("APC 控制失败");
+    conn.control(&format!("{LD}/GGIO1.AnOut1"), 12.5, &opts)
+        .expect("APC 控制失败");
     assert_eq!(ied.state.apc_calls.load(Ordering::SeqCst), 1);
     assert_eq!(ied.state.apc_value_x1000.load(Ordering::SeqCst), 12_500);
 
     // 不存在的控制对象。
-    let err = conn.control(&format!("{LD}/GGIO1.Nope"), 1.0, &opts).unwrap_err();
+    let err = conn
+        .control(&format!("{LD}/GGIO1.Nope"), 1.0, &opts)
+        .unwrap_err();
     assert!(matches!(err, Error::Client { .. }), "{err:?}");
 }
 
@@ -410,5 +523,9 @@ fn close_and_state_callback() {
     }
     assert!(seen.contains(&ConnectionState::Connected), "{seen:?}");
     assert_eq!(seen.last(), Some(&ConnectionState::Closed), "{seen:?}");
-    assert!(conn.read(&format!("{LD}/TTMP1.TmpSv.instMag.f"), Fc::Mx).unwrap_err().is_connection_lost());
+    assert!(
+        conn.read(&format!("{LD}/TTMP1.TmpSv.instMag.f"), Fc::Mx)
+            .unwrap_err()
+            .is_connection_lost()
+    );
 }

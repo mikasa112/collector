@@ -27,7 +27,9 @@ impl FromStr for ObjectRef {
 
     fn from_str(input: &str) -> Result<Self, Error> {
         let s = input.trim();
-        let (ld, rest) = s.split_once('/').ok_or_else(|| bad(s, "缺少 LD 与 LN 之间的 '/'"))?;
+        let (ld, rest) = s
+            .split_once('/')
+            .ok_or_else(|| bad(s, "缺少 LD 与 LN 之间的 '/'"))?;
         if ld.is_empty() {
             return Err(bad(s, "LD 为空"));
         }
@@ -35,7 +37,9 @@ impl FromStr for ObjectRef {
         // 可选的 `[FC]` 后缀
         let (rest, bracket_fc) = match rest.strip_suffix(']') {
             Some(r) => {
-                let (body, fc) = r.rsplit_once('[').ok_or_else(|| bad(s, "FC 方括号不匹配"))?;
+                let (body, fc) = r
+                    .rsplit_once('[')
+                    .ok_or_else(|| bad(s, "FC 方括号不匹配"))?;
                 (body, Some(fc.parse::<Fc>().map_err(|e| bad(s, &e))?))
             }
             None => (rest, None),
@@ -169,7 +173,15 @@ mod tests {
 
     #[test]
     fn rejects_malformed() {
-        for s in ["noslash", "/LN.DO", "LD/", "LD/LN..DO", "LD/LN.DO[XX]", "LD/LN$XX$DO", "LD/LN.DO[MX"] {
+        for s in [
+            "noslash",
+            "/LN.DO",
+            "LD/",
+            "LD/LN..DO",
+            "LD/LN.DO[XX]",
+            "LD/LN$XX$DO",
+            "LD/LN.DO[MX",
+        ] {
             assert!(s.parse::<ObjectRef>().is_err(), "{s} 应当解析失败");
         }
     }

@@ -1,5 +1,5 @@
 use crate::{
-    client::{ControlFailure, Error, conn::cstring, Connection},
+    client::{Connection, ControlFailure, Error, conn::cstring},
     ffi,
 };
 
@@ -84,8 +84,13 @@ impl Connection {
             return Err(control_error(&client));
         }
 
-        let ok = unsafe { ffi::ControlObjectClient_operate(client.0, ctl_val.0, options.oper_time_ms) };
-        if ok { Ok(()) } else { Err(control_error(&client)) }
+        let ok =
+            unsafe { ffi::ControlObjectClient_operate(client.0, ctl_val.0, options.oper_time_ms) };
+        if ok {
+            Ok(())
+        } else {
+            Err(control_error(&client))
+        }
     }
 }
 
@@ -96,7 +101,9 @@ fn new_ctl_value(ctl_type: ffi::MmsType, value: f64) -> Result<*mut ffi::MmsValu
             ffi::MmsType_MMS_INTEGER => ffi::MmsValue_newIntegerFromInt32(value as i32),
             ffi::MmsType_MMS_UNSIGNED => ffi::MmsValue_newUnsignedFromUint32(value as u32),
             // APC 的 ctlVal 是结构体, libiec61850 允许直接传标量并自动包装。
-            ffi::MmsType_MMS_FLOAT | ffi::MmsType_MMS_STRUCTURE => ffi::MmsValue_newFloat(value as f32),
+            ffi::MmsType_MMS_FLOAT | ffi::MmsType_MMS_STRUCTURE => {
+                ffi::MmsValue_newFloat(value as f32)
+            }
             other => {
                 return Err(Error::UnsupportedValue(format!(
                     "ctlVal 的 MMS 类型 {other} 暂不支持"

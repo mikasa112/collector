@@ -20,6 +20,16 @@
       "north_modbus_port": 9092,
       "north_modbus_conf": "./config/北向/MODBUS_REGISTERS.xlsx"
     },
+    "north_iec104": {
+      "enable": false,
+      "host": "0.0.0.0",
+      "port": 2404,
+      "conf": "./config/北向/IEC104_SERVER.xlsx",
+      "max_connections": 0,
+      "multi_master": false,
+      "select_timeout_ms": 30000,
+      "require_select": false
+    },
     "eg25_gl": {
       "enable": false
     },

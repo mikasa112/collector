@@ -1,12 +1,16 @@
 //! IEC 104 子站（服务端）的最小实现，主要用于主站联调与集成测试。
 //!
 //! 行为：
-//! - 收到站总召唤时，先回 ACT_CON，再把已配置的全部点逐个以 COT=响应站召唤上送，最后回 ACT_TERM；
-//! - 收到控制命令（遥控/遥调/步位置）时记录下来并回 ACT_CON；
-//! - [`Slave::update`] 修改点值并以 COT=突发 主动上送。
+//! - 收到站总召唤时，先回 ACT_CON，再把该 CA 下已配置的全部点逐个以 COT=响应站召唤上送，最后回 ACT_TERM；
+//! - 收到控制命令（遥控/遥调/步位置）时：设置了 [`Slave::set_command_handler`] 则由回调决定回
+//!   肯定还是否定 ACT_CON；否则记录下来供 [`Slave::take_commands`] 取走并回肯定 ACT_CON；
+//! - 收到时钟同步命令时回 ACT_CON，但不修改系统时间；
+//! - [`Slave::update`] / [`Slave::update_many`] 修改点值并以 COT=突发 主动上送，
+//!   点可以带品质描述（QDS）与 CP56Time2a 时标。
 
 use std::{
-    ffi::c_void,
+    collections::HashMap,
+    ffi::{CString, c_void},
     os::raw::c_int,
     ptr,
     sync::{Arc, Mutex, MutexGuard},
@@ -32,11 +36,74 @@ pub enum PointValue {
     Short(f32),
 }
 
+/// 品质描述词（QDS）常用位，可按位或后填入 [`SlavePoint::quality`]。
+pub mod quality {
+    pub const GOOD: u8 = 0;
+    pub const OVERFLOW: u8 = 1;
+    pub const BLOCKED: u8 = 16;
+    pub const SUBSTITUTED: u8 = 32;
+    pub const NON_TOPICAL: u8 = 64;
+    pub const INVALID: u8 = 128;
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct SlavePoint {
     pub ca: i32,
     pub ioa: i32,
     pub value: PointValue,
+    /// 品质描述词，见 [`quality`]。
+    pub quality: u8,
+    /// Unix 毫秒时间戳；`Some` 时使用带 CP56Time2a 时标的 ASDU 类型（`*_TB_1`/`*_TD_1`/`*_TE_1`/`*_TF_1`）。
+    pub timestamp_ms: Option<u64>,
+}
+
+impl SlavePoint {
+    /// 品质良好、不带时标的点。
+    pub fn new(ca: i32, ioa: i32, value: PointValue) -> Self {
+        Self {
+            ca,
+            ioa,
+            value,
+            quality: quality::GOOD,
+            timestamp_ms: None,
+        }
+    }
+}
+
+/// 子站创建参数。
+#[derive(Debug, Clone)]
+pub struct SlaveOptions {
+    pub port: u16,
+    /// 监听的本地地址，`None` 表示 0.0.0.0。
+    pub local_address: Option<String>,
+    /// 最大同时连接数，`0` 使用库默认值。
+    pub max_connections: i32,
+    /// 多个主站同时在线时，每个连接各自独立收到突发上送（否则只有一个激活连接收到）。
+    pub multi_master: bool,
+    /// 突发上送队列长度。
+    pub queue_size: i32,
+    pub k: i32,
+    pub w: i32,
+    pub t1: i32,
+    pub t2: i32,
+    pub t3: i32,
+}
+
+impl SlaveOptions {
+    pub fn new(port: u16) -> Self {
+        Self {
+            port,
+            local_address: None,
+            max_connections: 0,
+            multi_master: false,
+            queue_size: 2000,
+            k: 12,
+            w: 8,
+            t1: 15,
+            t2: 10,
+            t3: 20,
+        }
+    }
 }
 
 /// 子站收到的命令值。
@@ -59,10 +126,15 @@ pub struct ReceivedCommand {
     pub value: CommandValue,
 }
 
+/// 命令回调：返回 `true` 回肯定确认，`false` 回否定确认。
+/// 在库的连接线程里同步调用，不能阻塞。
+pub type CommandHandler = Arc<dyn Fn(&ReceivedCommand) -> bool + Send + Sync>;
+
 #[derive(Default)]
 struct SlaveState {
-    points: Mutex<Vec<SlavePoint>>,
+    points: Mutex<HashMap<(i32, i32), SlavePoint>>,
     commands: Mutex<Vec<ReceivedCommand>>,
+    handler: Mutex<Option<CommandHandler>>,
 }
 
 fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -79,29 +151,61 @@ pub struct Slave {
 
 // SAFETY: CS104_Slave 内部有自己的线程与锁，接口可跨线程调用；共享状态由 Mutex 保护。
 unsafe impl Send for Slave {}
+// SAFETY: 同上；`update`/`update_many` 等 `&self` 方法只调用库的线程安全接口。
+unsafe impl Sync for Slave {}
 
 impl Slave {
     /// 创建监听 `port` 的子站（尚未启动），`points` 为总召唤时上送的全部点。
     pub fn new(port: u16, points: Vec<SlavePoint>) -> Result<Self, Error> {
+        Self::with_options(SlaveOptions::new(port), points)
+    }
+
+    pub fn with_options(options: SlaveOptions, points: Vec<SlavePoint>) -> Result<Self, Error> {
         let state = Arc::new(SlaveState {
-            points: Mutex::new(points),
-            commands: Mutex::new(Vec::new()),
+            points: Mutex::new(points.into_iter().map(|p| ((p.ca, p.ioa), p)).collect()),
+            ..Default::default()
         });
         let callback_param = Arc::into_raw(Arc::clone(&state));
-        let inner = unsafe { ffi::CS104_Slave_create(100, 100) };
+        let inner = unsafe { ffi::CS104_Slave_create(options.queue_size, 100) };
         if inner.is_null() {
             unsafe { drop(Arc::from_raw(callback_param)) };
             return Err(Error::ConnectFailed);
         }
         unsafe {
-            ffi::CS104_Slave_setLocalPort(inner, c_int::from(port));
+            ffi::CS104_Slave_setLocalPort(inner, c_int::from(options.port));
+            if let Some(addr) = options
+                .local_address
+                .as_deref()
+                .and_then(|a| CString::new(a).ok())
+            {
+                // 库内部会拷贝字符串
+                ffi::CS104_Slave_setLocalAddress(inner, addr.as_ptr());
+            }
+            if options.max_connections > 0 {
+                ffi::CS104_Slave_setMaxOpenConnections(inner, options.max_connections);
+            }
             ffi::CS104_Slave_setServerMode(
                 inner,
-                ffi::CS104_ServerMode_CS104_MODE_SINGLE_REDUNDANCY_GROUP,
+                if options.multi_master {
+                    ffi::CS104_ServerMode_CS104_MODE_CONNECTION_IS_REDUNDANCY_GROUP
+                } else {
+                    ffi::CS104_ServerMode_CS104_MODE_SINGLE_REDUNDANCY_GROUP
+                },
             );
+            let apci = ffi::CS104_Slave_getConnectionParameters(inner);
+            (*apci).k = options.k;
+            (*apci).w = options.w;
+            (*apci).t1 = options.t1;
+            (*apci).t2 = options.t2;
+            (*apci).t3 = options.t3;
             ffi::CS104_Slave_setInterrogationHandler(
                 inner,
                 Some(interrogation_trampoline),
+                callback_param as *mut c_void,
+            );
+            ffi::CS104_Slave_setClockSyncHandler(
+                inner,
+                Some(clock_sync_trampoline),
                 callback_param as *mut c_void,
             );
             ffi::CS104_Slave_setASDUHandler(
@@ -116,6 +220,14 @@ impl Slave {
             callback_param,
             started: false,
         })
+    }
+
+    /// 设置命令回调。设置后收到的命令不再进入 [`Slave::take_commands`] 队列。
+    pub fn set_command_handler(
+        &self,
+        handler: impl Fn(&ReceivedCommand) -> bool + Send + Sync + 'static,
+    ) {
+        *lock(&self.state.handler) = Some(Arc::new(handler));
     }
 
     pub fn start(&mut self) {
@@ -142,25 +254,28 @@ impl Slave {
 
     /// 修改（不存在则新增）一个点的值，并以 COT=突发 向已激活的主站上送。
     pub fn update(&self, point: SlavePoint) {
+        self.update_many(&[point]);
+    }
+
+    /// 批量修改点并以 COT=突发 上送。
+    pub fn update_many(&self, points: &[SlavePoint]) {
         {
-            let mut points = lock(&self.state.points);
-            match points
-                .iter_mut()
-                .find(|p| p.ca == point.ca && p.ioa == point.ioa)
-            {
-                Some(p) => p.value = point.value,
-                None => points.push(point),
+            let mut stored = lock(&self.state.points);
+            for p in points {
+                stored.insert((p.ca, p.ioa), *p);
             }
         }
         unsafe {
             let params = ffi::CS104_Slave_getAppLayerParameters(self.inner);
-            if let Some(asdu) = build_asdu(
-                params,
-                ffi::CS101_CauseOfTransmission_CS101_COT_SPONTANEOUS,
-                &point,
-            ) {
-                ffi::CS104_Slave_enqueueASDU(self.inner, asdu);
-                ffi::CS101_ASDU_destroy(asdu);
+            for point in points {
+                if let Some(asdu) = build_asdu(
+                    params,
+                    ffi::CS101_CauseOfTransmission_CS101_COT_SPONTANEOUS,
+                    point,
+                ) {
+                    ffi::CS104_Slave_enqueueASDU(self.inner, asdu);
+                    ffi::CS101_ASDU_destroy(asdu);
+                }
             }
         }
     }
@@ -190,29 +305,63 @@ unsafe fn build_asdu(
         if asdu.is_null() {
             return None;
         }
-        let quality = ffi::IEC60870_QUALITY_GOOD as u8;
+        let quality = point.quality;
         let ioa = point.ioa;
-        let io: ffi::InformationObject = match point.value {
-            PointValue::Single(v) => {
+        // 时标对象在 create 内部被拷贝，局部变量即可
+        let mut time = ffi::sCP56Time2a::default();
+        let ts: Option<ffi::CP56Time2a> = point.timestamp_ms.map(|ms| {
+            ffi::CP56Time2a_createFromMsTimestamp(&mut time, ms);
+            &mut time as ffi::CP56Time2a
+        });
+        let io: ffi::InformationObject = match (point.value, ts) {
+            (PointValue::Single(v), None) => {
                 ffi::SinglePointInformation_create(ptr::null_mut(), ioa, v, quality)
                     as ffi::InformationObject
             }
-            PointValue::Double(v) => ffi::DoublePointInformation_create(
+            (PointValue::Single(v), Some(t)) => {
+                ffi::SinglePointWithCP56Time2a_create(ptr::null_mut(), ioa, v, quality, t)
+                    as ffi::InformationObject
+            }
+            (PointValue::Double(v), None) => ffi::DoublePointInformation_create(
                 ptr::null_mut(),
                 ioa,
                 v.to_raw() as ffi::DoublePointValue,
                 quality,
             ) as ffi::InformationObject,
-            PointValue::Normalized(v) => {
+            (PointValue::Double(v), Some(t)) => ffi::DoublePointWithCP56Time2a_create(
+                ptr::null_mut(),
+                ioa,
+                v.to_raw() as ffi::DoublePointValue,
+                quality,
+                t,
+            ) as ffi::InformationObject,
+            (PointValue::Normalized(v), None) => {
                 ffi::MeasuredValueNormalized_create(ptr::null_mut(), ioa, v, quality)
                     as ffi::InformationObject
             }
-            PointValue::Scaled(v) => {
+            (PointValue::Normalized(v), Some(t)) => {
+                ffi::MeasuredValueNormalizedWithCP56Time2a_create(
+                    ptr::null_mut(),
+                    ioa,
+                    v,
+                    quality,
+                    t,
+                ) as ffi::InformationObject
+            }
+            (PointValue::Scaled(v), None) => {
                 ffi::MeasuredValueScaled_create(ptr::null_mut(), ioa, v, quality)
                     as ffi::InformationObject
             }
-            PointValue::Short(v) => {
+            (PointValue::Scaled(v), Some(t)) => {
+                ffi::MeasuredValueScaledWithCP56Time2a_create(ptr::null_mut(), ioa, v, quality, t)
+                    as ffi::InformationObject
+            }
+            (PointValue::Short(v), None) => {
                 ffi::MeasuredValueShort_create(ptr::null_mut(), ioa, v, quality)
+                    as ffi::InformationObject
+            }
+            (PointValue::Short(v), Some(t)) => {
+                ffi::MeasuredValueShortWithCP56Time2a_create(ptr::null_mut(), ioa, v, quality, t)
                     as ffi::InformationObject
             }
         };
@@ -245,11 +394,12 @@ unsafe extern "C" fn interrogation_trampoline(
         let ca = ffi::CS101_ASDU_getCA(asdu);
         ffi::IMasterConnection_sendACT_CON(connection, asdu, false);
         let params = ffi::IMasterConnection_getApplicationLayerParameters(connection);
-        let points: Vec<SlavePoint> = lock(&state.points)
-            .iter()
+        let mut points: Vec<SlavePoint> = lock(&state.points)
+            .values()
             .filter(|p| p.ca == ca)
             .copied()
             .collect();
+        points.sort_by_key(|p| p.ioa);
         for point in &points {
             if let Some(out) = build_asdu(
                 params,
@@ -338,13 +488,34 @@ unsafe extern "C" fn asdu_trampoline(
         let Some((select, value)) = decoded else {
             return false;
         };
-        lock(&state.commands).push(ReceivedCommand {
+        let cmd = ReceivedCommand {
             ca,
             ioa,
             select,
             value,
-        });
-        ffi::IMasterConnection_sendACT_CON(connection, asdu, false);
+        };
+        let handler = lock(&state.handler).clone();
+        let accepted = match handler {
+            // panic 不能穿过 FFI 边界，按拒绝处理
+            Some(h) => {
+                std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| h(&cmd))).unwrap_or(false)
+            }
+            None => {
+                lock(&state.commands).push(cmd);
+                true
+            }
+        };
+        ffi::IMasterConnection_sendACT_CON(connection, asdu, !accepted);
     }
+    true
+}
+
+/// 收到时钟同步命令：只回确认，不修改本机系统时间。
+unsafe extern "C" fn clock_sync_trampoline(
+    _parameter: *mut c_void,
+    _connection: ffi::IMasterConnection,
+    _asdu: ffi::CS101_ASDU,
+    _new_time: ffi::CP56Time2a,
+) -> bool {
     true
 }

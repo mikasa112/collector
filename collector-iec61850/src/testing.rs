@@ -46,7 +46,11 @@ unsafe extern "C" fn ctl_handler(
     unsafe {
         let t = &*(parameter as *const CtlTarget);
         if t.is_bool {
-            ffi::IedServer_updateBooleanAttributeValue(t.server, t.feedback, ffi::MmsValue_getBoolean(ctl_val));
+            ffi::IedServer_updateBooleanAttributeValue(
+                t.server,
+                t.feedback,
+                ffi::MmsValue_getBoolean(ctl_val),
+            );
         } else {
             // APC 的 ctlVal 是 AnalogueValue 结构体 {f}
             let v = if ffi::MmsValue_getType(ctl_val) == ffi::MmsType_MMS_STRUCTURE {
@@ -54,7 +58,11 @@ unsafe extern "C" fn ctl_handler(
             } else {
                 ctl_val
             };
-            ffi::IedServer_updateFloatAttributeValue(t.server, t.feedback, ffi::MmsValue_toFloat(v));
+            ffi::IedServer_updateFloatAttributeValue(
+                t.server,
+                t.feedback,
+                ffi::MmsValue_toFloat(v),
+            );
         }
         t.calls.fetch_add(1, Ordering::SeqCst);
     }
@@ -81,7 +89,11 @@ unsafe impl Send for PcsSimulator {}
 impl PcsSimulator {
     /// 在随机空闲端口上启动。
     pub fn start() -> PcsSimulator {
-        let port = TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port();
+        let port = TcpListener::bind("127.0.0.1:0")
+            .unwrap()
+            .local_addr()
+            .unwrap()
+            .port();
         Self::start_on(port)
     }
 
@@ -90,7 +102,12 @@ impl PcsSimulator {
         let guard = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
         unsafe {
             let server = ffi::IedServer_create(&raw mut ffi::pcs);
-            let mut sim = PcsSimulator { server, port, targets: Vec::new(), _guard: guard };
+            let mut sim = PcsSimulator {
+                server,
+                port,
+                targets: Vec::new(),
+                _guard: guard,
+            };
             sim.add_target("ctlGAPC1.SPCSO6", "stVal", true);
             sim.add_target("setGAPC1.StrVal6", "mxVal.f", false);
             ffi::IedServer_start(server, port as i32);
@@ -101,7 +118,10 @@ impl PcsSimulator {
 
     fn node(&self, path: &str) -> *mut ffi::ModelNode {
         let n = unsafe {
-            ffi::IedModel_getModelNodeByObjectReference(&raw mut ffi::pcs, c(&format!("{PCS_LD}/{path}")).as_ptr())
+            ffi::IedModel_getModelNodeByObjectReference(
+                &raw mut ffi::pcs,
+                c(&format!("{PCS_LD}/{path}")).as_ptr(),
+            )
         };
         assert!(!n.is_null(), "模型里没有 {path}");
         n
@@ -109,10 +129,20 @@ impl PcsSimulator {
 
     fn add_target(&mut self, ctl: &str, feedback: &str, is_bool: bool) {
         let fb = self.node(&format!("{ctl}.{feedback}")) as *mut ffi::DataAttribute;
-        let mut t = Box::new(CtlTarget { server: self.server, feedback: fb, is_bool, calls: AtomicI64::new(0) });
+        let mut t = Box::new(CtlTarget {
+            server: self.server,
+            feedback: fb,
+            is_bool,
+            calls: AtomicI64::new(0),
+        });
         let param = &mut *t as *mut CtlTarget as *mut c_void;
         unsafe {
-            ffi::IedServer_setControlHandler(self.server, self.node(ctl) as *mut ffi::DataObject, Some(ctl_handler), param)
+            ffi::IedServer_setControlHandler(
+                self.server,
+                self.node(ctl) as *mut ffi::DataObject,
+                Some(ctl_handler),
+                param,
+            )
         };
         self.targets.push(t);
     }

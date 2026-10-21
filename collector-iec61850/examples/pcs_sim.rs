@@ -15,7 +15,9 @@ use std::{thread::sleep, time::Duration};
 use collector_iec61850::testing::{CTL_APC, CTL_SPC, PcsSimulator};
 
 fn main() {
-    let port: u16 = std::env::args().nth(1).map_or(9102, |p| p.parse().expect("端口必须是数字"));
+    let port: u16 = std::env::args()
+        .nth(1)
+        .map_or(9102, |p| p.parse().expect("端口必须是数字"));
     let sim = PcsSimulator::start_on(port);
     sim.set_float("MMXU1.PPV.phsAB.cVal.mag.f", 380.0);
     sim.set_float("MMXU1.PPV.phsBC.cVal.mag.f", 381.5);
@@ -26,7 +28,10 @@ fn main() {
     let (mut tick, mut last) = (0u32, (0, 0));
     loop {
         tick += 1;
-        sim.set_float("MMXU1.TotW.mag.f", 100.0 + f32::from((tick % 20) as u8) * 5.0);
+        sim.set_float(
+            "MMXU1.TotW.mag.f",
+            100.0 + f32::from((tick % 20) as u8) * 5.0,
+        );
         sim.set_bool("staGGIO1.Ind3.stVal", tick % 2 == 0);
         let calls = (sim.calls(CTL_SPC), sim.calls(CTL_APC));
         if calls != last {

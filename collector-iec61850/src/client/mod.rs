@@ -11,7 +11,7 @@ pub use conn::{
     TRG_DATA_CHANGED, TRG_DATA_UPDATE, TRG_GI, TRG_INTEGRITY, TRG_QUALITY_CHANGED,
 };
 pub use control::ControlOptions;
+pub use error::{ControlFailure, Error};
 pub use layout::DataSetLayout;
 pub use reference::ObjectRef;
-pub use error::{ControlFailure, Error};
 pub use value::{Dbpos, Fc, Quality, TypeSpec, Value};

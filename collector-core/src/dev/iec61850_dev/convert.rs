@@ -123,9 +123,15 @@ mod tests {
     fn yx_from_bool_dbpos_and_integers() {
         let c = cfg(PointKind::Yx, 1.0, 0.0);
         assert_eq!(decode_value(&c, &Value::Bool(true)), Some(Val::U8(1)));
-        assert_eq!(decode_value(&c, &Value::Dbpos(Dbpos::Off)), Some(Val::U8(1)));
+        assert_eq!(
+            decode_value(&c, &Value::Dbpos(Dbpos::Off)),
+            Some(Val::U8(1))
+        );
         assert_eq!(decode_value(&c, &Value::Dbpos(Dbpos::On)), Some(Val::U8(2)));
-        assert_eq!(decode_value(&c, &Value::Dbpos(Dbpos::BadState)), Some(Val::U8(3)));
+        assert_eq!(
+            decode_value(&c, &Value::Dbpos(Dbpos::BadState)),
+            Some(Val::U8(3))
+        );
         assert_eq!(decode_value(&c, &Value::Int(5)), Some(Val::U8(5)));
         assert_eq!(decode_value(&c, &Value::Uint(255)), Some(Val::U8(255)));
         // 超出 u8 的枚举值丢弃, 而不是截断成错误的状态
@@ -147,7 +153,10 @@ mod tests {
         // libiec61850 把 32 位浮点转成 f64 后就是这个值
         let widened = f64::from(220.1_f32);
         assert_ne!(widened, 220.1);
-        assert_eq!(decode_value(&c, &Value::Float(widened)), Some(Val::F64(220.1)));
+        assert_eq!(
+            decode_value(&c, &Value::Float(widened)),
+            Some(Val::F64(220.1))
+        );
         // 真正的 64 位值不被改动
         assert_eq!(
             decode_value(&c, &Value::Float(0.123_456_789_012_345_6)),
@@ -179,13 +188,19 @@ mod tests {
         let detail = 0b100 | (1 << 7) | (1 << 11);
         assert_eq!(quality_code(Quality(detail | 2)), detail | 1);
         let c = cfg(PointKind::Yq, 1.0, 0.0);
-        assert_eq!(decode_value(&c, &Value::Quality(Quality(2))), Some(Val::U16(1)));
+        assert_eq!(
+            decode_value(&c, &Value::Quality(Quality(2))),
+            Some(Val::U16(1))
+        );
     }
 
     #[test]
     fn time_is_milliseconds_as_float() {
         let c = cfg(PointKind::Ytime, 1.0, 0.0);
-        assert_eq!(decode_value(&c, &Value::UtcTime(1_792_131_767_264)), Some(Val::F64(1_792_131_767_264.0)));
+        assert_eq!(
+            decode_value(&c, &Value::UtcTime(1_792_131_767_264)),
+            Some(Val::F64(1_792_131_767_264.0))
+        );
     }
 
     #[test]

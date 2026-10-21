@@ -110,7 +110,10 @@ impl Iec61850Runner {
         control: &ControlIndex,
     ) -> anyhow::Result<()> {
         let (id, configs, interval) = (self.id.clone(), self.configs.clone(), self.config.interval);
-        let established = run_blocking(stop_rx, move || Session::establish(conn, &id, &configs, interval)).await?;
+        let established = run_blocking(stop_rx, move || {
+            Session::establish(conn, &id, &configs, interval)
+        })
+        .await?;
         let Some(session) = established else {
             return Ok(());
         };
@@ -131,7 +134,10 @@ impl Iec61850Runner {
     ) -> anyhow::Result<()> {
         self.state.store(&self.id, LifecycleState::Running);
         self.set_comm_fault(false);
-        info!("[{}] 已建立会话: 订阅 {} 个报告控制块", self.id, session.subscribed);
+        info!(
+            "[{}] 已建立会话: 订阅 {} 个报告控制块",
+            self.id, session.subscribed
+        );
 
         // 轮询类来源先读一遍(报告类来源由使能时的总召负责)
         let s = session.clone();
@@ -142,7 +148,8 @@ impl Iec61850Runner {
 
         let mut health = time::interval(HEALTH_CHECK_INTERVAL);
         let start = time::Instant::now();
-        let mut due: Vec<time::Instant> = session.schedule.iter().map(|s| start + s.every).collect();
+        let mut due: Vec<time::Instant> =
+            session.schedule.iter().map(|s| start + s.every).collect();
 
         loop {
             let next_due = due.iter().copied().min();
@@ -211,7 +218,10 @@ impl Iec61850Runner {
         stop_rx: &mut watch::Receiver<bool>,
     ) -> anyhow::Result<bool> {
         let Some(cfg) = control.resolve(&entry.point) else {
-            warn!("[{}] 未找到控制点配置, 忽略IEC61850下发: {:?}", self.id, entry.point);
+            warn!(
+                "[{}] 未找到控制点配置, 忽略IEC61850下发: {:?}",
+                self.id, entry.point
+            );
             return Ok(false);
         };
         let raw = match command_value(cfg, &entry.value) {
@@ -233,7 +243,12 @@ impl Iec61850Runner {
             None => Ok(true),
             Some(Err(err)) if err.is_connection_lost() => Err(err.into()),
             Some(Err(err)) => {
-                warn!("[{}] IEC61850下发失败 {}: {}", self.id, cfg.key, describe(&err));
+                warn!(
+                    "[{}] IEC61850下发失败 {}: {}",
+                    self.id,
+                    cfg.key,
+                    describe(&err)
+                );
                 Ok(false)
             }
             Some(Ok((before, feedback))) => {
@@ -259,7 +274,12 @@ impl Iec61850Runner {
         let mut backoff = Backoff::new(Duration::from_millis(500), Duration::from_secs(10));
         let mut stop_rx = self.stop_rx.clone();
         let control = ControlIndex::build(&self.configs);
-        if !self.configs.points.iter().any(|p| p.enable && p.kind.is_monitor()) {
+        if !self
+            .configs
+            .points
+            .iter()
+            .any(|p| p.enable && p.kind.is_monitor())
+        {
             warn!("[{}] 点表中没有启用的监视点", self.id);
         }
 

@@ -22,7 +22,9 @@ use collector_iec61850::{
 
 fn main() -> anyhow::Result<()> {
     let mut args = std::env::args().skip(1);
-    let host = args.next().ok_or_else(|| anyhow::anyhow!("用法: probe <host> [选项], 见源码注释"))?;
+    let host = args
+        .next()
+        .ok_or_else(|| anyhow::anyhow!("用法: probe <host> [选项], 见源码注释"))?;
     let (mut port, mut secs) = (102u16, 30u64);
     let mut iso = IsoParams::default();
     let (mut browse, mut reads, mut rcbs) = (false, Vec::new(), Vec::new());
@@ -44,7 +46,10 @@ fn main() -> anyhow::Result<()> {
     }
 
     let has_iso = iso != IsoParams::default();
-    let conn = Connection::new(ConnectOptions { iso: has_iso.then_some(iso), ..Default::default() })?;
+    let conn = Connection::new(ConnectOptions {
+        iso: has_iso.then_some(iso),
+        ..Default::default()
+    })?;
     conn.on_state_changed(|s| println!("[state] {s:?}"));
     conn.connect(&host, port)?;
     println!("已连接 {host}:{port}");
@@ -55,13 +60,19 @@ fn main() -> anyhow::Result<()> {
         for ld in &lds {
             for ln in conn.logical_nodes(ld)? {
                 let dos = conn.data_objects(&format!("{ld}/{ln}")).unwrap_or_default();
-                println!("  {ld}/{ln}: {} 个 DO {:?}", dos.len(), &dos[..dos.len().min(6)]);
+                println!(
+                    "  {ld}/{ln}: {} 个 DO {:?}",
+                    dos.len(),
+                    &dos[..dos.len().min(6)]
+                );
             }
         }
     }
 
     for item in &reads {
-        let (r, fc) = item.rsplit_once(':').ok_or_else(|| anyhow::anyhow!("--read 格式为 <ref>:<FC>"))?;
+        let (r, fc) = item
+            .rsplit_once(':')
+            .ok_or_else(|| anyhow::anyhow!("--read 格式为 <ref>:<FC>"))?;
         let r = conn.resolve_ref(&r.parse::<ObjectRef>()?)?;
         let fc: Fc = fc.parse().map_err(|e: String| anyhow::anyhow!(e))?;
         println!("read {r} [{fc:?}] = {:?}", conn.read(&r.to_dotted(), fc));
@@ -83,14 +94,22 @@ fn main() -> anyhow::Result<()> {
             &candidates,
             &cfg,
             Arc::new(move |rep: &Report| {
-                let leaves: Vec<_> = rep.entries.iter().flat_map(|e| l.leaves(e.index, &e.value)).collect();
+                let leaves: Vec<_> = rep
+                    .entries
+                    .iter()
+                    .flat_map(|e| l.leaves(e.index, &e.value))
+                    .collect();
                 println!(
                     "[report] {} seq={:?} {} 个成员 -> {} 个叶子, 前几项: {:?}",
                     rep.rcb_ref,
                     rep.seq_num,
                     rep.entries.len(),
                     leaves.len(),
-                    leaves.iter().take(3).map(|(k, v)| format!("{k}={v:?}")).collect::<Vec<_>>()
+                    leaves
+                        .iter()
+                        .take(3)
+                        .map(|(k, v)| format!("{k}={v:?}"))
+                        .collect::<Vec<_>>()
                 );
             }),
         )?;

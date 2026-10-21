@@ -11,7 +11,7 @@ use std::{thread, time::Duration};
 use collector_iec60870::{DoublePointValue, PointValue, Slave, SlavePoint};
 
 fn p(ioa: i32, value: PointValue) -> SlavePoint {
-    SlavePoint { ca: 1, ioa, value }
+    SlavePoint::new(1, ioa, value)
 }
 
 fn main() {

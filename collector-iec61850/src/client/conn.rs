@@ -91,7 +91,10 @@ impl IsoParams {
     }
 
     fn normalize_ap_title(s: &str) -> Result<CString, Error> {
-        let dotted = s.split(|c: char| c == '.' || c.is_whitespace()).filter(|p| !p.is_empty()).collect::<Vec<_>>();
+        let dotted = s
+            .split(|c: char| c == '.' || c.is_whitespace())
+            .filter(|p| !p.is_empty())
+            .collect::<Vec<_>>();
         if dotted.len() < 2 || dotted.iter().any(|p| p.parse::<u32>().is_err()) {
             return Err(Error::InvalidArgument(format!("无效的 AP-Title: {s:?}")));
         }
@@ -104,9 +107,15 @@ impl IsoParams {
         tsel: &Option<String>,
     ) -> Result<(ffi::PSelector, ffi::SSelector, ffi::TSelector), Error> {
         fn get(v: &Option<String>, default: &[u8]) -> Result<Vec<u8>, Error> {
-            v.as_deref().map(IsoParams::parse_selector).unwrap_or_else(|| Ok(default.to_vec()))
+            v.as_deref()
+                .map(IsoParams::parse_selector)
+                .unwrap_or_else(|| Ok(default.to_vec()))
         }
-        let (p, s, t) = (get(psel, DEFAULT_PSEL)?, get(ssel, DEFAULT_SSEL)?, get(tsel, DEFAULT_TSEL)?);
+        let (p, s, t) = (
+            get(psel, DEFAULT_PSEL)?,
+            get(ssel, DEFAULT_SSEL)?,
+            get(tsel, DEFAULT_TSEL)?,
+        );
         let mut psel = ffi::PSelector::default();
         let mut ssel = ffi::SSelector::default();
         let mut tsel = ffi::TSelector::default();
@@ -131,7 +140,10 @@ impl IsoParams {
     pub fn validate(&self) -> Result<(), Error> {
         Self::selectors(&self.remote_psel, &self.remote_ssel, &self.remote_tsel)?;
         Self::selectors(&self.local_psel, &self.local_ssel, &self.local_tsel)?;
-        for ap in [&self.remote_ap_title, &self.local_ap_title].into_iter().flatten() {
+        for ap in [&self.remote_ap_title, &self.local_ap_title]
+            .into_iter()
+            .flatten()
+        {
             Self::normalize_ap_title(ap)?;
         }
         Ok(())
@@ -141,8 +153,16 @@ impl IsoParams {
     fn apply(&self, iso: ffi::IsoConnectionParameters) -> Result<(), Error> {
         let remote = Self::selectors(&self.remote_psel, &self.remote_ssel, &self.remote_tsel)?;
         let local = Self::selectors(&self.local_psel, &self.local_ssel, &self.local_tsel)?;
-        let remote_ap = self.remote_ap_title.as_deref().map(Self::normalize_ap_title).transpose()?;
-        let local_ap = self.local_ap_title.as_deref().map(Self::normalize_ap_title).transpose()?;
+        let remote_ap = self
+            .remote_ap_title
+            .as_deref()
+            .map(Self::normalize_ap_title)
+            .transpose()?;
+        let local_ap = self
+            .local_ap_title
+            .as_deref()
+            .map(Self::normalize_ap_title)
+            .transpose()?;
         unsafe {
             ffi::IsoConnectionParameters_setRemoteAddresses(iso, remote.0, remote.1, remote.2);
             ffi::IsoConnectionParameters_setLocalAddresses(iso, local.0, local.1, local.2);
@@ -356,7 +376,9 @@ impl Connection {
         };
         if let Some(iso) = &options.iso {
             let params = unsafe {
-                ffi::MmsConnection_getIsoConnectionParameters(ffi::IedConnection_getMmsConnection(inner))
+                ffi::MmsConnection_getIsoConnectionParameters(ffi::IedConnection_getMmsConnection(
+                    inner,
+                ))
             };
             if params.is_null() {
                 return Err(Error::CreateFailed);
@@ -424,8 +446,9 @@ impl Connection {
     pub fn logical_nodes(&self, ld: &str) -> Result<Vec<String>, Error> {
         let ld = cstring(ld)?;
         let mut err = ffi::IedClientError_IED_ERROR_OK;
-        let list =
-            unsafe { ffi::IedConnection_getLogicalDeviceDirectory(self.inner, &mut err, ld.as_ptr()) };
+        let list = unsafe {
+            ffi::IedConnection_getLogicalDeviceDirectory(self.inner, &mut err, ld.as_ptr())
+        };
         Error::check(err)?;
         Ok(unsafe { take_list(list) })
     }
@@ -470,7 +493,9 @@ impl Connection {
         let hits: Vec<&String> = lds.iter().filter(|l| l.ends_with(ld)).collect();
         match hits.as_slice() {
             [one] => Ok((*one).clone()),
-            [] => Err(Error::Reference(format!("设备上没有 LD {ld:?}, 现有: {lds:?}"))),
+            [] => Err(Error::Reference(format!(
+                "设备上没有 LD {ld:?}, 现有: {lds:?}"
+            ))),
             many => Err(Error::Reference(format!("LD {ld:?} 匹配到多个: {many:?}"))),
         }
     }
@@ -482,17 +507,23 @@ impl Connection {
 
     /// 读取一个对象的类型结构, 引用必须带 FC。
     pub fn type_spec(&self, r: &ObjectRef) -> Result<TypeSpec, Error> {
-        let fc = r
-            .fc
-            .ok_or_else(|| Error::Reference(format!("{r} 缺少 FC, 无法查询类型")))?;
+        let fc =
+            r.fc.ok_or_else(|| Error::Reference(format!("{r} 缺少 FC, 无法查询类型")))?;
         let c_ref = cstring(&r.to_dotted())?;
         let mut err = ffi::IedClientError_IED_ERROR_OK;
         let spec = unsafe {
-            ffi::IedConnection_getVariableSpecification(self.inner, &mut err, c_ref.as_ptr(), fc.raw())
+            ffi::IedConnection_getVariableSpecification(
+                self.inner,
+                &mut err,
+                c_ref.as_ptr(),
+                fc.raw(),
+            )
         };
         Error::check(err)?;
         if spec.is_null() {
-            return Err(Error::from_code(ffi::IedClientError_IED_ERROR_OBJECT_DOES_NOT_EXIST));
+            return Err(Error::from_code(
+                ffi::IedClientError_IED_ERROR_OBJECT_DOES_NOT_EXIST,
+            ));
         }
         let out = unsafe { TypeSpec::from_mms(spec) };
         unsafe { ffi::MmsVariableSpecification_destroy(spec) };
@@ -504,10 +535,18 @@ impl Connection {
         let c_ref = cstring(data_set_ref)?;
         let mut err = ffi::IedClientError_IED_ERROR_OK;
         let list = unsafe {
-            ffi::IedConnection_getDataSetDirectory(self.inner, &mut err, c_ref.as_ptr(), ptr::null_mut())
+            ffi::IedConnection_getDataSetDirectory(
+                self.inner,
+                &mut err,
+                c_ref.as_ptr(),
+                ptr::null_mut(),
+            )
         };
         Error::check(err)?;
-        unsafe { take_list(list) }.iter().map(|m| m.parse()).collect()
+        unsafe { take_list(list) }
+            .iter()
+            .map(|m| m.parse())
+            .collect()
     }
 
     /// 准备好一个数据集的布局(成员引用 + 类型结构), 供报告回调里展开 DO 级成员。
@@ -530,7 +569,8 @@ impl Connection {
     pub fn read(&self, reference: &str, fc: Fc) -> Result<Value, Error> {
         let r = cstring(reference)?;
         let mut err = ffi::IedClientError_IED_ERROR_OK;
-        let v = unsafe { ffi::IedConnection_readObject(self.inner, &mut err, r.as_ptr(), fc.raw()) };
+        let v =
+            unsafe { ffi::IedConnection_readObject(self.inner, &mut err, r.as_ptr(), fc.raw()) };
         Error::check(err)?;
         let value = unsafe { Value::from_mms(v) };
         if !v.is_null() {
@@ -582,8 +622,9 @@ impl Connection {
                 unsafe { ffi::MmsValue_newIntegerFromInt32(v) }
             }
             Value::Uint(v) => {
-                let v = u32::try_from(*v)
-                    .map_err(|_| Error::InvalidArgument(format!("无符号整数超出 32 位范围: {v}")))?;
+                let v = u32::try_from(*v).map_err(|_| {
+                    Error::InvalidArgument(format!("无符号整数超出 32 位范围: {v}"))
+                })?;
                 unsafe { ffi::MmsValue_newUnsignedFromUint32(v) }
             }
             Value::Float(v) => unsafe { ffi::MmsValue_newFloat(*v as f32) },
@@ -668,8 +709,15 @@ impl Connection {
         let norm = pattern.trim().replace('$', ".");
         let (head, kind, name) = [".RP.", ".BR."]
             .iter()
-            .find_map(|k| norm.split_once(k).map(|(h, n)| (h.to_string(), &k[1..3], n.to_string())))
-            .ok_or_else(|| Error::Reference(format!("{pattern:?} 不是 RCB 引用, 期望 LD/LN.RP.name 或 LD/LN.BR.name")))?;
+            .find_map(|k| {
+                norm.split_once(k)
+                    .map(|(h, n)| (h.to_string(), &k[1..3], n.to_string()))
+            })
+            .ok_or_else(|| {
+                Error::Reference(format!(
+                    "{pattern:?} 不是 RCB 引用, 期望 LD/LN.RP.name 或 LD/LN.BR.name"
+                ))
+            })?;
         let (ld, ln) = head
             .split_once('/')
             .ok_or_else(|| Error::Reference(format!("{pattern:?} 缺少 '/'")))?;
@@ -695,9 +743,14 @@ impl Connection {
             .collect();
         names.sort();
         if names.is_empty() {
-            return Err(Error::Reference(format!("设备上没有匹配 {pattern:?} 的 RCB")));
+            return Err(Error::Reference(format!(
+                "设备上没有匹配 {pattern:?} 的 RCB"
+            )));
         }
-        Ok(names.into_iter().map(|n| format!("{head}.{kind}.{n}")).collect())
+        Ok(names
+            .into_iter()
+            .map(|n| format!("{head}.{kind}.{n}"))
+            .collect())
     }
 
     /// 依次尝试候选 RCB, 订阅第一个没被其他客户端占用的, 返回选中的 RCB 引用。
@@ -915,7 +968,9 @@ mod tests {
 
     fn iso_of(conn: &Connection) -> ffi::sIsoConnectionParameters {
         unsafe {
-            let p = ffi::MmsConnection_getIsoConnectionParameters(ffi::IedConnection_getMmsConnection(conn.inner));
+            let p = ffi::MmsConnection_getIsoConnectionParameters(
+                ffi::IedConnection_getMmsConnection(conn.inner),
+            );
             *p
         }
     }
@@ -931,17 +986,36 @@ mod tests {
             local_ae_qualifier: Some(7), // 没给 AP-Title, 不应生效
             ..Default::default()
         };
-        let conn = Connection::new(ConnectOptions { iso: Some(iso), ..Default::default() }).unwrap();
+        let conn = Connection::new(ConnectOptions {
+            iso: Some(iso),
+            ..Default::default()
+        })
+        .unwrap();
         let p = iso_of(&conn);
         // OID 1.3.9999.106 的 BER: 2B CE 0F 6A
-        assert_eq!(&p.remoteApTitle[..p.remoteApTitleLen as usize], &[0x2B, 0xCE, 0x0F, 0x6A]);
+        assert_eq!(
+            &p.remoteApTitle[..p.remoteApTitleLen as usize],
+            &[0x2B, 0xCE, 0x0F, 0x6A]
+        );
         assert_eq!(p.remoteAEQualifier, 33);
-        assert_eq!((p.remotePSelector.size, &p.remotePSelector.value[..4]), (4, &[0, 0, 0, 1][..]));
-        assert_eq!((p.remoteSSelector.size, &p.remoteSSelector.value[..2]), (2, &[0, 2][..]));
-        assert_eq!((p.remoteTSelector.size, &p.remoteTSelector.value[..2]), (2, &[0, 3][..]));
+        assert_eq!(
+            (p.remotePSelector.size, &p.remotePSelector.value[..4]),
+            (4, &[0, 0, 0, 1][..])
+        );
+        assert_eq!(
+            (p.remoteSSelector.size, &p.remoteSSelector.value[..2]),
+            (2, &[0, 2][..])
+        );
+        assert_eq!(
+            (p.remoteTSelector.size, &p.remoteTSelector.value[..2]),
+            (2, &[0, 3][..])
+        );
         // 本机侧保持库默认
         assert_eq!(p.localAEQualifier, 12);
-        assert_eq!((p.localTSelector.size, &p.localTSelector.value[..2]), (2, &[0, 1][..]));
+        assert_eq!(
+            (p.localTSelector.size, &p.localTSelector.value[..2]),
+            (2, &[0, 1][..])
+        );
     }
 
     #[test]

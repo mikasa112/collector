@@ -152,8 +152,17 @@ const SHARED_SYMBOL_HEADERS: &[&str] = &[
     "src/common/inc/linked_list.h",
 ];
 const SHARED_SYMBOL_PREFIXES: &[&str] = &[
-    "Hal_", "Handleset_", "LinkedList_", "Memory_", "Semaphore_", "ServerSocket_", "Socket_",
-    "TcpServerSocket_", "TcpSocket_", "Thread_", "UdpSocket_",
+    "Hal_",
+    "Handleset_",
+    "LinkedList_",
+    "Memory_",
+    "Semaphore_",
+    "ServerSocket_",
+    "Socket_",
+    "TcpServerSocket_",
+    "TcpSocket_",
+    "Thread_",
+    "UdpSocket_",
 ];
 /// 改名后的符号在 Rust 绑定里同样带这个前缀, 如 `iec61850_LinkedList_getNext`。
 const SYMBOL_RENAME_PREFIX: &str = "iec61850_";
@@ -167,7 +176,9 @@ const PCS_MODEL_PREFIX: &str = "pcs";
 
 fn main() {
     if env::var("CARGO_CFG_TARGET_OS").as_deref() != Ok("linux") {
-        println!("cargo:warning=collector-iec61850: skipping libiec61850 build, target_os is not linux");
+        println!(
+            "cargo:warning=collector-iec61850: skipping libiec61850 build, target_os is not linux"
+        );
         return;
     }
 
@@ -200,12 +211,27 @@ fn main() {
     let pcs_model = server.then(|| generate_pcs_model(&manifest_dir, &vendor));
 
     let renames = shared_symbol_renames(&vendor);
-    compile_library(&src_dir, &hal_dir, &include_dirs, pcs_model.as_deref(), &renames);
-    generate_bindings(&vendor, &include_dirs, server, pcs_model.is_some(), &renames);
+    compile_library(
+        &src_dir,
+        &hal_dir,
+        &include_dirs,
+        pcs_model.as_deref(),
+        &renames,
+    );
+    generate_bindings(
+        &vendor,
+        &include_dirs,
+        server,
+        pcs_model.is_some(),
+        &renames,
+    );
 
     println!("cargo:rerun-if-changed={}", src_dir.display());
     println!("cargo:rerun-if-changed={}", hal_dir.display());
-    println!("cargo:rerun-if-changed={}", manifest_dir.join("config").display());
+    println!(
+        "cargo:rerun-if-changed={}",
+        manifest_dir.join("config").display()
+    );
     println!("cargo:rerun-if-env-changed=CARGO_CFG_TARGET_OS");
 }
 
@@ -305,8 +331,8 @@ fn compile_library(
 
     // asn1c 生成的 MMS 编解码, 文件很多, 直接遍历目录。
     let asn1c = src_dir.join("mms/iso_mms/asn1c");
-    let entries = fs::read_dir(&asn1c)
-        .unwrap_or_else(|e| panic!("cannot read {}: {e}", asn1c.display()));
+    let entries =
+        fs::read_dir(&asn1c).unwrap_or_else(|e| panic!("cannot read {}: {e}", asn1c.display()));
     for entry in entries {
         let path = entry.unwrap().path();
         if path.extension().is_some_and(|e| e == "c") {
@@ -316,7 +342,10 @@ fn compile_library(
 
     for path in &files {
         if !path.exists() {
-            panic!("expected libiec61850 source file not found: {}", path.display());
+            panic!(
+                "expected libiec61850 source file not found: {}",
+                path.display()
+            );
         }
         build.file(path);
     }
@@ -344,7 +373,10 @@ fn generate_bindings(
 
     let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
     if pcs_model {
-        wrapper.push_str(&format!("#include \"{}\"\n", out_dir.join("pcs_model.h").display()));
+        wrapper.push_str(&format!(
+            "#include \"{}\"\n",
+            out_dir.join("pcs_model.h").display()
+        ));
     }
 
     let mut builder = bindgen::Builder::default()
@@ -365,7 +397,9 @@ fn generate_bindings(
         builder = builder.clang_arg(format!("-I{}", dir.display()));
     }
 
-    let bindings = builder.generate().expect("failed to generate libiec61850 bindings");
+    let bindings = builder
+        .generate()
+        .expect("failed to generate libiec61850 bindings");
     let out_path = PathBuf::from(env::var("OUT_DIR").unwrap()).join("bindings.rs");
     bindings
         .write_to_file(&out_path)

@@ -133,7 +133,10 @@ pub enum Value {
     Uint(u64),
     Float(f64),
     /// 一般 bit string(如 TrgOps)。`bits` 为库按整数解释的结果, 仅 `size <= 32` 有意义。
-    BitString { size: u32, bits: u32 },
+    BitString {
+        size: u32,
+        bits: u32,
+    },
     /// 13 位的 bit string 被识别为品质。
     Quality(Quality),
     /// 2 位的 bit string 被识别为双点位置。
@@ -265,7 +268,8 @@ impl TypeSpec {
                     let n = ffi::MmsVariableSpecification_getSize(ptr).max(0);
                     let fields = (0..n)
                         .filter_map(|i| {
-                            let child = ffi::MmsVariableSpecification_getChildSpecificationByIndex(ptr, i);
+                            let child =
+                                ffi::MmsVariableSpecification_getChildSpecificationByIndex(ptr, i);
                             if child.is_null() {
                                 return None;
                             }
@@ -284,7 +288,10 @@ impl TypeSpec {
                     let n = ffi::MmsVariableSpecification_getSize(ptr).max(0) as usize;
                     let elem = ffi::MmsVariableSpecification_getArrayElementSpecification(ptr);
                     if elem.is_null() {
-                        TypeSpec::Array(n, Box::new(TypeSpec::Leaf(ffi::MmsType_MMS_DATA_ACCESS_ERROR)))
+                        TypeSpec::Array(
+                            n,
+                            Box::new(TypeSpec::Leaf(ffi::MmsType_MMS_DATA_ACCESS_ERROR)),
+                        )
                     } else {
                         TypeSpec::Array(n, Box::new(TypeSpec::from_mms(elem)))
                     }
@@ -338,7 +345,11 @@ mod tests {
             ("q".into(), TypeSpec::Leaf(3)),
             ("t".into(), TypeSpec::Leaf(14)),
         ]);
-        let v = Value::Struct(vec![Value::Bool(true), Value::Quality(Quality::GOOD), Value::UtcTime(1)]);
+        let v = Value::Struct(vec![
+            Value::Bool(true),
+            Value::Quality(Quality::GOOD),
+            Value::UtcTime(1),
+        ]);
         let leaves = spec.leaves(&v);
         assert_eq!(leaves.len(), 3);
         assert_eq!(leaves[0], ("stVal".to_string(), Value::Bool(true)));
@@ -349,17 +360,31 @@ mod tests {
     fn leaves_of_nested_and_leaf_member() {
         let spec = TypeSpec::Struct(vec![(
             "cVal".into(),
-            TypeSpec::Struct(vec![("mag".into(), TypeSpec::Struct(vec![("f".into(), TypeSpec::Leaf(6))]))]),
+            TypeSpec::Struct(vec![(
+                "mag".into(),
+                TypeSpec::Struct(vec![("f".into(), TypeSpec::Leaf(6))]),
+            )]),
         )]);
-        let v = Value::Struct(vec![Value::Struct(vec![Value::Struct(vec![Value::Float(1.5)])])]);
-        assert_eq!(spec.leaves(&v), vec![("cVal.mag.f".to_string(), Value::Float(1.5))]);
+        let v = Value::Struct(vec![Value::Struct(vec![Value::Struct(vec![
+            Value::Float(1.5),
+        ])])]);
+        assert_eq!(
+            spec.leaves(&v),
+            vec![("cVal.mag.f".to_string(), Value::Float(1.5))]
+        );
         // 成员本身是叶子: 路径为空
-        assert_eq!(TypeSpec::Leaf(6).leaves(&Value::Float(2.0)), vec![(String::new(), Value::Float(2.0))]);
+        assert_eq!(
+            TypeSpec::Leaf(6).leaves(&Value::Float(2.0)),
+            vec![(String::new(), Value::Float(2.0))]
+        );
     }
 
     #[test]
     fn skips_null_and_mismatched() {
-        let spec = TypeSpec::Struct(vec![("a".into(), TypeSpec::Leaf(2)), ("b".into(), TypeSpec::Leaf(2))]);
+        let spec = TypeSpec::Struct(vec![
+            ("a".into(), TypeSpec::Leaf(2)),
+            ("b".into(), TypeSpec::Leaf(2)),
+        ]);
         let v = Value::Struct(vec![Value::Null, Value::Bool(true)]);
         assert_eq!(spec.leaves(&v), vec![("b".to_string(), Value::Bool(true))]);
         assert!(spec.leaves(&Value::Null).is_empty());

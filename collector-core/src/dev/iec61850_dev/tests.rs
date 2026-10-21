@@ -125,13 +125,17 @@ async fn subscribes_receives_changes_and_dispatches_commands() {
     .await;
     assert_eq!(dev.state(), LifecycleState::Running);
     // 三个 RCB 的 GI 覆盖了点表里的全部点(28 遥信 + 116 遥测 + 通讯状态点; 控制点没有当前值)
-    wait_until("全部监视点入库", || data_center().read_all(dev_id).len() == 28 + 116 + 1).await;
+    wait_until("全部监视点入库", || {
+        data_center().read_all(dev_id).len() == 28 + 116 + 1
+    })
+    .await;
 
     // 2. 突发上送: 数据变化后无需再次总召
     sim.set_bool("staGGIO1.Ind1.stVal", true);
     sim.set_float("MMXU1.TotW.mag.f", 200.0);
     wait_until("变化上送", || {
-        value(dev_id, "staGGIO1_Ind1") == Some(Val::U8(1)) && approx(value(dev_id, "MMXU1_TotW"), 200.0)
+        value(dev_id, "staGGIO1_Ind1") == Some(Val::U8(1))
+            && approx(value(dev_id, "MMXU1_TotW"), 200.0)
     })
     .await;
 
@@ -154,12 +158,20 @@ async fn subscribes_receives_changes_and_dispatches_commands() {
     assert_eq!((sim.calls(CTL_SPC), sim.calls(CTL_APC)), (1, 1));
 
     // 按 id 下发, 并且能再把遥控置回去
-    let spc_id = example_configs().points.iter().find(|p| p.key == "ctlGAPC1_SPCSO6_cmd").unwrap().id;
+    let spc_id = example_configs()
+        .points
+        .iter()
+        .find(|p| p.key == "ctlGAPC1_SPCSO6_cmd")
+        .unwrap()
+        .id;
     data_center()
         .dispatch(dev_id, vec![DownDataPoint::by_id(spc_id, Val::U8(0))])
         .await
         .unwrap();
-    wait_until("遥控置回", || value(dev_id, "ctlGAPC1_SPCSO6") == Some(Val::U8(0))).await;
+    wait_until("遥控置回", || {
+        value(dev_id, "ctlGAPC1_SPCSO6") == Some(Val::U8(0))
+    })
+    .await;
 
     // 4. 非法下发被忽略, 不会产生命令
     let before = (sim.calls(CTL_SPC), sim.calls(CTL_APC));
@@ -176,7 +188,11 @@ async fn subscribes_receives_changes_and_dispatches_commands() {
         .await
         .unwrap();
     sleep(Duration::from_millis(500)).await;
-    assert_eq!((sim.calls(CTL_SPC), sim.calls(CTL_APC)), before, "非法下发不应产生命令");
+    assert_eq!(
+        (sim.calls(CTL_SPC), sim.calls(CTL_APC)),
+        before,
+        "非法下发不应产生命令"
+    );
     assert_eq!(before, (2, 1)); // 遥控下发 1 次 + 置回 1 次, 遥调下发 1 次
 
     // 5. 停止
@@ -202,7 +218,10 @@ async fn reconnects_after_ied_restart() {
 
     // IED 下线: 设备应上报通讯故障
     drop(sim);
-    wait_until("上报通讯故障", || comm_fault(dev_id) == Some(Val::U8(1))).await;
+    wait_until("上报通讯故障", || {
+        comm_fault(dev_id) == Some(Val::U8(1))
+    })
+    .await;
 
     // IED 原地重启且值已变: 设备应自动重连、重新订阅并总召
     let sim = PcsSimulator::start_on(port);
@@ -215,7 +234,10 @@ async fn reconnects_after_ied_restart() {
 
     // 重新订阅后仍然能收到变化
     sim.set_float("MMXU1.TotW.mag.f", 88.0);
-    wait_until("重连后变化上送", || approx(value(dev_id, "MMXU1_TotW"), 88.0)).await;
+    wait_until("重连后变化上送", || {
+        approx(value(dev_id, "MMXU1_TotW"), 88.0)
+    })
+    .await;
 
     dev.stop().await.unwrap();
     assert_eq!(dev.state(), LifecycleState::Stopped);
@@ -228,13 +250,20 @@ async fn unreachable_ied_reports_comm_fault_and_stops_promptly() {
     dev.init().unwrap();
     dev.start().await.unwrap();
 
-    wait_until("上报通讯故障", || comm_fault(dev_id) == Some(Val::U8(1))).await;
+    wait_until("上报通讯故障", || {
+        comm_fault(dev_id) == Some(Val::U8(1))
+    })
+    .await;
     assert_ne!(dev.state(), LifecycleState::Running);
 
     let started = Instant::now();
     dev.stop().await.unwrap();
     assert_eq!(dev.state(), LifecycleState::Stopped);
-    assert!(started.elapsed() < Duration::from_secs(5), "停止用了 {:?}", started.elapsed());
+    assert!(
+        started.elapsed() < Duration::from_secs(5),
+        "停止用了 {:?}",
+        started.elapsed()
+    );
     assert_eq!(comm_fault(dev_id), Some(Val::U8(1)));
 }
 
@@ -246,7 +275,10 @@ async fn busy_rcb_falls_back_to_polling() {
     reset_values(&sim);
 
     // 16 个客户端占满 urcbAin01..16
-    let quiet = ReportConfig { general_interrogation: false, ..Default::default() };
+    let quiet = ReportConfig {
+        general_interrogation: false,
+        ..Default::default()
+    };
     let blockers: Vec<Connection> = (1..=16)
         .map(|i| {
             let conn = Connection::new(ConnectOptions::default()).unwrap();
@@ -261,13 +293,22 @@ async fn busy_rcb_falls_back_to_polling() {
     let mut dev = device(dev_id, sim.port, 500, example_configs());
     dev.init().unwrap();
     dev.start().await.unwrap();
-    wait_until("轮询拿到遥测", || approx(value(dev_id, "MMXU1_TotW"), 123.5)).await;
+    wait_until("轮询拿到遥测", || {
+        approx(value(dev_id, "MMXU1_TotW"), 123.5)
+    })
+    .await;
     sim.set_float("MMXU1.TotW.mag.f", 250.0);
-    wait_until("轮询跟上变化", || approx(value(dev_id, "MMXU1_TotW"), 250.0)).await;
+    wait_until("轮询跟上变化", || {
+        approx(value(dev_id, "MMXU1_TotW"), 250.0)
+    })
+    .await;
 
     // 没被占用的 brcbDin 仍然走报告
     sim.set_bool("staGGIO1.Ind1.stVal", true);
-    wait_until("遥信仍走报告", || value(dev_id, "staGGIO1_Ind1") == Some(Val::U8(1))).await;
+    wait_until("遥信仍走报告", || {
+        value(dev_id, "staGGIO1_Ind1") == Some(Val::U8(1))
+    })
+    .await;
 
     dev.stop().await.unwrap();
     drop(blockers);
@@ -285,9 +326,14 @@ async fn quality_and_time_points() {
     sim.set_time("MMXU1.TotW.t", 1_700_000_000_123);
 
     // 带 --with-quality 生成的点表: 品质/时标点默认禁用, 这里启用它们
-    let mut configs = build_configs(manifest("collector-iec61850/tests/data/pcs_points.xlsx")).unwrap();
+    let mut configs =
+        build_configs(manifest("collector-iec61850/tests/data/pcs_points.xlsx")).unwrap();
     let mut enabled = 0;
-    for p in configs.points.iter_mut().filter(|p| matches!(p.kind, PointKind::Yq | PointKind::Ytime)) {
+    for p in configs
+        .points
+        .iter_mut()
+        .filter(|p| matches!(p.kind, PointKind::Yq | PointKind::Ytime))
+    {
         p.enable = true;
         enabled += 1;
     }
@@ -304,7 +350,10 @@ async fn quality_and_time_points() {
     // 无效(标准编号 1) + 旧数据(bit7 = 128)
     assert_eq!(value(dev_id, "staGGIO1_Ind1_q"), Some(Val::U16(1 | 128)));
     assert_eq!(value(dev_id, "staGGIO1_Ind2_q"), Some(Val::U16(0)));
-    assert_eq!(value(dev_id, "MMXU1_TotW_t"), Some(Val::F64(1_700_000_000_123.0)));
+    assert_eq!(
+        value(dev_id, "MMXU1_TotW_t"),
+        Some(Val::F64(1_700_000_000_123.0))
+    );
 
     dev.stop().await.unwrap();
 }
@@ -345,20 +394,40 @@ fn creating_a_device_validates_the_configuration() {
     };
     assert_eq!(mk(&|_| {}), None);
     assert!(mk(&|c| c.ip = None).unwrap().contains("IP"));
-    assert!(mk(&|c| c.ip = Some("not-an-ip".into())).unwrap().contains("无效的IP"));
+    assert!(
+        mk(&|c| c.ip = Some("not-an-ip".into()))
+            .unwrap()
+            .contains("无效的IP")
+    );
     assert!(mk(&|c| c.port = None).unwrap().contains("端口"));
     assert!(mk(&|c| c.interval = None).unwrap().contains("间隔"));
     assert!(mk(&|c| c.timeout = None).unwrap().contains("超时"));
     // ISO 参数在创建设备时就校验, 不用等到连接
     let bad_iso = |iso: IsoConfig| mk(&move |c| c.iso = Some(iso.clone())).unwrap();
-    assert!(bad_iso(IsoConfig { remote_tsel: Some("zz".into()), ..Default::default() }).contains("ISO"));
-    assert!(bad_iso(IsoConfig { remote_ap_title: Some("not an oid".into()), ..Default::default() }).contains("ISO"));
+    assert!(
+        bad_iso(IsoConfig {
+            remote_tsel: Some("zz".into()),
+            ..Default::default()
+        })
+        .contains("ISO")
+    );
+    assert!(
+        bad_iso(IsoConfig {
+            remote_ap_title: Some("not an oid".into()),
+            ..Default::default()
+        })
+        .contains("ISO")
+    );
 
     // 别的协议的点表不能喂给 61850 设备
     let err = Iec61850Dev::new(Device {
         id: Some("x".into()),
         desc: None,
-        config: DeviceConfig { iso: None, ..serde_json::from_str(r#"{"ip":"127.0.0.1","port":102,"interval":0,"timeout":1000}"#).unwrap() },
+        config: DeviceConfig {
+            iso: None,
+            ..serde_json::from_str(r#"{"ip":"127.0.0.1","port":102,"interval":0,"timeout":1000}"#)
+                .unwrap()
+        },
         protocol_configs: Some(ProtocolConfigs::Iec104(vec![])),
     })
     .err()

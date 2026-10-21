@@ -13,9 +13,8 @@ use std::{
 
 use calamine::{Data, Reader, Xlsx, open_workbook};
 use collector_iec61850::{
-    ConnectOptions, Connection, ControlOptions, DataSetLayout, Fc, ObjectRef, Report,
-    ReportConfig, TRG_DATA_CHANGED, TRG_GI, TRG_INTEGRITY, TRG_QUALITY_CHANGED, TypeSpec, Value,
-    ffi,
+    ConnectOptions, Connection, ControlOptions, DataSetLayout, Fc, ObjectRef, Report, ReportConfig,
+    TRG_DATA_CHANGED, TRG_GI, TRG_INTEGRITY, TRG_QUALITY_CHANGED, TypeSpec, Value, ffi,
     testing::{CTL_APC, CTL_SPC, PCS_LD as LD, PcsSimulator as Pcs},
 };
 
@@ -25,7 +24,8 @@ fn r(s: &str) -> ObjectRef {
 
 fn connect(pcs: &Pcs) -> Connection {
     let conn = Connection::new(ConnectOptions::default()).unwrap();
-    conn.connect("127.0.0.1", pcs.port).expect("连接模拟 PCS 失败");
+    conn.connect("127.0.0.1", pcs.port)
+        .expect("连接模拟 PCS 失败");
     conn
 }
 
@@ -42,11 +42,15 @@ fn wait_until(what: &str, mut cond: impl FnMut() -> bool) {
 }
 
 fn recv(rx: &mpsc::Receiver<Report>) -> Report {
-    rx.recv_timeout(Duration::from_secs(5)).expect("等待报告超时")
+    rx.recv_timeout(Duration::from_secs(5))
+        .expect("等待报告超时")
 }
 
 fn flatten(layout: &DataSetLayout, rep: &Report) -> Vec<(ObjectRef, Value)> {
-    rep.entries.iter().flat_map(|e| layout.leaves(e.index, &e.value)).collect()
+    rep.entries
+        .iter()
+        .flat_map(|e| layout.leaves(e.index, &e.value))
+        .collect()
 }
 
 fn find<'a>(leaves: &'a [(ObjectRef, Value)], reference: &str) -> Option<&'a Value> {
@@ -67,7 +71,9 @@ fn subscribe(
     let handler: Arc<dyn Fn(&Report) + Send + Sync> = Arc::new(move |rep| {
         let _ = tx.send(rep.clone());
     });
-    let chosen = conn.subscribe_report_any(&cands, cfg, handler).expect("订阅失败");
+    let chosen = conn
+        .subscribe_report_any(&cands, cfg, handler)
+        .expect("订阅失败");
     (chosen, layout, rx)
 }
 
@@ -82,25 +88,46 @@ fn model_matches_icd() {
 
     // LN 名带前缀: sta/ctl/set/dc/kw/dev + 类 + 实例号。
     let lns = conn.logical_nodes(LD).unwrap();
-    for ln in ["LLN0", "staGGIO1", "staGGIO2", "ctlGAPC1", "setGAPC1", "setGAPC3", "MMXU1", "dcMMXN1", "kwGGIO1", "devGGIO4"] {
+    for ln in [
+        "LLN0", "staGGIO1", "staGGIO2", "ctlGAPC1", "setGAPC1", "setGAPC3", "MMXU1", "dcMMXN1",
+        "kwGGIO1", "devGGIO4",
+    ] {
         assert!(lns.iter().any(|n| n == ln), "缺少 LN {ln}: {lns:?}");
     }
     let inds = conn.data_objects(&format!("{LD}/staGGIO1")).unwrap();
-    assert!((1..=16).all(|i| inds.contains(&format!("Ind{i}"))), "{inds:?}");
+    assert!(
+        (1..=16).all(|i| inds.contains(&format!("Ind{i}"))),
+        "{inds:?}"
+    );
 
     // 标准的带索引 RCB: 每个 RCB 16 个实例。
     let urcb = conn.resolve_rcbs("MONT/LLN0.RP.urcbAin*").unwrap();
     assert_eq!(urcb.len(), 16);
     assert_eq!(urcb[0], format!("{LD}/LLN0.RP.urcbAin01"));
     assert_eq!(urcb[15], format!("{LD}/LLN0.RP.urcbAin16"));
-    assert_eq!(conn.resolve_rcbs("MONT/LLN0.BR.brcbDin*").unwrap().len(), 16);
-    assert_eq!(conn.resolve_rcbs("MONT/LLN0.RP.urcbParameter*").unwrap().len(), 16);
+    assert_eq!(
+        conn.resolve_rcbs("MONT/LLN0.BR.brcbDin*").unwrap().len(),
+        16
+    );
+    assert_eq!(
+        conn.resolve_rcbs("MONT/LLN0.RP.urcbParameter*")
+            .unwrap()
+            .len(),
+        16
+    );
     // 不同前缀不串: urcbAin* 不应匹配到 urcbParameter。
     assert!(urcb.iter().all(|n| n.contains("urcbAin")));
 
     // 每个 RCB 实例绑定各自的数据集。
-    assert_eq!(conn.rcb_data_set(&urcb[0]).unwrap(), format!("{LD}/LLN0$dsAin"));
-    assert_eq!(conn.rcb_data_set(&format!("{LD}/LLN0.BR.brcbDin01")).unwrap(), format!("{LD}/LLN0$dsDin"));
+    assert_eq!(
+        conn.rcb_data_set(&urcb[0]).unwrap(),
+        format!("{LD}/LLN0$dsAin")
+    );
+    assert_eq!(
+        conn.rcb_data_set(&format!("{LD}/LLN0.BR.brcbDin01"))
+            .unwrap(),
+        format!("{LD}/LLN0$dsDin")
+    );
 }
 
 #[test]
@@ -111,21 +138,38 @@ fn data_set_layouts() {
     // dsDin: 28 个 DO 级成员(22 个 Ind + 6 个 SPCSO 的 ST 部分)
     let din = conn.prepare_data_set(&format!("{LD}/LLN0$dsDin")).unwrap();
     assert_eq!(din.len(), 28);
-    assert_eq!(din.member(0).unwrap(), &r(&format!("{LD}/staGGIO1.Ind1[ST]")));
-    assert_eq!(din.member(27).unwrap(), &r(&format!("{LD}/ctlGAPC1.SPCSO6[ST]")));
+    assert_eq!(
+        din.member(0).unwrap(),
+        &r(&format!("{LD}/staGGIO1.Ind1[ST]"))
+    );
+    assert_eq!(
+        din.member(27).unwrap(),
+        &r(&format!("{LD}/ctlGAPC1.SPCSO6[ST]"))
+    );
 
     // dsAin: 75 个 DO 级成员(MX), 含 PPV.phsAB 这类子对象
     let ain = conn.prepare_data_set(&format!("{LD}/LLN0$dsAin")).unwrap();
     assert_eq!(ain.len(), 75);
-    assert!(ain.members().any(|m| *m == r(&format!("{LD}/MMXU1.PPV.phsAB[MX]"))));
+    assert!(
+        ain.members()
+            .any(|m| *m == r(&format!("{LD}/MMXU1.PPV.phsAB[MX]")))
+    );
 
     // dsParameter: 41 个叶子级成员(mxVal.f)
-    let par = conn.prepare_data_set(&format!("{LD}/LLN0$dsParameter")).unwrap();
+    let par = conn
+        .prepare_data_set(&format!("{LD}/LLN0$dsParameter"))
+        .unwrap();
     assert_eq!(par.len(), 41);
-    assert_eq!(par.member(0).unwrap(), &r(&format!("{LD}/setGAPC1.StrVal1.mxVal.f[MX]")));
+    assert_eq!(
+        par.member(0).unwrap(),
+        &r(&format!("{LD}/setGAPC1.StrVal1.mxVal.f[MX]"))
+    );
     // 叶子成员展开后就是它自己
     let leaves = par.leaves(0, &Value::Float(1.5));
-    assert_eq!(leaves, vec![(par.member(0).unwrap().clone(), Value::Float(1.5))]);
+    assert_eq!(
+        leaves,
+        vec![(par.member(0).unwrap().clone(), Value::Float(1.5))]
+    );
 }
 
 #[test]
@@ -142,9 +186,18 @@ fn analog_report_expands_do_members() {
     let gi = recv(&rx);
     assert_eq!(gi.entries.len(), 75, "{}", gi.entries.len());
     let leaves = flatten(&layout, &gi);
-    assert_eq!(find(&leaves, &format!("{LD}/MMXU1.TotW.mag.f[MX]")), Some(&Value::Float(123.5)));
-    assert_eq!(find(&leaves, &format!("{LD}/MMXU1.PPV.phsAB.cVal.mag.f[MX]")), Some(&Value::Float(380.25)));
-    assert!(matches!(find(&leaves, &format!("{LD}/MMXU1.TotW.q[MX]")), Some(Value::Quality(_))));
+    assert_eq!(
+        find(&leaves, &format!("{LD}/MMXU1.TotW.mag.f[MX]")),
+        Some(&Value::Float(123.5))
+    );
+    assert_eq!(
+        find(&leaves, &format!("{LD}/MMXU1.PPV.phsAB.cVal.mag.f[MX]")),
+        Some(&Value::Float(380.25))
+    );
+    assert!(matches!(
+        find(&leaves, &format!("{LD}/MMXU1.TotW.q[MX]")),
+        Some(Value::Quality(_))
+    ));
     assert!(find(&leaves, &format!("{LD}/MMXU1.TotW.t[MX]")).is_some());
     // 每个 MV 成员展开 3 个叶子(mag.f/q/t), 共 75 × 3
     assert_eq!(leaves.len(), 75 * 3);
@@ -153,11 +206,20 @@ fn analog_report_expands_do_members() {
     pcs.set_float("MMXU1.TotW.mag.f", 200.0);
     let change = loop {
         let rep = recv(&rx);
-        if find(&flatten(&layout, &rep), &format!("{LD}/MMXU1.TotW.mag.f[MX]")) == Some(&Value::Float(200.0)) {
+        if find(
+            &flatten(&layout, &rep),
+            &format!("{LD}/MMXU1.TotW.mag.f[MX]"),
+        ) == Some(&Value::Float(200.0))
+        {
             break rep;
         }
     };
-    assert_eq!(change.entries.len(), 1, "只应上送变化的成员: {} 个", change.entries.len());
+    assert_eq!(
+        change.entries.len(),
+        1,
+        "只应上送变化的成员: {} 个",
+        change.entries.len()
+    );
     assert!(change.timestamp_ms.is_some());
 }
 
@@ -167,17 +229,27 @@ fn status_report_and_second_client_gets_next_instance() {
     pcs.set_bool("staGGIO1.Ind3.stVal", false); // 静态模型的值会跨测试保留, 显式复位
     let a = connect(&pcs);
     let b = connect(&pcs);
-    let cfg = ReportConfig { general_interrogation: false, ..Default::default() };
+    let cfg = ReportConfig {
+        general_interrogation: false,
+        ..Default::default()
+    };
 
     let (rcb_a, layout, rx) = subscribe(&a, "MONT/LLN0.BR.brcbDin*", &cfg);
     let (rcb_b, _, _rx_b) = subscribe(&b, "MONT/LLN0.BR.brcbDin*", &cfg);
     assert!(rcb_a.ends_with("brcbDin01"), "{rcb_a}");
-    assert!(rcb_b.ends_with("brcbDin02"), "第二个客户端应拿到下一个实例: {rcb_b}");
+    assert!(
+        rcb_b.ends_with("brcbDin02"),
+        "第二个客户端应拿到下一个实例: {rcb_b}"
+    );
 
     pcs.set_bool("staGGIO1.Ind3.stVal", true);
     let rep = loop {
         let rep = recv(&rx);
-        if find(&flatten(&layout, &rep), &format!("{LD}/staGGIO1.Ind3.stVal[ST]")) == Some(&Value::Bool(true)) {
+        if find(
+            &flatten(&layout, &rep),
+            &format!("{LD}/staGGIO1.Ind3.stVal[ST]"),
+        ) == Some(&Value::Bool(true))
+        {
             break rep;
         }
     };
@@ -190,7 +262,10 @@ fn buffered_report_replays_events_missed_while_disconnected() {
     let pcs = Pcs::start();
     pcs.set_bool("staGGIO1.Ind1.stVal", false); // 静态模型的值会跨测试保留, 显式复位
     pcs.set_bool("staGGIO1.Ind2.stVal", false);
-    let cfg = ReportConfig { general_interrogation: false, ..Default::default() };
+    let cfg = ReportConfig {
+        general_interrogation: false,
+        ..Default::default()
+    };
 
     // 第一次连接: 订阅后收到一次变化, 然后异常断开(不取消订阅)。
     let a = connect(&pcs);
@@ -214,7 +289,11 @@ fn buffered_report_replays_events_missed_while_disconnected() {
     .unwrap();
     let mut seen = false;
     while let Ok(rep) = rx.recv_timeout(Duration::from_secs(3)) {
-        if find(&flatten(&layout, &rep), &format!("{LD}/staGGIO1.Ind2.stVal[ST]")) == Some(&Value::Bool(true)) {
+        if find(
+            &flatten(&layout, &rep),
+            &format!("{LD}/staGGIO1.Ind2.stVal[ST]"),
+        ) == Some(&Value::Bool(true))
+        {
             seen = true;
             break;
         }
@@ -226,16 +305,21 @@ fn buffered_report_replays_events_missed_while_disconnected() {
 fn control_spc_direct() {
     let pcs = Pcs::start();
     let conn = connect(&pcs);
-    let target = conn.resolve_ref(&r("MONT/ctlGAPC1.SPCSO6")).unwrap().to_dotted();
+    let target = conn
+        .resolve_ref(&r("MONT/ctlGAPC1.SPCSO6"))
+        .unwrap()
+        .to_dotted();
     let feedback = format!("{LD}/ctlGAPC1.SPCSO6.stVal");
     let read = || conn.read(&feedback, Fc::St).unwrap();
 
     // 模型是静态全局的, 先把回读值置回初始状态, 不依赖其他测试的执行顺序。
     pcs.set_bool("ctlGAPC1.SPCSO6.stVal", false);
     assert_eq!(read(), Value::Bool(false));
-    conn.control(&target, 1.0, &ControlOptions::default()).expect("遥控失败");
+    conn.control(&target, 1.0, &ControlOptions::default())
+        .expect("遥控失败");
     wait_until("SPCSO6 回读为 true", || read() == Value::Bool(true));
-    conn.control(&target, 0.0, &ControlOptions::default()).unwrap();
+    conn.control(&target, 0.0, &ControlOptions::default())
+        .unwrap();
     wait_until("SPCSO6 回读为 false", || read() == Value::Bool(false));
     assert_eq!(pcs.calls(CTL_SPC), 2);
 }
@@ -246,18 +330,32 @@ fn control_apc_setpoint_with_readback_in_parameter_report() {
     let conn = connect(&pcs);
 
     // 订阅参数数据集, 遥调后应在报告里看到回读值。
-    let (_, layout, rx) = subscribe(&conn, "MONT/LLN0.RP.urcbParameter*", &ReportConfig::default());
+    let (_, layout, rx) = subscribe(
+        &conn,
+        "MONT/LLN0.RP.urcbParameter*",
+        &ReportConfig::default(),
+    );
     recv(&rx); // GI
 
-    let target = conn.resolve_ref(&r("MONT/setGAPC1.StrVal6")).unwrap().to_dotted();
-    conn.control(&target, 1234.5, &ControlOptions::default()).expect("遥调失败");
+    let target = conn
+        .resolve_ref(&r("MONT/setGAPC1.StrVal6"))
+        .unwrap()
+        .to_dotted();
+    conn.control(&target, 1234.5, &ControlOptions::default())
+        .expect("遥调失败");
     let readback = format!("{LD}/setGAPC1.StrVal6.mxVal.f");
-    wait_until("StrVal6 回读为 1234.5", || conn.read(&readback, Fc::Mx).unwrap() == Value::Float(1234.5));
+    wait_until("StrVal6 回读为 1234.5", || {
+        conn.read(&readback, Fc::Mx).unwrap() == Value::Float(1234.5)
+    });
     assert_eq!(pcs.calls(CTL_APC), 1);
 
     let rep = loop {
         let rep = recv(&rx);
-        if find(&flatten(&layout, &rep), &format!("{LD}/setGAPC1.StrVal6.mxVal.f[MX]")) == Some(&Value::Float(1234.5)) {
+        if find(
+            &flatten(&layout, &rep),
+            &format!("{LD}/setGAPC1.StrVal6.mxVal.f[MX]"),
+        ) == Some(&Value::Float(1234.5))
+        {
             break rep;
         }
     };
@@ -270,7 +368,10 @@ fn control_status_only_is_rejected() {
     let pcs = Pcs::start();
     let conn = connect(&pcs);
     // LLN0.Mod 的 ctlModel 是 status-only, 没有 Oper, 不可控。
-    assert!(conn.control(&format!("{LD}/LLN0.Mod"), 1.0, &ControlOptions::default()).is_err());
+    assert!(
+        conn.control(&format!("{LD}/LLN0.Mod"), 1.0, &ControlOptions::default())
+            .is_err()
+    );
 }
 
 /// 这台 PCS 的控制对象都是 direct-with-normal-security: 服务端检查通过就立即回成功应答,
@@ -283,12 +384,17 @@ fn control_success_ack_does_not_mean_executed() {
     pcs.set_bool("ctlGAPC1.SPCSO1.stVal", false);
 
     // SPCSO1 在模拟器里没有挂处理函数, 相当于设备没有执行这条命令。
-    conn.control(&format!("{LD}/ctlGAPC1.SPCSO1"), 1.0, &ControlOptions::default())
-        .expect("normal security 下服务端不会拒绝");
+    conn.control(
+        &format!("{LD}/ctlGAPC1.SPCSO1"),
+        1.0,
+        &ControlOptions::default(),
+    )
+    .expect("normal security 下服务端不会拒绝");
     std::thread::sleep(Duration::from_millis(300));
     assert_eq!(pcs.calls(CTL_SPC), 0);
     assert_eq!(
-        conn.read(&format!("{LD}/ctlGAPC1.SPCSO1.stVal"), Fc::St).unwrap(),
+        conn.read(&format!("{LD}/ctlGAPC1.SPCSO1.stVal"), Fc::St)
+            .unwrap(),
         Value::Bool(false),
         "命令应答成功, 但回读值没变: 只有回读点能反映真实状态"
     );
@@ -297,7 +403,10 @@ fn control_success_ack_does_not_mean_executed() {
 #[test]
 fn unused_constants_still_exported() {
     // 防止未使用告警: 这些常量是采集端订阅时会用到的触发条件。
-    assert_ne!(TRG_DATA_CHANGED | TRG_QUALITY_CHANGED | TRG_INTEGRITY | TRG_GI, 0);
+    assert_ne!(
+        TRG_DATA_CHANGED | TRG_QUALITY_CHANGED | TRG_INTEGRITY | TRG_GI,
+        0
+    );
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -324,7 +433,9 @@ fn number(cell: Option<&Data>) -> Option<f64> {
 
 fn sheet_rows(name: &str) -> Vec<Vec<Data>> {
     let mut wb: Xlsx<_> = open_workbook(POINTS_XLSX).expect("打开点表失败");
-    let range = wb.worksheet_range(name).unwrap_or_else(|e| panic!("读取 sheet {name} 失败: {e}"));
+    let range = wb
+        .worksheet_range(name)
+        .unwrap_or_else(|e| panic!("读取 sheet {name} 失败: {e}"));
     range.rows().skip(1).map(|r| r.to_vec()).collect()
 }
 
@@ -373,14 +484,20 @@ fn generated_point_table_is_valid_against_the_model() {
 
         match p.kind.as_str() {
             "yx" | "yc" | "yq" | "ytime" => {
-                let fc: Fc = p.fc.as_deref().unwrap_or_else(|| panic!("{what}: 缺少 fc")).parse().unwrap();
+                let fc: Fc =
+                    p.fc.as_deref()
+                        .unwrap_or_else(|| panic!("{what}: 缺少 fc"))
+                        .parse()
+                        .unwrap();
                 let v = conn
                     .read(&resolved.to_dotted(), fc)
                     .unwrap_or_else(|e| panic!("{what}: 读取失败: {e}"));
                 let ok = matches!(
                     (p.kind.as_str(), &v),
-                    ("yx", Value::Bool(_) | Value::Int(_) | Value::Uint(_) | Value::Dbpos(_))
-                        | ("yc", Value::Float(_) | Value::Int(_) | Value::Uint(_))
+                    (
+                        "yx",
+                        Value::Bool(_) | Value::Int(_) | Value::Uint(_) | Value::Dbpos(_)
+                    ) | ("yc", Value::Float(_) | Value::Int(_) | Value::Uint(_))
                         | ("yq", Value::Quality(_))
                         | ("ytime", Value::UtcTime(_))
                 );
@@ -391,9 +508,14 @@ fn generated_point_table_is_valid_against_the_model() {
                 assert!(p.fc.is_none(), "{what}: 控制点的 fc 应为空");
                 // 控制模型已配置且可控
                 let model = conn.read(&format!("{}.ctlModel", resolved.to_dotted()), Fc::Cf);
-                assert!(matches!(model, Ok(Value::Int(1..=4))), "{what}: ctlModel = {model:?}");
+                assert!(
+                    matches!(model, Ok(Value::Int(1..=4))),
+                    "{what}: ctlModel = {model:?}"
+                );
                 // ctlVal 的类型: 遥控是布尔, 遥调是 AnalogueValue 结构体
-                let spec = conn.type_spec(&resolved.clone().with_fc(Fc::Co)).unwrap_or_else(|e| panic!("{what}: {e}"));
+                let spec = conn
+                    .type_spec(&resolved.clone().with_fc(Fc::Co))
+                    .unwrap_or_else(|e| panic!("{what}: {e}"));
                 let oper = match &spec {
                     TypeSpec::Struct(f) => f.iter().find(|(n, _)| n == "Oper").map(|(_, t)| t),
                     _ => None,
@@ -410,10 +532,23 @@ fn generated_point_table_is_valid_against_the_model() {
                     other => panic!("{what}: ctlVal 类型与点类型不符: {other:?}"),
                 }
                 // 回读点存在, 是监视点, 并且就在这个控制对象之下
-                let fb_key = p.feedback.as_deref().unwrap_or_else(|| panic!("{what}: 缺少 feedback"));
-                let fb = by_key.get(fb_key).unwrap_or_else(|| panic!("{what}: feedback {fb_key} 不存在"));
-                assert!(matches!(fb.kind.as_str(), "yx" | "yc"), "{what}: 回读点类型 {}", fb.kind);
-                assert!(fb.reference.starts_with(&format!("{}.", p.reference)), "{what}: 回读点 {} 不在控制对象下", fb.reference);
+                let fb_key = p
+                    .feedback
+                    .as_deref()
+                    .unwrap_or_else(|| panic!("{what}: 缺少 feedback"));
+                let fb = by_key
+                    .get(fb_key)
+                    .unwrap_or_else(|| panic!("{what}: feedback {fb_key} 不存在"));
+                assert!(
+                    matches!(fb.kind.as_str(), "yx" | "yc"),
+                    "{what}: 回读点类型 {}",
+                    fb.kind
+                );
+                assert!(
+                    fb.reference.starts_with(&format!("{}.", p.reference)),
+                    "{what}: 回读点 {} 不在控制对象下",
+                    fb.reference
+                );
             }
             other => panic!("{what}: 未知类型 {other}"),
         }
@@ -424,9 +559,15 @@ fn generated_point_table_is_valid_against_the_model() {
     for row in sheet_rows("source") {
         let kind = text(row.first()).unwrap();
         let pattern = text(row.get(1)).unwrap();
-        let instances = conn.resolve_rcbs(&pattern).unwrap_or_else(|e| panic!("{pattern}: {e}"));
+        let instances = conn
+            .resolve_rcbs(&pattern)
+            .unwrap_or_else(|e| panic!("{pattern}: {e}"));
         assert_eq!(instances.len(), 16, "{pattern}: ICD 里 RptEnabled max=16");
-        assert_eq!(kind == "brcb", pattern.contains(".BR."), "{pattern}: kind 与 BR/RP 不一致");
+        assert_eq!(
+            kind == "brcb",
+            pattern.contains(".BR."),
+            "{pattern}: kind 与 BR/RP 不一致"
+        );
         assert!(number(row.get(4)).is_some(), "{pattern}: 缺少 intg_pd");
 
         let ds = conn.rcb_data_set(&instances[0]).unwrap();
@@ -434,7 +575,9 @@ fn generated_point_table_is_valid_against_the_model() {
         members_total += layout.len();
         for member in layout.members() {
             let fc = member.fc.expect("数据集成员必须带 FC");
-            let hit = monitoring.iter().any(|(r, p)| member.covers(r) && r.fc == Some(fc) && p.kind != "yk");
+            let hit = monitoring
+                .iter()
+                .any(|(r, p)| member.covers(r) && r.fc == Some(fc) && p.kind != "yk");
             assert!(hit, "数据集 {ds} 的成员 {member} 没有任何点对应");
         }
     }
@@ -444,7 +587,10 @@ fn generated_point_table_is_valid_against_the_model() {
     let covered: Vec<ObjectRef> = sheet_rows("source")
         .iter()
         .flat_map(|row| {
-            let first = conn.resolve_rcbs(&text(row.get(1)).unwrap()).unwrap().remove(0);
+            let first = conn
+                .resolve_rcbs(&text(row.get(1)).unwrap())
+                .unwrap()
+                .remove(0);
             let ds = conn.rcb_data_set(&first).unwrap();
             conn.data_set_members(&ds).unwrap()
         })

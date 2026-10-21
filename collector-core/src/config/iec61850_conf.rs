@@ -300,12 +300,18 @@ pub struct Iec61850Source {
 
 impl Iec61850Source {
     fn build(row: &[Data]) -> Result<Self, anyhow::Error> {
-        let kind = match required_str(row, 0, "KIND")?.trim().to_ascii_lowercase().as_str() {
+        let kind = match required_str(row, 0, "KIND")?
+            .trim()
+            .to_ascii_lowercase()
+            .as_str()
+        {
             "urcb" => SourceKind::Urcb,
             "brcb" => SourceKind::Brcb,
             "dataset" => SourceKind::Dataset,
             other => {
-                return Err(anyhow::anyhow!("无效的来源类型: {other}，期望 urcb|brcb|dataset"));
+                return Err(anyhow::anyhow!(
+                    "无效的来源类型: {other}，期望 urcb|brcb|dataset"
+                ));
             }
         };
         let reference = required_str(row, 1, "REF")?.trim().to_string();
@@ -315,10 +321,14 @@ impl Iec61850Source {
         }
         match kind {
             SourceKind::Urcb if !normalized.contains(".RP.") => {
-                return Err(anyhow::anyhow!("urcb 的 REF 应为 LD/LN.RP.name: {reference}"));
+                return Err(anyhow::anyhow!(
+                    "urcb 的 REF 应为 LD/LN.RP.name: {reference}"
+                ));
             }
             SourceKind::Brcb if !normalized.contains(".BR.") => {
-                return Err(anyhow::anyhow!("brcb 的 REF 应为 LD/LN.BR.name: {reference}"));
+                return Err(anyhow::anyhow!(
+                    "brcb 的 REF 应为 LD/LN.BR.name: {reference}"
+                ));
             }
             _ => {}
         }
@@ -406,7 +416,11 @@ pub(crate) fn build_configs(path: String) -> Result<Iec61850Configs, Iec61850Con
         for row in range.rows() {
             match Iec61850Source::build(row) {
                 Ok(source) => {
-                    if configs.sources.iter().any(|s| s.reference == source.reference) {
+                    if configs
+                        .sources
+                        .iter()
+                        .any(|s| s.reference == source.reference)
+                    {
                         tracing::error!("忽略IEC61850取数来源 {}: 重复", source.reference);
                     } else {
                         configs.sources.push(source);
@@ -489,23 +503,40 @@ mod tests {
 
         // 控制点: 引用到控制对象, 没有 FC, 带回读点
         let cmd = by_key("setGAPC1_StrVal6_cmd");
-        assert_eq!((cmd.reference.to_dotted().as_str(), cmd.reference.fc), ("MONT/setGAPC1.StrVal6", None));
-        assert_eq!((cmd.kind, cmd.feedback, cmd.enable), (PointKind::Yt, Some("setGAPC1_StrVal6"), true));
+        assert_eq!(
+            (cmd.reference.to_dotted().as_str(), cmd.reference.fc),
+            ("MONT/setGAPC1.StrVal6", None)
+        );
+        assert_eq!(
+            (cmd.kind, cmd.feedback, cmd.enable),
+            (PointKind::Yt, Some("setGAPC1_StrVal6"), true)
+        );
         assert!(by_key("setGAPC1_StrVal6").kind.is_monitor());
 
         // 危险的控制点默认禁用, 回读点不受影响
-        for key in ["ctlGAPC1_SPCSO2_cmd", "ctlGAPC1_SPCSO3_cmd", "setGAPC3_StrVal7_cmd"] {
+        for key in [
+            "ctlGAPC1_SPCSO2_cmd",
+            "ctlGAPC1_SPCSO3_cmd",
+            "setGAPC3_StrVal7_cmd",
+        ] {
             assert!(!by_key(key).enable, "{key} 应默认禁用");
         }
         assert!(by_key("ctlGAPC1_SPCSO3").enable);
         // 每个控制点的回读点都存在(check_feedback 没有把它清掉)
-        let controls: Vec<_> = configs.points.iter().filter(|p| p.kind.is_control()).collect();
+        let controls: Vec<_> = configs
+            .points
+            .iter()
+            .filter(|p| p.kind.is_control())
+            .collect();
         assert_eq!(controls.len(), 47);
         assert!(controls.iter().all(|c| c.feedback.is_some()));
 
         assert_eq!(configs.sources.len(), 3);
         let urcb = &configs.sources[1];
-        assert_eq!((urcb.kind, urcb.reference.as_str()), (SourceKind::Urcb, "MONT/LLN0.RP.urcbAin*"));
+        assert_eq!(
+            (urcb.kind, urcb.reference.as_str()),
+            (SourceKind::Urcb, "MONT/LLN0.RP.urcbAin*")
+        );
         assert_eq!(urcb.trg_ops, Some(TRG_DATA_CHANGED | TRG_INTEGRITY));
         assert_eq!(urcb.intg_pd_ms, Some(5000));
         assert_eq!(configs.sources[0].kind, SourceKind::Brcb);
@@ -515,11 +546,30 @@ mod tests {
     #[test]
     fn parse_workbook_with_quality_points() {
         // `--with-quality` 生成的测试夹具: 品质/时标点默认禁用
-        let configs = build_configs(manifest("collector-iec61850/tests/data/pcs_points.xlsx")).unwrap();
-        let of = |k: PointKind| configs.points.iter().filter(|p| p.kind == k).collect::<Vec<_>>();
-        assert_eq!((of(PointKind::Yq).len(), of(PointKind::Ytime).len()), (103, 103));
-        assert!(of(PointKind::Yq).iter().chain(&of(PointKind::Ytime)).all(|p| !p.enable));
-        let q = configs.points.iter().find(|p| p.key == "staGGIO1_Ind1_q").unwrap();
+        let configs =
+            build_configs(manifest("collector-iec61850/tests/data/pcs_points.xlsx")).unwrap();
+        let of = |k: PointKind| {
+            configs
+                .points
+                .iter()
+                .filter(|p| p.kind == k)
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            (of(PointKind::Yq).len(), of(PointKind::Ytime).len()),
+            (103, 103)
+        );
+        assert!(
+            of(PointKind::Yq)
+                .iter()
+                .chain(&of(PointKind::Ytime))
+                .all(|p| !p.enable)
+        );
+        let q = configs
+            .points
+            .iter()
+            .find(|p| p.key == "staGGIO1_Ind1_q")
+            .unwrap();
         assert_eq!(q.reference.to_dotted(), "MONT/staGGIO1.Ind1.q");
         assert_eq!(q.reference.fc, Some(Fc::St));
     }
@@ -538,21 +588,55 @@ mod tests {
 
     #[test]
     fn monitor_point_needs_fc_and_leaf() {
-        let ok = Iec61850Config::build(&monitor_row(1.0, "k", "MONT/MMXU1.TotW.mag.f", S("MX".into()), "yc"))
-            .unwrap();
+        let ok = Iec61850Config::build(&monitor_row(
+            1.0,
+            "k",
+            "MONT/MMXU1.TotW.mag.f",
+            S("MX".into()),
+            "yc",
+        ))
+        .unwrap();
         assert_eq!(ok.reference.fc, Some(Fc::Mx));
         assert_eq!(ok.reference.to_dotted(), "MONT/MMXU1.TotW.mag.f");
         assert!(ok.enable);
         assert_eq!((ok.scale, ok.offset), (1.0, 0.0));
 
         // 缺 FC
-        assert!(Iec61850Config::build(&monitor_row(1.0, "k", "MONT/MMXU1.TotW.mag.f", Empty, "yc")).is_err());
+        assert!(
+            Iec61850Config::build(&monitor_row(1.0, "k", "MONT/MMXU1.TotW.mag.f", Empty, "yc"))
+                .is_err()
+        );
         // FC 写在 ref 里也行, 但与 fc 列冲突要报错
-        let in_ref = Iec61850Config::build(&monitor_row(1.0, "k", "MONT/MMXU1$MX$TotW$mag$f", Empty, "yc")).unwrap();
+        let in_ref = Iec61850Config::build(&monitor_row(
+            1.0,
+            "k",
+            "MONT/MMXU1$MX$TotW$mag$f",
+            Empty,
+            "yc",
+        ))
+        .unwrap();
         assert_eq!(in_ref.reference.fc, Some(Fc::Mx));
-        assert!(Iec61850Config::build(&monitor_row(1.0, "k", "MONT/MMXU1$MX$TotW$mag$f", S("ST".into()), "yc")).is_err());
+        assert!(
+            Iec61850Config::build(&monitor_row(
+                1.0,
+                "k",
+                "MONT/MMXU1$MX$TotW$mag$f",
+                S("ST".into()),
+                "yc"
+            ))
+            .is_err()
+        );
         // 只到 DO 的监视点不是叶子
-        assert!(Iec61850Config::build(&monitor_row(1.0, "k", "MONT/MMXU1.TotW", S("MX".into()), "yc")).is_err());
+        assert!(
+            Iec61850Config::build(&monitor_row(
+                1.0,
+                "k",
+                "MONT/MMXU1.TotW",
+                S("MX".into()),
+                "yc"
+            ))
+            .is_err()
+        );
     }
 
     #[test]
@@ -564,7 +648,14 @@ mod tests {
         let c = Iec61850Config::build(&r).unwrap();
         assert_eq!(c.reference.fc, None);
         assert_eq!(c.reference.to_dotted(), "MONT/ctlGAPC1.SPCSO1");
-        assert_eq!(c.ctl_opts, CtlOpts { interlock: true, synchro: true, test: false });
+        assert_eq!(
+            c.ctl_opts,
+            CtlOpts {
+                interlock: true,
+                synchro: true,
+                test: false
+            }
+        );
         assert_eq!(c.feedback, Some("fb"));
 
         r[14] = S("bogus".into());
@@ -574,9 +665,17 @@ mod tests {
     #[test]
     fn rejects_bad_rows() {
         // 保留 id、未知类型、scale 为 0、ref 格式错
-        assert!(Iec61850Config::build(&monitor_row(65535.0, "k", "L/N.A.b", S("ST".into()), "yx")).is_err());
-        assert!(Iec61850Config::build(&monitor_row(1.0, "k", "L/N.A.b", S("ST".into()), "bogus")).is_err());
-        assert!(Iec61850Config::build(&monitor_row(1.0, "k", "noslash", S("ST".into()), "yx")).is_err());
+        assert!(
+            Iec61850Config::build(&monitor_row(65535.0, "k", "L/N.A.b", S("ST".into()), "yx"))
+                .is_err()
+        );
+        assert!(
+            Iec61850Config::build(&monitor_row(1.0, "k", "L/N.A.b", S("ST".into()), "bogus"))
+                .is_err()
+        );
+        assert!(
+            Iec61850Config::build(&monitor_row(1.0, "k", "noslash", S("ST".into()), "yx")).is_err()
+        );
         let mut r = monitor_row(1.0, "k", "L/N.A.b", S("MX".into()), "yc");
         r.extend([Float(0.0)]);
         assert!(Iec61850Config::build(&r).is_err());
@@ -599,38 +698,72 @@ mod tests {
     fn source_rows() {
         let mk = |cells: &[Data]| Iec61850Source::build(cells);
         let s = mk(&[
-            S("urcb".into()), S("MONT/LLN0.RP.urcbAin*".into()), Empty, S("dchg,period".into()),
-            Float(5000.0), Empty, Empty, Float(1.0), Empty, Float(1.0),
+            S("urcb".into()),
+            S("MONT/LLN0.RP.urcbAin*".into()),
+            Empty,
+            S("dchg,period".into()),
+            Float(5000.0),
+            Empty,
+            Empty,
+            Float(1.0),
+            Empty,
+            Float(1.0),
         ])
         .unwrap();
         assert_eq!(s.kind, SourceKind::Urcb);
         assert_eq!(s.trg_ops, Some(TRG_DATA_CHANGED | TRG_INTEGRITY));
-        assert_eq!((s.intg_pd_ms, s.buf_tm_ms, s.interval_ms), (Some(5000), None, None));
+        assert_eq!(
+            (s.intg_pd_ms, s.buf_tm_ms, s.interval_ms),
+            (Some(5000), None, None)
+        );
         assert!(s.gi && !s.purge && s.enable);
 
         // `$` 写法、purge、interval=0(不重复)
         let b = mk(&[
-            S("brcb".into()), S("MONT/LLN0$BR$brcbDin*".into()), Empty, Empty,
-            Empty, Empty, Float(0.0), Float(0.0), Float(1.0), Empty,
+            S("brcb".into()),
+            S("MONT/LLN0$BR$brcbDin*".into()),
+            Empty,
+            Empty,
+            Empty,
+            Empty,
+            Float(0.0),
+            Float(0.0),
+            Float(1.0),
+            Empty,
         ])
         .unwrap();
-        assert_eq!((b.interval_ms, b.gi, b.purge, b.enable, b.trg_ops), (Some(0), false, true, true, None));
+        assert_eq!(
+            (b.interval_ms, b.gi, b.purge, b.enable, b.trg_ops),
+            (Some(0), false, true, true, None)
+        );
 
         // kind 与 ref 不一致、缺 '/'、未知触发条件
         assert!(mk(&[S("urcb".into()), S("MONT/LLN0.BR.x".into())]).is_err());
         assert!(mk(&[S("brcb".into()), S("MONT/LLN0.RP.x".into())]).is_err());
         assert!(mk(&[S("dataset".into()), S("noslash".into())]).is_err());
-        assert!(mk(&[S("urcb".into()), S("L/N.RP.x".into()), Empty, S("dchg,bogus".into())]).is_err());
+        assert!(
+            mk(&[
+                S("urcb".into()),
+                S("L/N.RP.x".into()),
+                Empty,
+                S("dchg,bogus".into())
+            ])
+            .is_err()
+        );
         assert!(mk(&[S("what".into()), S("L/N.RP.x".into())]).is_err());
     }
 
     #[test]
     fn feedback_must_point_at_a_monitor_point() {
-        let mut mon = Iec61850Config::build(&monitor_row(1.0, "fb", "L/N.A.stVal", S("ST".into()), "yx")).unwrap();
+        let mut mon =
+            Iec61850Config::build(&monitor_row(1.0, "fb", "L/N.A.stVal", S("ST".into()), "yx"))
+                .unwrap();
         mon.enable = true;
         let ctl = |key: &str, id: f64, fb: &str| {
             let mut r = monitor_row(id, key, "L/N.A", Empty, "yk");
-            r.extend([Empty, Empty, Empty, Empty, Empty, Empty, Empty, Empty, Empty]); // 6..=14
+            r.extend([
+                Empty, Empty, Empty, Empty, Empty, Empty, Empty, Empty, Empty,
+            ]); // 6..=14
             r.push(S(fb.into()));
             Iec61850Config::build(&r).unwrap()
         };

@@ -8,8 +8,8 @@ use collector_core::config;
 use collector_core::config::config_provider::{config_provider, init_config_provider};
 use collector_core::dev::can_bus::SharedCanBus;
 use collector_core::dev::manager::DevManager;
-use collector_core::dock::modbus::ModbusServer;
 use collector_core::dock::mqtt::client::MqttClient;
+use collector_core::dock::{iec104::Iec104Server, modbus::ModbusServer};
 use collector_core::runtime::core::get_runtime;
 use collector_core::shutdown::ShutdownManager;
 use collector_core::utils::database::close_database;
@@ -163,6 +163,20 @@ fn start_north_modbus_server(shutdown: ShutdownManager) {
     }
 }
 
+/// 按配置启动北向 IEC 104 子站（未启用时跳过）
+fn start_north_iec104_server(shutdown: ShutdownManager) {
+    let program = &config_provider().program().north_iec104;
+    if !program.enable {
+        return;
+    }
+    match Iec104Server::new(&program.conf, program) {
+        Ok(server) => {
+            tokio::spawn(server.start(shutdown));
+        }
+        Err(e) => error!("北向IEC104配置加载失败: {}", e),
+    }
+}
+
 /// 启动 HTTP/WebSocket API 服务器（未启用时跳过）
 fn start_api_server(eg25_rx: Option<watch::Receiver<Eg25Info>>, shutdown: ShutdownManager) {
     let program = &config_provider().program().http;
@@ -237,6 +251,8 @@ pub async fn cmd() {
     let eg25_rx = start_eg25_poller(&shutdown);
 
     start_north_modbus_server(shutdown.clone());
+
+    start_north_iec104_server(shutdown.clone());
 
     start_api_server(eg25_rx, shutdown.clone());
 

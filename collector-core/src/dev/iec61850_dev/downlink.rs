@@ -215,8 +215,22 @@ mod tests {
         }
     }
 
-    fn named(id: u32, key: &'static str, name: &'static str, kind: PointKind, enable: bool, fb: Option<&'static str>) -> Iec61850Config {
-        Iec61850Config { id, key, name, enable, feedback: fb, ..cfg(kind, 1.0, 0.0) }
+    fn named(
+        id: u32,
+        key: &'static str,
+        name: &'static str,
+        kind: PointKind,
+        enable: bool,
+        fb: Option<&'static str>,
+    ) -> Iec61850Config {
+        Iec61850Config {
+            id,
+            key,
+            name,
+            enable,
+            feedback: fb,
+            ..cfg(kind, 1.0, 0.0)
+        }
     }
 
     #[test]
@@ -227,22 +241,49 @@ mod tests {
                 named(2, "stateOff", "停用的回读", PointKind::Yx, false, None),
                 named(3, "cmd", "合闸", PointKind::Yk, true, Some("state")),
                 named(4, "cmdOff", "复位", PointKind::Yk, false, Some("state")),
-                named(5, "cmdNoFb", "无回读", PointKind::Yt, true, Some("stateOff")),
+                named(
+                    5,
+                    "cmdNoFb",
+                    "无回读",
+                    PointKind::Yt,
+                    true,
+                    Some("stateOff"),
+                ),
             ],
             sources: vec![],
         };
         let index = ControlIndex::build(&configs);
         // 按 id / key / name 三种引用都能找到启用的控制点
-        for point in [PointRef::Id(3), PointRef::Key("cmd".into()), PointRef::Name("合闸".into())] {
+        for point in [
+            PointRef::Id(3),
+            PointRef::Key("cmd".into()),
+            PointRef::Name("合闸".into()),
+        ] {
             assert_eq!(index.resolve(&point).map(|c| c.id), Some(3), "{point:?}");
         }
         // 禁用的控制点、监视点、不存在的点都找不到
-        for point in [PointRef::Id(4), PointRef::Key("cmdOff".into()), PointRef::Name("复位".into()), PointRef::Id(1), PointRef::Id(99)] {
+        for point in [
+            PointRef::Id(4),
+            PointRef::Key("cmdOff".into()),
+            PointRef::Name("复位".into()),
+            PointRef::Id(1),
+            PointRef::Id(99),
+        ] {
             assert!(index.resolve(&point).is_none(), "{point:?}");
         }
         // 回读点必须是启用的监视点
-        assert_eq!(index.feedback_of(index.resolve(&PointRef::Id(3)).unwrap()).map(|c| c.key), Some("state"));
-        assert!(index.feedback_of(index.resolve(&PointRef::Id(5)).unwrap()).is_none(), "回读点被禁用 -> 无法确认");
+        assert_eq!(
+            index
+                .feedback_of(index.resolve(&PointRef::Id(3)).unwrap())
+                .map(|c| c.key),
+            Some("state")
+        );
+        assert!(
+            index
+                .feedback_of(index.resolve(&PointRef::Id(5)).unwrap())
+                .is_none(),
+            "回读点被禁用 -> 无法确认"
+        );
     }
 
     #[test]
@@ -291,7 +332,10 @@ mod tests {
     fn analog_confirmation_tolerates_float_rounding() {
         let v = verification(Some(Val::F64(0.0)), Val::F64(1234.5));
         assert!(v.is_confirmed(&Val::F64(1234.5)));
-        assert!(v.is_confirmed(&Val::F64(1_234.500_01)), "f32 往返的微小误差");
+        assert!(
+            v.is_confirmed(&Val::F64(1_234.500_01)),
+            "f32 往返的微小误差"
+        );
         // 与下发前不同也算变化, 所以这里用没变的值验证未确认
         let v = verification(Some(Val::F64(7.0)), Val::F64(1234.5));
         assert!(!v.is_confirmed(&Val::F64(7.0)));
@@ -314,14 +358,25 @@ mod tests {
         use collector_iec61850::ControlFailure;
         let e = Error::Control {
             client_code: 99,
-            failure: ControlFailure { error: 1, add_cause: 10, ctl_num: 0 },
+            failure: ControlFailure {
+                error: 1,
+                add_cause: 10,
+                ctl_num: 0,
+            },
         };
         assert!(describe(&e).ends_with("被联锁闭锁"), "{}", describe(&e));
         let e = Error::Control {
             client_code: 99,
-            failure: ControlFailure { error: 0, add_cause: 0, ctl_num: 0 },
+            failure: ControlFailure {
+                error: 0,
+                add_cause: 0,
+                ctl_num: 0,
+            },
         };
         assert!(describe(&e).ends_with("设备没有给出原因"));
-        assert_eq!(describe(&Error::CreateFailed), Error::CreateFailed.to_string());
+        assert_eq!(
+            describe(&Error::CreateFailed),
+            Error::CreateFailed.to_string()
+        );
     }
 }

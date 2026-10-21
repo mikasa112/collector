@@ -111,7 +111,11 @@ fn resolve_dataset_ref(conn: &Connection, text: &str) -> Result<String, Error> {
         .trim()
         .split_once('/')
         .ok_or_else(|| Error::Reference(format!("{text:?} 缺少LD与LN之间的'/'")))?;
-    Ok(format!("{}/{}", conn.resolve_ld(ld)?, rest.replace('.', "$")))
+    Ok(format!(
+        "{}/{}",
+        conn.resolve_ld(ld)?,
+        rest.replace('.', "$")
+    ))
 }
 
 /// 连接丢失要交给上层重连; 其他错误只影响单个来源, 记录后降级。
@@ -132,7 +136,10 @@ impl Session {
             match conn.resolve_ref(&cfg.reference) {
                 Ok(reference) => resolved.push((cfg.clone(), reference)),
                 Err(e) if fatal(&e) => return Err(e.into()),
-                Err(e) => warn!("[{dev_id}] 点 {} 的引用 {} 无法解析, 已忽略: {e}", cfg.key, cfg.reference),
+                Err(e) => warn!(
+                    "[{dev_id}] 点 {} 的引用 {} 无法解析, 已忽略: {e}",
+                    cfg.key, cfg.reference
+                ),
             }
         }
         let monitored: Vec<(Fc, ObjectRef)> = resolved
@@ -167,7 +174,11 @@ impl Session {
                 match src.kind {
                     SourceKind::Urcb | SourceKind::Brcb => {
                         let candidates = conn.resolve_rcbs(&src.reference)?;
-                        let data_set = src.dataset.as_deref().map(|d| resolve_dataset_ref(&conn, d)).transpose()?;
+                        let data_set = src
+                            .dataset
+                            .as_deref()
+                            .map(|d| resolve_dataset_ref(&conn, d))
+                            .transpose()?;
                         let ds_ref = match &data_set {
                             Some(d) => d.clone(),
                             None => conn.rcb_data_set(&candidates[0])?,
@@ -176,7 +187,10 @@ impl Session {
                         let gi_bit = if src.gi { TRG_GI } else { 0 };
                         let config = ReportConfig {
                             data_set,
-                            trg_ops: src.trg_ops.unwrap_or(TRG_DATA_CHANGED | TRG_QUALITY_CHANGED) | gi_bit,
+                            trg_ops: src
+                                .trg_ops
+                                .unwrap_or(TRG_DATA_CHANGED | TRG_QUALITY_CHANGED)
+                                | gi_bit,
                             intg_pd_ms: src.intg_pd_ms,
                             buf_tm_ms: src.buf_tm_ms,
                             general_interrogation: src.gi,
@@ -186,14 +200,23 @@ impl Session {
                             let (dispatcher, layout) = (dispatcher.clone(), layout.clone());
                             Arc::new(move |report: &Report| {
                                 dispatcher.ingest(
-                                    report.entries.iter().flat_map(|e| layout.leaves(e.index, &e.value)),
+                                    report
+                                        .entries
+                                        .iter()
+                                        .flat_map(|e| layout.leaves(e.index, &e.value)),
                                 );
                             })
                         };
                         let chosen = conn.subscribe_report_any(&candidates, &config, handler)?;
-                        info!("[{dev_id}] 已订阅 {chosen} (数据集 {ds_ref}, {} 个成员)", layout.len());
+                        info!(
+                            "[{dev_id}] 已订阅 {chosen} (数据集 {ds_ref}, {} 个成员)",
+                            layout.len()
+                        );
                         if let Some(every) = period(src.interval_ms) {
-                            schedule.push(Schedule { job: Job::Gi(chosen), every });
+                            schedule.push(Schedule {
+                                job: Job::Gi(chosen),
+                                every,
+                            });
                         }
                         covering.push(layout);
                         subscribed += 1;
@@ -203,10 +226,16 @@ impl Session {
                         let layout = layout_of(&ds_ref)?;
                         info!("[{dev_id}] 轮询数据集 {ds_ref} ({} 个成员)", layout.len());
                         if let Some(every) = period(src.interval_ms) {
-                            schedule.push(Schedule { job: Job::PollDataSet(datasets.len()), every });
+                            schedule.push(Schedule {
+                                job: Job::PollDataSet(datasets.len()),
+                                every,
+                            });
                         }
                         covering.push(layout.clone());
-                        datasets.push(PolledDataSet { name: ds_ref, layout });
+                        datasets.push(PolledDataSet {
+                            name: ds_ref,
+                            layout,
+                        });
                     }
                 }
                 Ok(())
@@ -224,22 +253,44 @@ impl Session {
         // 3. 没被任何成功订阅的 RCB 或轮询数据集覆盖的点, 逐点轮询兜底
         let poll_points: Vec<PollPoint> = monitored
             .into_iter()
-            .filter(|(fc, r)| !covering.iter().any(|l| l.members().any(|m| m.covers(r) && m.fc == Some(*fc))))
-            .map(|(fc, reference)| PollPoint { dotted: reference.to_dotted(), reference, fc })
+            .filter(|(fc, r)| {
+                !covering
+                    .iter()
+                    .any(|l| l.members().any(|m| m.covers(r) && m.fc == Some(*fc)))
+            })
+            .map(|(fc, reference)| PollPoint {
+                dotted: reference.to_dotted(),
+                reference,
+                fc,
+            })
             .collect();
         if !poll_points.is_empty() {
-            let sample: Vec<String> = poll_points.iter().take(5).map(|p| p.reference.to_string()).collect();
+            let sample: Vec<String> = poll_points
+                .iter()
+                .take(5)
+                .map(|p| p.reference.to_string())
+                .collect();
             info!(
                 "[{dev_id}] {} 个点不在任何已订阅的数据集里, 改为逐点轮询, 如: {}",
                 poll_points.len(),
                 sample.join(", ")
             );
             if let Some(every) = period(None) {
-                schedule.push(Schedule { job: Job::PollPoints, every });
+                schedule.push(Schedule {
+                    job: Job::PollPoints,
+                    every,
+                });
             }
         }
 
-        Ok(Session { conn, dispatcher, poll_points, datasets, schedule, subscribed })
+        Ok(Session {
+            conn,
+            dispatcher,
+            poll_points,
+            datasets,
+            schedule,
+            subscribed,
+        })
     }
 
     /// 连接刚建立时把轮询类的来源先读一遍(报告类由 GI 负责)。
@@ -270,7 +321,10 @@ impl Session {
                 let ds = &self.datasets[*i];
                 match self.conn.read_data_set(&ds.name) {
                     Ok(values) => self.dispatcher.ingest(
-                        values.iter().enumerate().flat_map(|(idx, v)| ds.layout.leaves(idx, v)),
+                        values
+                            .iter()
+                            .enumerate()
+                            .flat_map(|(idx, v)| ds.layout.leaves(idx, v)),
                     ),
                     Err(e) if fatal(&e) => return Err(e),
                     Err(e) => warn!("[{dev}] 读取数据集 {} 失败: {e}", ds.name),
