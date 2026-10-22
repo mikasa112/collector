@@ -114,6 +114,9 @@ pub struct CoordinatorProgram {
     pub p_deadband: f64,
     /// 无功分配死区(kvar)
     pub q_deadband: f64,
+    /// 符号约定：`true` 正放负充，`false` 正充负放。设定值、实测值都按它，且必须与北向一致。
+    /// 没有默认值，启用时必须明确填写，否则协调控制器拒绝启动。
+    pub positive_is_discharge: Option<bool>,
     pub members: Vec<CoordinatorMember>,
 }
 
@@ -126,13 +129,14 @@ impl Default for CoordinatorProgram {
             upstream_timeout_ms: 60_000,
             p_deadband: 1.0,
             q_deadband: 1.0,
+            positive_is_discharge: None,
             members: Vec::new(),
         }
     }
 }
 
 /// 一台下级控制器。各点位都是该设备在 DataCenter 里的点 id，
-/// 设定值、实测值、限值采用同一符号约定（与北向一致）。
+/// 设定值、实测值采用同一符号约定（见 `CoordinatorProgram::positive_is_discharge`）。
 #[derive(Deserialize, Debug, Clone)]
 pub struct CoordinatorMember {
     /// DataCenter 里的设备 id
@@ -143,12 +147,15 @@ pub struct CoordinatorMember {
     pub q_set: u32,
     pub p_actual: u32,
     pub q_actual: u32,
-    /// 有功上限、下限（由下级上送）
-    pub p_upper: u32,
-    pub p_lower: u32,
-    /// 无功上限、下限（由下级上送）
-    pub q_upper: u32,
-    pub q_lower: u32,
+    /// 最大可充电功率（正数，瞬时值，随 SOC、温度变化）
+    pub p_max_charge: u32,
+    /// 最大可放电功率（正数，瞬时值）
+    pub p_max_discharge: u32,
+    /// 无功上限、下限（带符号），设备没有这两个点时不填，只按额定容量约束；必须同时填或同时不填
+    #[serde(default)]
+    pub q_upper: Option<u32>,
+    #[serde(default)]
+    pub q_lower: Option<u32>,
 }
 
 #[derive(Deserialize, Debug, Clone)]

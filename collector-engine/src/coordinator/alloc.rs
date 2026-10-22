@@ -31,6 +31,24 @@ pub struct Allocation {
     pub unmet: f64,
 }
 
+/// 由设备上送的"最大可充""最大可放"（正数）换算出带符号的有功设定范围 `(下限, 上限)`。
+/// 任一值非有限数或为负（上送异常）返回 `None`。
+pub fn p_range_from_max(
+    max_charge: f64,
+    max_discharge: f64,
+    positive_is_discharge: bool,
+) -> Option<(f64, f64)> {
+    let valid = |v: f64| v.is_finite() && v >= 0.0;
+    if !valid(max_charge) || !valid(max_discharge) {
+        return None;
+    }
+    Some(if positive_is_discharge {
+        (-max_charge, max_discharge)
+    } else {
+        (-max_discharge, max_charge)
+    })
+}
+
 /// 有功范围：上送的上下限，再受额定容量 `±S` 约束。
 pub fn p_bounds(lower: f64, upper: f64, rated_kva: f64) -> Option<Bounds> {
     Bounds::new(lower.max(-rated_kva), upper.min(rated_kva), rated_kva)
@@ -232,6 +250,20 @@ mod tests {
         // 下限仍在容量范围内时保持不变
         let q = q_bounds(200.0, 400.0, 500.0, 400.0).unwrap();
         assert_eq!((q.lower, q.upper), (200.0, 300.0));
+    }
+
+    #[test]
+    fn range_from_max_follows_sign_convention() {
+        // 正放负充：上限=可放，下限=-可充
+        assert_eq!(p_range_from_max(300.0, 500.0, true), Some((-300.0, 500.0)));
+        // 正充负放：上限=可充，下限=-可放
+        assert_eq!(p_range_from_max(300.0, 500.0, false), Some((-500.0, 300.0)));
+        // 满了不能再充：可充为 0
+        assert_eq!(p_range_from_max(0.0, 500.0, true), Some((0.0, 500.0)));
+        // 异常上送
+        assert_eq!(p_range_from_max(-1.0, 500.0, true), None);
+        assert_eq!(p_range_from_max(300.0, f64::NAN, true), None);
+        assert_eq!(p_range_from_max(f64::INFINITY, 1.0, false), None);
     }
 
     #[test]

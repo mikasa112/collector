@@ -19,7 +19,10 @@ use tokio::{
     time,
 };
 
-use super::logic::{Config, Kind, MemberView, Output, Setting, State};
+use super::{
+    alloc::p_range_from_max,
+    logic::{Config, Kind, MemberView, Output, Setting, State},
+};
 
 /// 协调控制器在 DataCenter 里的点位：北向点表的 `point_id` 填这里的编号。
 /// 1~6 可读可写（写入后回读即回显），10 以上只读。
@@ -90,11 +93,16 @@ pub enum CoordinatorError {
     BadRated(String),
     #[error("tick_ms 必须大于 0")]
     BadTick,
+    #[error("必须明确配置 positive_is_discharge(true=正放负充, false=正充负放)，且要与北向一致")]
+    SignUnset,
+    #[error("成员 {0} 的 q_upper 与 q_lower 必须同时配置或同时不配置")]
+    BadQPair(String),
 }
 
 struct Inner {
     id: String,
     members: Vec<CoordinatorMember>,
+    positive_is_discharge: bool,
     cfg: Config,
     tick: Duration,
     state: Mutex<State>,
@@ -143,9 +151,20 @@ impl Coordinator {
         {
             return Err(CoordinatorError::BadRated(m.dev.clone()));
         }
+        let Some(positive_is_discharge) = program.positive_is_discharge else {
+            return Err(CoordinatorError::SignUnset);
+        };
+        if let Some(m) = program
+            .members
+            .iter()
+            .find(|m| m.q_upper.is_some() != m.q_lower.is_some())
+        {
+            return Err(CoordinatorError::BadQPair(m.dev.clone()));
+        }
         let inner = Arc::new(Inner {
             id: program.id.clone(),
             members: program.members.clone(),
+            positive_is_discharge,
             cfg: Config {
                 rated_kva: program.members.iter().map(|m| m.rated_kva).collect(),
                 p_deadband: program.p_deadband,
@@ -181,25 +200,32 @@ impl Inner {
             .read(&m.dev, COMM_STATUS_ID)
             .and_then(|p| p.value.as_bool().ok())
             .unwrap_or(false);
-        // 限值点还没上送，或通讯故障，都视为离线
-        match (
-            get(m.p_upper),
-            get(m.p_lower),
-            get(m.q_upper),
-            get(m.q_lower),
-        ) {
-            (Some(p_upper), Some(p_lower), Some(q_upper), Some(q_lower)) if !comm_fault => {
-                MemberView {
-                    online: true,
-                    p_actual: get(m.p_actual).unwrap_or(0.0),
-                    q_actual: get(m.q_actual).unwrap_or(0.0),
-                    p_lower,
-                    p_upper,
-                    q_lower,
-                    q_upper,
-                }
-            }
-            _ => MemberView::default(),
+        if comm_fault {
+            return MemberView::default();
+        }
+        // 最大可充/可放还没上送或数值异常，视为离线
+        let Some((p_lower, p_upper)) = get(m.p_max_charge)
+            .zip(get(m.p_max_discharge))
+            .and_then(|(c, d)| p_range_from_max(c, d, self.positive_is_discharge))
+        else {
+            return MemberView::default();
+        };
+        // 设备没有无功限值点时只按额定容量约束；配了但还没上送则视为离线
+        let (q_lower, q_upper) = match (m.q_lower, m.q_upper) {
+            (Some(lo), Some(hi)) => match (get(lo), get(hi)) {
+                (Some(lo), Some(hi)) => (lo, hi),
+                _ => return MemberView::default(),
+            },
+            _ => (-m.rated_kva, m.rated_kva),
+        };
+        MemberView {
+            online: true,
+            p_actual: get(m.p_actual).unwrap_or(0.0),
+            q_actual: get(m.q_actual).unwrap_or(0.0),
+            p_lower,
+            p_upper,
+            q_lower,
+            q_upper,
         }
     }
 
@@ -493,10 +519,10 @@ mod tests {
             q_set: 2,
             p_actual: 3,
             q_actual: 4,
-            p_upper: 11,
-            p_lower: 12,
-            q_upper: 13,
-            q_lower: 14,
+            p_max_charge: 11,
+            p_max_discharge: 12,
+            q_upper: Some(13),
+            q_lower: Some(14),
         }
     }
 
@@ -514,6 +540,7 @@ mod tests {
         }
     }
 
+    /// 最大可充、可放各 500；无功限值 ±500。
     fn ingest_member(dev: &str, p_actual: f64) {
         data_center().ingest(
             dev,
@@ -521,7 +548,7 @@ mod tests {
                 dp(3, p_actual),
                 dp(4, 0.0),
                 dp(11, 500.0),
-                dp(12, -500.0),
+                dp(12, 500.0),
                 dp(13, 500.0),
                 dp(14, -500.0),
             ],
@@ -576,6 +603,7 @@ mod tests {
             upstream_timeout_ms: 0,
             p_deadband: 1.0,
             q_deadband: 1.0,
+            positive_is_discharge: Some(true),
             members: vec![member(A), member(B)],
         };
         let mut co = Coordinator::new(&program).unwrap();
@@ -663,10 +691,14 @@ mod tests {
     fn rejects_bad_config() {
         let base = CoordinatorProgram {
             members: vec![member("x")],
+            positive_is_discharge: Some(true),
             ..Default::default()
         };
         assert!(Coordinator::new(&base).is_ok());
-        let empty = CoordinatorProgram::default();
+        let empty = CoordinatorProgram {
+            positive_is_discharge: Some(true),
+            ..Default::default()
+        };
         assert!(matches!(
             Coordinator::new(&empty),
             Err(CoordinatorError::NoMembers)
@@ -677,11 +709,104 @@ mod tests {
             Coordinator::new(&bad),
             Err(CoordinatorError::BadRated(_))
         ));
-        let mut bad = base;
+        let mut bad = base.clone();
         bad.tick_ms = 0;
         assert!(matches!(
             Coordinator::new(&bad),
             Err(CoordinatorError::BadTick)
         ));
+        // 符号约定必须明确配置，不给默认值
+        let mut bad = base.clone();
+        bad.positive_is_discharge = None;
+        assert!(matches!(
+            Coordinator::new(&bad),
+            Err(CoordinatorError::SignUnset)
+        ));
+        // 无功上下限只配一个
+        let mut bad = base;
+        bad.members[0].q_lower = None;
+        assert!(matches!(
+            Coordinator::new(&bad),
+            Err(CoordinatorError::BadQPair(_))
+        ));
+    }
+
+    /// 最大可充/可放是动态值：随之变化的可调范围，正负号约定决定上下限方向，
+    /// 没有无功限值点的设备只按额定容量约束。
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn dynamic_max_power_and_sign_convention() {
+        const DEV: &str = "co-dyn-a";
+        const DEV_NOQ: &str = "co-dyn-b";
+        let center = data_center();
+        let ingest = |dev: &str, charge: f64, discharge: f64| {
+            center.ingest(
+                dev,
+                vec![dp(3, 0.0), dp(4, 0.0), dp(11, charge), dp(12, discharge)],
+            )
+        };
+        ingest(DEV, 300.0, 500.0);
+        ingest(DEV_NOQ, 100.0, 200.0);
+        center.ingest(DEV, vec![dp(13, 500.0), dp(14, -500.0)]);
+        let (tx_a, _rx_a) = mpsc::channel(16);
+        let (tx_b, _rx_b) = mpsc::channel(16);
+        center.attach_downlink(DEV, tx_a).unwrap();
+        center.attach_downlink(DEV_NOQ, tx_b).unwrap();
+
+        let mut no_q = member(DEV_NOQ);
+        no_q.q_upper = None;
+        no_q.q_lower = None;
+        let program = |id: &str, positive_is_discharge: bool| CoordinatorProgram {
+            enable: true,
+            id: id.into(),
+            tick_ms: 50,
+            upstream_timeout_ms: 0,
+            positive_is_discharge: Some(positive_is_discharge),
+            members: vec![member(DEV), no_q.clone()],
+            ..Default::default()
+        };
+
+        // 正放负充：上限=可放之和 700，下限=-可充之和 -400
+        let mut co = Coordinator::new(&program("co-dyn-pos", true)).unwrap();
+        co.init().unwrap();
+        co.start().await.unwrap();
+        wait_until("正放负充范围", || {
+            value("co-dyn-pos", P_UPPER.id) == Some(Val::F64(700.0))
+                && value("co-dyn-pos", P_LOWER.id) == Some(Val::F64(-400.0))
+        })
+        .await;
+        // 无功：A 上送 ±500，B 没有限值点按额定容量 ±500
+        wait_until("无功范围", || {
+            value("co-dyn-pos", Q_UPPER.id) == Some(Val::F64(1000.0))
+                && value("co-dyn-pos", Q_LOWER.id) == Some(Val::F64(-1000.0))
+        })
+        .await;
+        // 最大可放随 SOC 下降而变小：总上限跟着变
+        ingest(DEV, 300.0, 100.0);
+        wait_until("可放下降", || {
+            value("co-dyn-pos", P_UPPER.id) == Some(Val::F64(300.0))
+        })
+        .await;
+        // 数值异常（负数）按离线处理，不计入范围
+        ingest(DEV, -1.0, 100.0);
+        wait_until("异常视为离线", || {
+            value("co-dyn-pos", COMM_STATUS_ID) == Some(Val::U8(1))
+                && value("co-dyn-pos", P_UPPER.id) == Some(Val::F64(200.0))
+        })
+        .await;
+        co.stop().await.unwrap();
+
+        // 正充负放：同样的数据，上下限方向相反
+        ingest(DEV, 300.0, 500.0);
+        let mut co = Coordinator::new(&program("co-dyn-neg", false)).unwrap();
+        co.init().unwrap();
+        co.start().await.unwrap();
+        wait_until("正充负放范围", || {
+            value("co-dyn-neg", P_UPPER.id) == Some(Val::F64(400.0))
+                && value("co-dyn-neg", P_LOWER.id) == Some(Val::F64(-700.0))
+        })
+        .await;
+        co.stop().await.unwrap();
+        center.detach_downlink(DEV);
+        center.detach_downlink(DEV_NOQ);
     }
 }

@@ -24,6 +24,24 @@ def main() -> int:
     workbook = XlsmWorkbook(source)
     project = parse_project_sheet(workbook.sheet_rows("project"))
     project["program"] = parse_program_sheet(workbook.sheet_rows("program"))
+    members = parse_coordinator_members(
+        find_optional_sheet_rows(workbook, COORDINATOR_MEMBER_SHEETS)
+    )
+    coordinator = project["program"].get("coordinator")
+    if coordinator is not None and "members" in coordinator:
+        # program 表里只能写标量；members 是对象数组，写成单元格文本会变成字符串，采集器解析 config.json 会失败
+        if not members:
+            raise ValueError(
+                "program 表的 coordinator.members 不能直接填写，请新增 coordinator_members 表，"
+                "一行一台成员（列见 docs/coordinator.md），并删除 program 表里的 members 行"
+            )
+        print(
+            "警告: 忽略 program 表里的 coordinator.members，改用 coordinator_members 表",
+            file=sys.stderr,
+        )
+    if members:
+        project["program"].setdefault("coordinator", {})["members"] = members
+    normalize_coordinator_sign(project["program"].get("coordinator"))
     devices = parse_devices(
         workbook.sheet_rows("devices"),
         workbook.sheet_rows("config"),
@@ -243,6 +261,98 @@ def parse_program_sheet(rows: list[dict[str, str]]) -> dict[str, Any]:
             entry[param] = normalize_scalar(row.get("value", ""))
 
     return {key: features[key] for key in order}
+
+
+COORDINATOR_MEMBER_SHEETS = ["coordinator_members", "协调控制器成员"]
+
+# 成员表的必填列：(列名, 是否整数)。列名即 program.coordinator.members[] 的字段名
+COORDINATOR_MEMBER_COLUMNS: list[tuple[str, bool]] = [
+    ("dev", False),
+    ("rated_kva", False),
+    ("p_set", True),
+    ("q_set", True),
+    ("p_actual", True),
+    ("q_actual", True),
+    ("p_max_charge", True),
+    ("p_max_discharge", True),
+]
+# 选填列：设备没有无功上下限点时留空，必须同时填或同时留空
+COORDINATOR_MEMBER_OPTIONAL: list[str] = ["q_upper", "q_lower"]
+
+
+def normalize_coordinator_sign(coordinator: dict[str, Any] | None) -> None:
+    """positive_is_discharge 是布尔值；Excel 里常填 1/0，这里转成 true/false。
+    启用协调控制器时必须明确填写，不给默认值（充放电方向填反是安全问题）。"""
+    if coordinator is None:
+        return
+    value = coordinator.get("positive_is_discharge")
+    if value in (0, 1) and not isinstance(value, bool):
+        value = bool(value)
+        coordinator["positive_is_discharge"] = value
+    if value is not None and not isinstance(value, bool):
+        raise ValueError(
+            f"coordinator.positive_is_discharge 只能填 true/false(或 1/0)，当前: {value!r}"
+        )
+    if coordinator.get("enable") and value is None:
+        raise ValueError(
+            "启用 coordinator 时必须在 program 表填写 positive_is_discharge："
+            "true=正放负充，false=正充负放（要与北向上级约定的方向一致）"
+        )
+
+
+def parse_coordinator_members(rows: list[dict[str, str]]) -> list[dict[str, Any]]:
+    """协调控制器成员：一行一台，enable 为 0/false 的行跳过，缺列或格式错误直接报错。"""
+    members: list[dict[str, Any]] = []
+    for row in rows:
+        if not is_enabled(row):
+            continue
+        member: dict[str, Any] = {}
+        for name, is_int in COORDINATOR_MEMBER_COLUMNS:
+            text = row.get(name, "").strip()
+            where = f"coordinator_members dev={row.get('dev', '').strip() or '?'}"
+            if not text:
+                raise ValueError(f"{where}: 列 {name} 不能为空")
+            if name == "dev":
+                member[name] = text
+                continue
+            try:
+                number = float(text)
+            except ValueError:
+                raise ValueError(f"{where}: 列 {name} 不是数字: {text!r}") from None
+            if is_int:
+                if number != int(number) or number < 0:
+                    raise ValueError(f"{where}: 列 {name} 必须是非负整数: {text!r}")
+                member[name] = int(number)
+            else:
+                if number <= 0:
+                    raise ValueError(f"{where}: 列 {name} 必须大于 0: {text!r}")
+                member[name] = number
+        for name in COORDINATOR_MEMBER_OPTIONAL:
+            text = row.get(name, "").strip()
+            if not text:
+                continue
+            try:
+                number = float(text)
+            except ValueError:
+                raise ValueError(
+                    f"coordinator_members dev={member['dev']}: 列 {name} 不是数字: {text!r}"
+                ) from None
+            if number != int(number) or number < 0:
+                raise ValueError(
+                    f"coordinator_members dev={member['dev']}: 列 {name} 必须是非负整数: {text!r}"
+                )
+            member[name] = int(number)
+        if ("q_upper" in member) != ("q_lower" in member):
+            raise ValueError(
+                f"coordinator_members dev={member['dev']}: q_upper 与 q_lower 必须同时填或同时留空"
+            )
+        members.append(member)
+    seen: set[str] = set()
+    for member in members:
+        if member["dev"] in seen:
+            raise ValueError(f"coordinator_members: 设备 {member['dev']} 重复")
+        seen.add(member["dev"])
+    return members
 
 
 def sanitize_identifier(text: str) -> str:
