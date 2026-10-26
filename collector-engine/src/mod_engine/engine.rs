@@ -16,6 +16,7 @@ use crate::mod_engine::{
     api::{
         can::create_can_table,
         dc::create_dc_table,
+        dlt645_client::create_dlt645_table,
         json::create_json_table,
         log::create_log_table,
         modbus_client::create_modbus_table,
@@ -350,6 +351,7 @@ impl ModEngine {
         extend_dc_table(&self.lua, &dc_table, cmd_tx.clone(), self.vdevs.clone())?;
         globals.set("dc", dc_table)?;
         globals.set("modbus", create_modbus_table(&self.lua)?)?;
+        globals.set("dlt645", create_dlt645_table(&self.lua)?)?;
         globals.set("store", create_store_table(&self.lua, store)?)?;
         globals.set("save", create_save_table(&self.lua, data_file)?)?;
         globals.set("plugin", create_plugin_table(&self.lua, script_dir)?)?;

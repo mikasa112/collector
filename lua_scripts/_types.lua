@@ -92,7 +92,7 @@ local VDev = {}
 ---@param points VDevPoint[]
 function VDev:ingest(points) end
 
---- 上报通讯状态（key=communicationStatus, id=0xFFFF，与 modbus_dev/can_dev 一致）。
+--- 上报通讯状态（key=communicationStatus, id=0xFFFF，与 modbus_dev/can_dev/dlt645_dev 一致）。
 ---@param online boolean true=有通讯，false=通讯故障
 function VDev:set_comm(online) end
 
@@ -100,7 +100,7 @@ function VDev:set_comm(online) end
 function VDev:unregister() end
 
 --- 把当前脚本注册为数据中心里的一个设备。
---- 其他模块对该设备 dc.dispatch 时，会触发 on_write 回调（在本脚本 VM 内执行，可直接调用 modbus 读写）。
+--- 其他模块对该设备 dc.dispatch 时，会触发 on_write 回调（在本脚本 VM 内执行，可直接调用 modbus/dlt645 读写）。
 --- dev_id 已被占用（如存在同名 modbus_dev 设备）时返回 nil, err——内置设备优先。
 ---@param dev_id   string
 ---@param on_write fun(points: VDevWritePoint[])?
@@ -461,3 +461,75 @@ function modbus.decode(regs, type, order, index) end
 ---@param order string?
 ---@return integer[]
 function modbus.encode(value, type, order) end
+
+-----------------------------------------------------------------------
+-- dlt645 - 脚本直连 DL/T645-2007 电表（串口，只读，不依赖点表配置）
+-----------------------------------------------------------------------
+
+---@class Dlt645ConnectOpts
+---@field serial    string    串口设备，如 "/dev/ttyS1"
+---@field baud      integer?  波特率，默认 2400
+---@field parity    "N"|"E"|"O"? 校验，默认 "E"
+---@field data_bits integer?  数据位，默认 8
+---@field stop_bits integer?  停止位，默认 1
+---@field address   string?   默认表地址（1~12 位十进制数字）；缺省时每次读取都必须传 address
+---@field timeout   integer?  单次请求超时（毫秒），默认 1200
+
+--- 自定义 DI 数据格式（小端压缩 BCD）
+---@class Dlt645Spec
+---@field len      integer  数据域字节数（不含 4 字节 DI）
+---@field decimals integer? 隐含小数位数，默认 0
+---@field signed   boolean? 最高字节 bit7 是否为符号位，默认 false
+
+--- 内置 DI 表查询结果
+---@class Dlt645SpecInfo
+---@field len      integer
+---@field decimals integer
+---@field signed   boolean
+---@field unit     string   单位，如 "V"、"kWh"；无单位为 ""
+
+--- 读取方法的失败约定：返回 nil, err（不抛异常）。
+--- 串口 I/O 错误会丢弃连接，下次调用自动重开；超时、电表异常码、地址/DI 不匹配只让本次失败，不影响串口。
+--- 同一句柄上的请求自动串行。DI 可传整数（如 0x02010100）或 8 位十六进制字符串（如 "02010100"）。
+---@class Dlt645Conn
+local Dlt645Conn = {}
+
+--- 读取一个 DI 并解码为工程值（已应用小数位和符号）。
+--- 默认按内置 DI 表解码；未收录的 DI 需传 spec，否则返回 nil, err。
+---@param di      integer|string
+---@param address string?       覆盖默认表地址（同一条 485 上访问其他电表）
+---@param spec    Dlt645Spec?   自定义格式
+---@return number|nil, string|nil
+function Dlt645Conn:read(di, address, spec) end
+
+--- 读取一个 DI 的原始数据域字节（不含 4 字节 DI），可配合 dlt645.decode 自行解码。
+---@param di      integer|string
+---@param address string?
+---@return integer[]|nil, string|nil
+function Dlt645Conn:read_raw(di, address) end
+
+---@return boolean
+function Dlt645Conn:is_connected() end
+--- 主动关闭串口；之后再调用读取方法会自动重开
+function Dlt645Conn:close() end
+
+---@class Dlt645Api
+dlt645 = {}
+
+--- 打开串口并建立连接。失败返回 nil, err。
+---@param opts Dlt645ConnectOpts
+---@return Dlt645Conn|nil conn
+---@return string|nil err
+function dlt645.connect(opts) end
+
+--- 查询内置 DI 表中的数据格式，未收录返回 nil。
+---@param di integer|string
+---@return Dlt645SpecInfo|nil
+function dlt645.spec(di) end
+
+--- 解码小端压缩 BCD 字节（配合 read_raw）。
+---@param bytes    integer[]
+---@param decimals integer? 隐含小数位数，默认 0
+---@param signed   boolean? 最高字节 bit7 为符号位，默认 false
+---@return number
+function dlt645.decode(bytes, decimals, signed) end

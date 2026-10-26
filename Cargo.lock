@@ -827,6 +827,7 @@ dependencies = [
  "bytes",
  "chrono",
  "collector-core",
+ "collector-dlt645",
  "cron",
  "futures-util",
  "mlua",

@@ -176,7 +176,7 @@ impl UserData for VDevHandle {
 ///
 /// 注册后：
 /// - `dev:ingest(points)` 上报的点位与内置设备完全一致，可被 dc.read/watch、上行、告警、历史等消费；
-/// - 其他模块 `dc.dispatch(dev_id, ...)` 下发时，触发 `on_write(points)` 回调（在脚本 VM 内执行，可直接调用 modbus 读写）。
+/// - 其他模块 `dc.dispatch(dev_id, ...)` 下发时，触发 `on_write(points)` 回调（在脚本 VM 内执行，可直接调用 modbus/dlt645 读写）。
 ///
 /// dev_id 已被占用（如已存在同名 modbus_dev）时返回 `nil, err`，内置设备优先。
 pub fn extend_dc_table(

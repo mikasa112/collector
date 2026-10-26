@@ -5,6 +5,7 @@ edition = "2024"
 
 [dependencies]
 collector-core = { path = "../collector-core" }
+collector-dlt645 = { path = "../collector-dlt645" }
 tokio = { workspace = true }
 tokio-util = { workspace = true }
 thiserror = { workspace = true }
