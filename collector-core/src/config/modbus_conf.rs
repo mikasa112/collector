@@ -44,8 +44,12 @@ impl TryFrom<&str> for ModbusDataType {
             "Bool" => Ok(ModbusDataType::Bool),
             "U16" => Ok(ModbusDataType::U16),
             "I16" => Ok(ModbusDataType::I16),
+            "S16" => Ok(ModbusDataType::I16),
+            "s16" => Ok(ModbusDataType::I16),
             "U32" => Ok(ModbusDataType::U32),
             "I32" => Ok(ModbusDataType::I32),
+            "S32" => Ok(ModbusDataType::I32),
+            "s32" => Ok(ModbusDataType::I32),
             _ => Err(ModbusDataTypeError::InvalidDataType),
         }
     }
@@ -136,6 +140,31 @@ pub enum ModbusConfigsError {
     DuplicatePointId(u16),
 }
 
+/// 地址和地址步长支持数值单元格、十进制文本及带 0x/0X 前缀的十六进制文本。
+fn required_address_number(row: &[Data], idx: usize, field: &str) -> anyhow::Result<f64> {
+    let cell = row
+        .get(idx)
+        .ok_or_else(|| anyhow::anyhow!("{field}不能为空"))?;
+    if let Some(value) = cell.get_float() {
+        return Ok(value);
+    }
+    if let Some(value) = cell.get_int() {
+        return Ok(value as f64);
+    }
+    let text = cell
+        .get_string()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| anyhow::anyhow!("{field}不能为空"))?;
+    if let Some(hex) = text.strip_prefix("0x").or_else(|| text.strip_prefix("0X")) {
+        return u16::from_str_radix(hex, 16)
+            .map(f64::from)
+            .map_err(|_| anyhow::anyhow!("{field}十六进制格式错误或超出范围(0..65535): {text}"));
+    }
+    text.parse::<f64>()
+        .map_err(|_| anyhow::anyhow!("{field}格式错误: {text}"))
+}
+
 /// 一行模板配置按"重复次数/地址步长/序号步长"展开为多份（如一堆多簇场景）。
 /// 缺少这三列（或重复次数<=1）时原样返回单行，兼容旧配置文件。
 fn expand_row(row: &[Data]) -> Vec<Vec<Data>> {
@@ -155,9 +184,9 @@ fn expand_row(row: &[Data]) -> Vec<Vec<Data>> {
     let steps = row
         .first()
         .and_then(|cell| cell.get_float())
-        .zip(row.get(5).and_then(|cell| cell.get_float()))
+        .zip(required_address_number(row, 5, "寄存器地址").ok())
         .zip(row.get(ID_STEP_COL).and_then(|cell| cell.get_float()))
-        .zip(row.get(ADDR_STEP_COL).and_then(|cell| cell.get_float()));
+        .zip(required_address_number(row, ADDR_STEP_COL, "地址步长").ok());
     let Some((((base_id, base_addr), id_step), addr_step)) = steps else {
         error!(
             "配置了重复次数({repeat_count})但缺少序号/寄存器地址/序号步长/地址步长，按不展开处理"
@@ -278,7 +307,11 @@ impl ModbusConfig {
         let data_type = ModbusDataType::try_from(required_str(row, 2, "数据类型")?)?;
         let unit = optional_static_str(row, 3);
         let remarks = optional_static_str(row, 4);
-        let register_address = required_f64(row, 5, "寄存器地址")? as u16;
+        let register_address = required_address_number(row, 5, "寄存器地址")?;
+        if !(0.0..=u16::MAX as f64).contains(&register_address) || register_address.fract() != 0.0 {
+            return Err(anyhow::anyhow!("寄存器地址必须为0..65535范围内的整数"));
+        }
+        let register_address = register_address as u16;
         let register_type = RegisterType::try_from(required_str(row, 6, "寄存器类型")?)?;
         let quantity = required_usize_integerish(row, 7, "数量")? as u16;
         let item_width = data_type.register_width();
@@ -371,6 +404,69 @@ mod expand_row_tests {
             Data::Empty,                                   // 14: 状态字
             Data::Empty,                                   // 15: 告警位
         ]
+    }
+
+    #[test]
+    fn build_accepts_numeric_decimal_and_hex_addresses() {
+        for cell in [
+            Data::Int(4096),
+            Data::Float(4096.0),
+            Data::String("4096".into()),
+            Data::String("0x1000".into()),
+            Data::String(" 0X1000 ".into()),
+        ] {
+            let mut row = base_row();
+            row[5] = cell;
+            assert_eq!(ModbusConfig::build(&row).unwrap().register_address, 4096);
+        }
+        for (text, expected) in [("0x0", 0), ("0xFFFF", 65535), ("0xabcd", 43981)] {
+            let mut row = base_row();
+            row[5] = Data::String(text.into());
+            assert_eq!(
+                ModbusConfig::build(&row).unwrap().register_address,
+                expected
+            );
+        }
+    }
+
+    #[test]
+    fn build_rejects_invalid_addresses() {
+        for cell in [
+            Data::Empty,
+            Data::String("0x".into()),
+            Data::String("0xGG".into()),
+            Data::String("0x10000".into()),
+            Data::Float(-1.0),
+            Data::Float(65536.0),
+            Data::Float(1.5),
+            Data::Float(f64::NAN),
+            Data::Float(f64::INFINITY),
+        ] {
+            let mut row = base_row();
+            row[5] = cell;
+            assert!(ModbusConfig::build(&row).is_err());
+        }
+    }
+
+    #[test]
+    fn expand_hex_addresses_and_steps() {
+        let mut row = base_row();
+        row[5] = Data::String("0x1000".into());
+        row.extend([
+            Data::Float(3.0),
+            Data::String("0X10".into()),
+            Data::Float(1.0),
+        ]);
+        let expanded = expand_row(&row);
+        assert_eq!(expanded.len(), 3);
+        for (i, row) in expanded.iter().enumerate() {
+            assert_eq!(
+                ModbusConfig::build(row).unwrap().register_address,
+                4096 + i as u16 * 16
+            );
+        }
+        row[5] = Data::String("0xFFF0".into());
+        assert!(ModbusConfig::build(&expand_row(&row)[1]).is_err());
     }
 
     #[test]
