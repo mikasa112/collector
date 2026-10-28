@@ -1,8 +1,9 @@
 use calamine::{Data, DataType, HeaderRow, Range, Reader, Xlsx, open_workbook};
 use collector_dlt645::{DataIdentifier, DiSpec, MeterAddress, spec_for};
+use std::sync::Arc;
 
 use crate::{
-    config::{optional_static_str, required_f64, required_hex, required_static_str},
+    config::{optional_shared_str, required_f64, required_hex, required_shared_str},
     core::point::{Bits, DataPoint, PointId, Translator, Val, WarnLevel, Words},
 };
 
@@ -32,17 +33,17 @@ pub type Dlt645Configs = Vec<Dlt645Config>;
 #[derive(Debug, Clone)]
 pub struct Dlt645Config {
     pub id: PointId,
-    pub key: &'static str,
-    pub name: &'static str,
+    pub key: Arc<str>,
+    pub name: Arc<str>,
     pub address: Option<MeterAddress>,
     pub spec: DiSpec,
     pub scale: f64,
     pub offset: f64,
-    pub unit: Option<&'static str>,
+    pub unit: Option<Arc<str>>,
     pub enable: bool,
-    pub trans: Option<&'static Translator>,
-    pub status_words: Option<&'static Words>,
-    pub warn_bits: Option<&'static Bits>,
+    pub trans: Option<Arc<Translator>>,
+    pub status_words: Option<Arc<Words>>,
+    pub warn_bits: Option<Arc<Bits>>,
     pub level: Option<WarnLevel>,
 }
 
@@ -55,13 +56,13 @@ impl Dlt645Config {
     pub fn to_data_point(&self, value: Val) -> DataPoint {
         DataPoint {
             id: self.id,
-            key: self.key,
-            name: self.name,
+            key: self.key.clone(),
+            name: self.name.clone(),
             value,
-            translator: self.trans,
-            bits: self.warn_bits,
-            words: self.status_words,
-            unit: self.unit,
+            translator: self.trans.clone(),
+            bits: self.warn_bits.clone(),
+            words: self.status_words.clone(),
+            unit: self.unit.clone(),
             level: self.level,
         }
     }
@@ -71,8 +72,8 @@ impl Dlt645Config {
         if id == COMM_STATUS_ID {
             return Err(anyhow::anyhow!("id {COMM_STATUS_ID} 保留给通讯状态点"));
         }
-        let key = required_static_str(row, 1, "KEY")?;
-        let name = optional_static_str(row, 2).unwrap_or_default();
+        let key = required_shared_str(row, 1, "KEY")?;
+        let name = optional_shared_str(row, 2).unwrap_or_default();
         let address = parse_address(row.get(3))?;
         if matches!(row.get(4), Some(Data::Float(_) | Data::Int(_))) {
             return Err(anyhow::anyhow!("DI请填写为文本(如 02010100)"));
@@ -84,16 +85,16 @@ impl Dlt645Config {
         }
         let offset = row.get(6).and_then(|c| c.as_f64()).unwrap_or(0.0);
         let spec = build_spec(di, row)?;
-        let unit = optional_static_str(row, 7)
+        let unit = optional_shared_str(row, 7)
             .filter(|s| !s.trim().is_empty())
-            .or((!spec.unit.is_empty()).then_some(spec.unit));
+            .or((!spec.unit.is_empty()).then_some(spec.unit.into()));
         // 与其它点表一致：留空视为启用
         let enable = row.get(8).and_then(|c| c.as_f64()).unwrap_or(1.0) != 0.0;
         let trans = row
             .get(9)
             .and_then(|cell| cell.get_string())
             .and_then(|str| Translator::try_from(str).ok())
-            .map(|t| &*Box::leak(Box::new(t)));
+            .map(Arc::new);
         let status_words = parse_optional_cell(row, 10, "STATUS_WORDS", |s| Words::try_from(s));
         let warn_bits = parse_optional_cell(row, 11, "WARN_BITS", |s| Bits::try_from(s));
         let level = row
@@ -185,13 +186,13 @@ fn parse_optional_cell<T>(
     idx: usize,
     field: &str,
     parse: impl FnOnce(&str) -> Result<T, anyhow::Error>,
-) -> Option<&'static T> {
+) -> Option<Arc<T>> {
     let text = row.get(idx)?.get_string()?;
     if text.trim().is_empty() {
         return None;
     }
     match parse(text) {
-        Ok(v) => Some(&*Box::leak(Box::new(v))),
+        Ok(v) => Some(Arc::new(v)),
         Err(err) => {
             tracing::warn!("DLT645点表 {field} 解析失败, 已忽略: {err}");
             None
@@ -239,7 +240,7 @@ mod tests {
         let cfg = Dlt645Config::build(&row(1.0, S("000000000001".into()), "02010100")).unwrap();
         assert_eq!(cfg.address, Some(MeterAddress::parse("1").unwrap()));
         assert_eq!((cfg.spec.len, cfg.spec.decimals), (2, 1));
-        assert_eq!(cfg.unit, Some("V"));
+        assert_eq!(cfg.unit.as_deref(), Some("V"));
         assert!(cfg.enable);
         assert_eq!(cfg.to_val(2205.0 / 10.0), Val::F64(220.5));
     }

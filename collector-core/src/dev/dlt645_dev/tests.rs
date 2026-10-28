@@ -27,8 +27,8 @@ fn point(id: PointId, key: &'static str, address: Option<&str>, di: u32) -> Dlt6
     let di = DataIdentifier::from_u32(di);
     Dlt645Config {
         id,
-        key,
-        name: key,
+        key: key.into(),
+        name: key.into(),
         address: address.map(addr),
         spec: spec_for(di).unwrap(),
         scale: 1.0,
@@ -163,7 +163,7 @@ async fn polls_two_meters_on_one_bus_and_decodes_values() {
 
     // 单位来自内置格式表，停止后通讯状态置为故障
     let dp = data_center().read(dev, 1).unwrap();
-    assert_eq!(dp.key, "voltage");
+    assert_eq!(dp.key, "voltage".into());
     h.stop_tx.send(true).unwrap();
     wait_until("停止后置故障", || {
         h.state.load() == LifecycleState::Stopped && value(dev, COMM_STATUS_ID) == Some(Val::U8(1))
@@ -227,7 +227,7 @@ fn plan_skips_disabled_unaddressed_and_duplicate_points() {
         ],
         None,
     );
-    let keys: Vec<_> = plan.iter().map(|p| p.cfg.key).collect();
+    let keys: Vec<_> = plan.iter().map(|p| p.cfg.key.as_ref()).collect();
     assert_eq!(keys, ["ok", "other"]);
 }
 

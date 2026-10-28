@@ -161,7 +161,7 @@ async fn subscribes_receives_changes_and_dispatches_commands() {
     let spc_id = example_configs()
         .points
         .iter()
-        .find(|p| p.key == "ctlGAPC1_SPCSO6_cmd")
+        .find(|p| p.key == "ctlGAPC1_SPCSO6_cmd".into())
         .unwrap()
         .id;
     data_center()

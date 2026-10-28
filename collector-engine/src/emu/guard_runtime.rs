@@ -137,13 +137,13 @@ fn data_point(
 ) -> DataPoint {
     DataPoint {
         id: point.id,
-        key: point.key,
-        name,
+        key: point.key.into(),
+        name: name.into(),
         value,
         translator: None,
         bits: None,
         words: None,
-        unit,
+        unit: unit.map(Into::into),
         level: None,
     }
 }

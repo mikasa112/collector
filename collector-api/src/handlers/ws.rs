@@ -47,33 +47,70 @@ pub async fn data_ws_handler(req: &mut Request, res: &mut Response) -> Result<()
 #[derive(Debug, Clone, Serialize)]
 struct Point<'a> {
     id: u32,
-    key: &'static str,
-    name: &'static str,
+    key: &'a str,
+    name: &'a str,
     value: &'a Val,
     #[serde(skip_serializing_if = "Option::is_none")]
-    words: Option<&'static Words>,
+    words: Option<&'a Words>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    unit: Option<&'static str>,
+    unit: Option<&'a str>,
 }
 
 impl<'a> Point<'a> {
     fn from_data_point(data_point: &'a DataPoint, lang: DevQueryLang) -> Self {
         let name = match lang {
-            DevQueryLang::Zh => data_point.name,
-            DevQueryLang::En => data_point.translator.map_or(data_point.name, |t| t.en),
+            DevQueryLang::Zh => data_point.name.as_ref(),
+            DevQueryLang::En => data_point
+                .translator
+                .as_ref()
+                .map_or(data_point.name.as_ref(), |t| t.en.as_ref()),
         };
         Point {
             id: data_point.id,
-            key: data_point.key,
+            key: data_point.key.as_ref(),
             name,
             value: &data_point.value,
-            words: data_point.words,
-            unit: data_point.unit,
+            words: data_point.words.as_deref(),
+            unit: data_point.unit.as_deref(),
         }
     }
 }
 
 const PUSH_THROTTLE: Duration = Duration::from_millis(500);
+
+#[cfg(test)]
+mod metadata_tests {
+    use super::*;
+    use collector_core::core::point::Translator;
+    use std::sync::Arc;
+
+    #[test]
+    fn shared_metadata_preserves_websocket_json() {
+        let point = DataPoint {
+            id: 1,
+            key: "voltage".into(),
+            name: "电压".into(),
+            value: Val::U16(230),
+            translator: Some(Arc::new(Translator {
+                en: "Voltage".into(),
+            })),
+            bits: None,
+            words: Some(Arc::new(Words::try_from("0 停止|Stop").unwrap())),
+            unit: Some("V".into()),
+            level: None,
+        };
+        for (lang, name) in [(DevQueryLang::Zh, "电压"), (DevQueryLang::En, "Voltage")] {
+            let json = serde_json::to_value(Point::from_data_point(&point, lang)).unwrap();
+            assert_eq!(
+                json,
+                serde_json::json!({
+                    "id": 1, "key": "voltage", "name": name, "value": 230,
+                    "words": {"0": {"zh": "停止", "en": "Stop"}}, "unit": "V"
+                })
+            );
+        }
+    }
+}
 
 async fn push_points(ws: &mut WebSocket, data: &[DataPoint], lang: DevQueryLang) -> bool {
     let points = data
@@ -314,8 +351,8 @@ impl HomeEmuData {
 #[derive(Serialize)]
 struct HomeWarnData {
     pub id: PointId,
-    pub key: &'static str,
-    pub name: &'static str,
+    pub key: std::sync::Arc<str>,
+    pub name: std::sync::Arc<str>,
 }
 
 #[derive(Serialize)]
@@ -330,8 +367,8 @@ impl HomeWarnDatas {
             .filter(|it| it.value == Val::U8(1))
             .map(|it| HomeWarnData {
                 id: it.id,
-                key: it.key,
-                name: it.name,
+                key: it.key.clone(),
+                name: it.name.clone(),
             })
             .collect();
         HomeWarnDatas(vec)

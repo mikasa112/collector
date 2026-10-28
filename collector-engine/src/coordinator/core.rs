@@ -73,8 +73,8 @@ impl Pt {
     fn point(&self, value: Val) -> DataPoint {
         DataPoint {
             id: self.id,
-            key: self.key,
-            name: self.name,
+            key: self.key.into(),
+            name: self.name.into(),
             value,
             translator: None,
             bits: None,
@@ -313,8 +313,8 @@ impl Inner {
             Q_UNMET.point(f(t.q_unmet)),
             DataPoint {
                 id: COMM_STATUS_ID,
-                key: "communicationStatus",
-                name: "通讯状态",
+                key: "communicationStatus".into(),
+                name: "通讯状态".into(),
                 // 任一成员离线即视为故障
                 value: Val::U8(u8::from(!t.all_online)),
                 translator: None,

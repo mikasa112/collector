@@ -102,8 +102,8 @@ mod tests {
     fn cfg(kind: PointKind, scale: f64, offset: f64) -> Iec61850Config {
         Iec61850Config {
             id: 1,
-            key: "k",
-            name: "n",
+            key: "k".into(),
+            name: "n".into(),
             reference: "L/N.A.b".parse::<ObjectRef>().unwrap().with_fc(Fc::St),
             kind,
             scale,

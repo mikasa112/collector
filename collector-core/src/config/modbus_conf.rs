@@ -1,11 +1,12 @@
 use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
 
 use calamine::{Data, DataType, HeaderRow, Range, Reader, Xlsx, open_workbook};
 use tracing::error;
 
 use crate::{
     config::{
-        optional_static_str, required_f64, required_static_str, required_str,
+        optional_shared_str, required_f64, required_shared_str, required_str,
         required_usize_integerish,
     },
     core::point::{Bits, Translator, WarnLevel, Words},
@@ -274,13 +275,13 @@ pub(crate) fn build_configs(path: String) -> Result<ModbusConfigs, ModbusConfigs
     Ok(configs)
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct ModbusConfig {
     pub id: u16,
-    pub name: &'static str,
+    pub name: Arc<str>,
     pub data_type: ModbusDataType,
-    pub unit: Option<&'static str>,
-    pub remarks: Option<&'static str>,
+    pub unit: Option<Arc<str>>,
+    pub remarks: Option<Arc<str>>,
     pub register_address: u16,
     pub register_type: RegisterType,
     pub quantity: u16,
@@ -288,10 +289,10 @@ pub struct ModbusConfig {
     pub scale: f64,
     pub offset: f64,
     pub enable: bool,
-    pub key: &'static str,
-    pub trans: Option<&'static Translator>,
-    pub status_words: Option<&'static Words>,
-    pub warn_bits: Option<&'static Bits>,
+    pub key: Arc<str>,
+    pub trans: Option<Arc<Translator>>,
+    pub status_words: Option<Arc<Words>>,
+    pub warn_bits: Option<Arc<Bits>>,
     /// 单点告警等级：用于"单个遥信点位本身就是一个告警"的场景（值非0即命中该等级告警）
     pub level: Option<WarnLevel>,
 }
@@ -303,10 +304,10 @@ impl ModbusConfig {
             return Err(anyhow::Error::msg("序号(id)超出允许范围(0..2^16-1)"));
         }
         let id = id as u16;
-        let name = required_static_str(row, 1, "点位名称")?;
+        let name = required_shared_str(row, 1, "点位名称")?;
         let data_type = ModbusDataType::try_from(required_str(row, 2, "数据类型")?)?;
-        let unit = optional_static_str(row, 3);
-        let remarks = optional_static_str(row, 4);
+        let unit = optional_shared_str(row, 3);
+        let remarks = optional_shared_str(row, 4);
         let register_address = required_address_number(row, 5, "寄存器地址")?;
         if !(0.0..=u16::MAX as f64).contains(&register_address) || register_address.fract() != 0.0 {
             return Err(anyhow::anyhow!("寄存器地址必须为0..65535范围内的整数"));
@@ -330,29 +331,20 @@ impl ModbusConfig {
             .and_then(|cell| cell.get_float())
             .unwrap_or(1f64)
             != 0f64;
-        let key = optional_static_str(row, 12).unwrap_or("");
+        let key = optional_shared_str(row, 12).unwrap_or_default();
         let trans = row
             .get(13)
             .and_then(|cell| cell.get_string())
             .and_then(|str| Translator::try_from(str).ok());
-        let trans: Option<&'static Translator> = match trans {
-            Some(t) => Some(Box::leak(Box::new(t))),
-            None => None,
-        };
+        let trans = trans.map(Arc::new);
         let status_words = row
             .get(14)
             .and_then(|it| it.get_string().and_then(|str| Words::try_from(str).ok()));
-        let status_words: Option<&'static Words> = match status_words {
-            Some(t) => Some(Box::leak(Box::new(t))),
-            None => None,
-        };
+        let status_words = status_words.map(Arc::new);
         let warn_bits = row
             .get(15)
             .and_then(|it| it.get_string().and_then(|str| Bits::try_from(str).ok()));
-        let warn_bits: Option<&'static Bits> = match warn_bits {
-            Some(t) => Some(Box::leak(Box::new(t))),
-            None => None,
-        };
+        let warn_bits = warn_bits.map(Arc::new);
         // 索引19：告警等级，追加在重复次数(16)/地址步长(17)/序号步长(18)之后
         let level = row
             .get(19)
@@ -404,6 +396,39 @@ mod expand_row_tests {
             Data::Empty,                                   // 14: 状态字
             Data::Empty,                                   // 15: 告警位
         ]
+    }
+
+    #[test]
+    fn metadata_is_shared_and_released_with_last_owner() {
+        let mut row = base_row();
+        row[13] = Data::String(r#"{"en":"voltage"}"#.into());
+        row[14] = Data::String("0 停止|Stop\n1 运行|Run".into());
+        row[15] = Data::String(vec!["故障|Fault|1"; 16].join("\n"));
+        let config = ModbusConfig::build(&row).unwrap();
+        let name = Arc::downgrade(&config.name);
+        let translator = Arc::downgrade(config.trans.as_ref().unwrap());
+        let translation = Arc::downgrade(&config.trans.as_ref().unwrap().en);
+        let words = Arc::downgrade(config.status_words.as_ref().unwrap());
+        let word_text = Arc::downgrade(&config.status_words.as_ref().unwrap().0[&0].zh);
+        let bits = Arc::downgrade(config.warn_bits.as_ref().unwrap());
+        let bit_text = Arc::downgrade(&config.warn_bits.as_ref().unwrap().bits[0].en);
+        let copy = config.clone();
+        assert!(Arc::ptr_eq(&config.name, &copy.name));
+        assert!(Arc::ptr_eq(
+            config.warn_bits.as_ref().unwrap(),
+            copy.warn_bits.as_ref().unwrap()
+        ));
+        drop(config);
+        assert!(name.upgrade().is_some());
+        assert!(words.upgrade().is_some());
+        drop(copy);
+        assert!(name.upgrade().is_none());
+        assert!(translator.upgrade().is_none());
+        assert!(translation.upgrade().is_none());
+        assert!(words.upgrade().is_none());
+        assert!(word_text.upgrade().is_none());
+        assert!(bits.upgrade().is_none());
+        assert!(bit_text.upgrade().is_none());
     }
 
     #[test]

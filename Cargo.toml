@@ -5,7 +5,7 @@ members = ["collector-api","collector-cmd", "collector-core", "collector-derive"
 
 [workspace.dependencies]
 # 序列化
-serde = { version = "1.0.217", features = ["derive"] }
+serde = { version = "1.0.217", features = ["derive", "rc"] }
 serde_json = "1.0.140"
 # 栈上数组
 smallvec = "1.15.1"

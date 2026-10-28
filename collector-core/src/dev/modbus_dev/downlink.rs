@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, HashMap};
+use std::sync::Arc;
 use std::time::Duration;
 
 use smallvec::Array;
@@ -32,8 +33,8 @@ impl WritePlan {
     pub(super) fn build(
         entries: Vec<DownDataPoint>,
         cfg_map: &HashMap<PointId, ModbusConfig>,
-        key_map: &HashMap<&'static str, PointId>,
-        name_map: &HashMap<&'static str, PointId>,
+        key_map: &HashMap<Arc<str>, PointId>,
+        name_map: &HashMap<Arc<str>, PointId>,
         dev_id: &str,
     ) -> Self {
         let mut coils: BTreeMap<u16, bool> = BTreeMap::new();
@@ -123,24 +124,24 @@ pub(super) async fn wait_interval(stop_rx: &mut watch::Receiver<bool>, interval:
     }
 }
 
-pub(super) fn build_key_map(configs: &ModbusConfigs) -> HashMap<&'static str, PointId> {
+pub(super) fn build_key_map(configs: &ModbusConfigs) -> HashMap<Arc<str>, PointId> {
     configs
         .iter()
-        .map(|cfg| (cfg.key, cfg.id as PointId))
+        .map(|cfg| (cfg.key.clone(), cfg.id as PointId))
         .collect()
 }
 
-pub(super) fn build_name_map(configs: &ModbusConfigs) -> HashMap<&'static str, PointId> {
+pub(super) fn build_name_map(configs: &ModbusConfigs) -> HashMap<Arc<str>, PointId> {
     configs
         .iter()
-        .map(|cfg| (cfg.name, cfg.id as PointId))
+        .map(|cfg| (cfg.name.clone(), cfg.id as PointId))
         .collect()
 }
 
 fn resolve_id(
     point: &PointRef,
-    key_map: &HashMap<&'static str, PointId>,
-    name_map: &HashMap<&'static str, PointId>,
+    key_map: &HashMap<Arc<str>, PointId>,
+    name_map: &HashMap<Arc<str>, PointId>,
 ) -> Option<PointId> {
     match point {
         PointRef::Id(id) => Some(*id),
@@ -157,7 +158,7 @@ fn resolve_id(
 pub(super) fn build_cfg_map(configs: &ModbusConfigs) -> HashMap<PointId, ModbusConfig> {
     let mut out = HashMap::new();
     for cfg in configs {
-        out.insert(cfg.id as u32, *cfg);
+        out.insert(cfg.id as u32, cfg.clone());
     }
     out
 }
@@ -229,7 +230,7 @@ fn encode_single_register(
     convert: impl FnOnce(f64, &str, &str) -> Option<u16>,
 ) -> Option<SmallVec<[u16; 2]>> {
     let raw = scale_to_raw(cfg, value, dev_id)?;
-    let v = convert(raw, dev_id, cfg.name)?;
+    let v = convert(raw, dev_id, &cfg.name)?;
     let mut out = SmallVec::<[u16; 2]>::new();
     out.push(
         cfg.byte_order
@@ -245,7 +246,7 @@ fn encode_double_register(
     convert: impl FnOnce(f64, &str, &str) -> Option<u32>,
 ) -> Option<SmallVec<[u16; 2]>> {
     let raw = scale_to_raw(cfg, value, dev_id)?;
-    let v = convert(raw, dev_id, cfg.name)?;
+    let v = convert(raw, dev_id, &cfg.name)?;
     let arr = cfg
         .byte_order
         .map_or(ByteOrder::ABCD.assemble_u32(v), |it| it.assemble_u32(v));

@@ -476,8 +476,8 @@ mod tests {
             let v = *self.0.get(&(dev_id.to_string(), point_id))?;
             Some(DataPoint {
                 id: point_id,
-                key: "mock",
-                name: "mock",
+                key: "mock".into(),
+                name: "mock".into(),
                 value: Val::F64(v),
                 translator: None,
                 bits: None,

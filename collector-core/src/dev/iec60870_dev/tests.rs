@@ -37,8 +37,8 @@ fn cfg(
 ) -> Iec104Config {
     Iec104Config {
         id,
-        key,
-        name: key,
+        key: key.into(),
+        name: key.into(),
         ca: 1,
         ioa,
         kind,

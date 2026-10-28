@@ -41,9 +41,9 @@ impl Iec60870Runner {
             &self.id,
             vec![DataPoint {
                 id: crate::config::iec104_conf::COMM_STATUS_ID,
-                name: "通讯状态",
+                name: "通讯状态".into(),
                 value: Val::U8(fault as u8),
-                key: "communicationStatus",
+                key: "communicationStatus".into(),
                 translator: None,
                 bits: None,
                 words: None,
@@ -290,8 +290,8 @@ mod tests {
     fn cfg(kind: PointKind, scale: f64, offset: f64) -> Iec104Config {
         Iec104Config {
             id: 1,
-            key: "k",
-            name: "n",
+            key: "k".into(),
+            name: "n".into(),
             ca: 1,
             ioa: 100,
             kind,

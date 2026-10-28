@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use anyhow::anyhow;
@@ -17,10 +18,10 @@ const CONFIRM_STEP: Duration = Duration::from_millis(100);
 /// 控制点索引，支持按 ID / Key / Name 解析下发目标。
 pub(super) struct ControlIndex {
     by_id: HashMap<PointId, Iec61850Config>,
-    by_key: HashMap<&'static str, PointId>,
-    by_name: HashMap<&'static str, PointId>,
+    by_key: HashMap<Arc<str>, PointId>,
+    by_name: HashMap<Arc<str>, PointId>,
     /// 启用的监视点, 按 key 查回读点
-    monitors: HashMap<&'static str, Iec61850Config>,
+    monitors: HashMap<Arc<str>, Iec61850Config>,
 }
 
 impl ControlIndex {
@@ -34,12 +35,12 @@ impl ControlIndex {
         for cfg in configs.points.iter().filter(|c| c.enable) {
             if cfg.kind.is_control() {
                 index.by_id.insert(cfg.id, cfg.clone());
-                index.by_key.insert(cfg.key, cfg.id);
+                index.by_key.insert(cfg.key.clone(), cfg.id);
                 if !cfg.name.is_empty() {
-                    index.by_name.insert(cfg.name, cfg.id);
+                    index.by_name.insert(cfg.name.clone(), cfg.id);
                 }
             } else {
-                index.monitors.insert(cfg.key, cfg.clone());
+                index.monitors.insert(cfg.key.clone(), cfg.clone());
             }
         }
         index
@@ -56,7 +57,7 @@ impl ControlIndex {
 
     /// 控制点配置的回读点(必须是启用的监视点)。
     pub(super) fn feedback_of(&self, cfg: &Iec61850Config) -> Option<&Iec61850Config> {
-        self.monitors.get(cfg.feedback?)
+        self.monitors.get(&cfg.feedback.clone()?)
     }
 }
 
@@ -113,7 +114,7 @@ pub(super) fn describe(err: &Error) -> String {
 /// 下发后读回确认所需的信息。
 pub(super) struct Verification {
     pub(super) dev_id: String,
-    pub(super) control_key: &'static str,
+    pub(super) control_key: Arc<str>,
     pub(super) feedback: Iec61850Config,
     /// 下发前回读点的值; 读不到时为 `None`
     pub(super) before: Option<Val>,
@@ -135,7 +136,7 @@ impl Verification {
         };
         Some(Self {
             dev_id: dev_id.to_string(),
-            control_key: control.key,
+            control_key: control.key.clone(),
             feedback: feedback.clone(),
             before,
             expected,
@@ -198,8 +199,8 @@ mod tests {
     fn cfg(kind: PointKind, scale: f64, offset: f64) -> Iec61850Config {
         Iec61850Config {
             id: 1,
-            key: "k",
-            name: "n",
+            key: "k".into(),
+            name: "n".into(),
             reference: "L/N.A.b".parse::<ObjectRef>().unwrap().with_fc(Fc::St),
             kind,
             scale,
@@ -225,10 +226,10 @@ mod tests {
     ) -> Iec61850Config {
         Iec61850Config {
             id,
-            key,
-            name,
+            key: key.into(),
+            name: name.into(),
             enable,
-            feedback: fb,
+            feedback: fb.map(Arc::from),
             ..cfg(kind, 1.0, 0.0)
         }
     }
@@ -275,8 +276,8 @@ mod tests {
         assert_eq!(
             index
                 .feedback_of(index.resolve(&PointRef::Id(3)).unwrap())
-                .map(|c| c.key),
-            Some("state")
+                .map(|c| c.key.clone()),
+            Some("state".into())
         );
         assert!(
             index
@@ -302,7 +303,7 @@ mod tests {
     fn verification(before: Option<Val>, expected: Val) -> Verification {
         Verification {
             dev_id: "d".into(),
-            control_key: "c",
+            control_key: "c".into(),
             feedback: cfg(PointKind::Yx, 1.0, 0.0),
             before,
             expected,

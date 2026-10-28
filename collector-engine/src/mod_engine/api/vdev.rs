@@ -1,6 +1,6 @@
 use std::{
-    collections::{HashMap, HashSet},
-    sync::{Arc, LazyLock, Mutex},
+    collections::HashMap,
+    sync::{Arc, Mutex},
 };
 
 use collector_core::{
@@ -15,19 +15,6 @@ use crate::mod_engine::engine::EngineCmd;
 
 /// 与 modbus_dev/can_dev 保持一致的"通讯状态"点位
 const COMM_STATUS_ID: PointId = 0xFFFF;
-
-/// DataPoint 的 key/name/unit 需要 `&'static str`。脚本传入的字符串去重后常驻，
-/// 点位集合有限，泄漏量有上界；热更新重复注册同名点位不会重复增长。
-fn intern(s: &str) -> &'static str {
-    static POOL: LazyLock<Mutex<HashSet<&'static str>>> = LazyLock::new(Default::default);
-    let mut pool = POOL.lock().unwrap();
-    if let Some(&hit) = pool.get(s) {
-        return hit;
-    }
-    let leaked: &'static str = Box::leak(s.to_owned().into_boxed_str());
-    pool.insert(leaked);
-    leaked
-}
 
 /// 脚本注册的设备：下发回调 + 把数据中心下行通道转发给引擎的任务
 pub struct VDevEntry {
@@ -114,13 +101,13 @@ fn table_to_point(t: &Table) -> mlua::Result<DataPoint> {
     let value = lua_to_val(t.get("value")?, ty.as_deref())?;
     Ok(DataPoint {
         id,
-        key: intern(&key),
-        name: intern(name.as_deref().unwrap_or(&key)),
+        key: Arc::from(key.as_str()),
+        name: Arc::from(name.as_deref().unwrap_or(&key)),
         value,
         translator: None,
         bits: None,
         words: None,
-        unit: unit.as_deref().map(intern),
+        unit: unit.map(Arc::from),
         level: None,
     })
 }
@@ -150,8 +137,8 @@ impl UserData for VDevHandle {
                 &this.id,
                 vec![DataPoint {
                     id: COMM_STATUS_ID,
-                    key: "communicationStatus",
-                    name: "通讯状态",
+                    key: "communicationStatus".into(),
+                    name: "通讯状态".into(),
                     value: Val::U8(!online as u8),
                     translator: None,
                     bits: None,
@@ -232,4 +219,29 @@ pub fn extend_dc_table(
             Ok((Value::UserData(lua.create_userdata(handle)?), None))
         })?,
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn dynamic_metadata_is_released_after_last_snapshot() {
+        let lua = Lua::new();
+        let table = lua
+            .load(r#"return {id=1, key="temp", name="温度", unit="℃", value=23.5}"#)
+            .eval::<Table>()
+            .unwrap();
+        let point = table_to_point(&table).unwrap();
+        let key = Arc::downgrade(&point.key);
+        let name = Arc::downgrade(&point.name);
+        let unit = Arc::downgrade(point.unit.as_ref().unwrap());
+        let snapshot = point.clone();
+        drop(point);
+        assert!(key.upgrade().is_some());
+        drop(snapshot);
+        assert!(key.upgrade().is_none());
+        assert!(name.upgrade().is_none());
+        assert!(unit.upgrade().is_none());
+    }
 }

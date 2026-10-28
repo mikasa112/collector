@@ -199,8 +199,8 @@ impl PlannedCurve {
 pub(crate) fn planned_curve_point(enable: bool) -> DataPoint {
     DataPoint {
         id: PLANNED_CURVE.id,
-        key: PLANNED_CURVE.key,
-        name: "计划曲线使能",
+        key: PLANNED_CURVE.key.into(),
+        name: "计划曲线使能".into(),
         value: Val::U8(enable as u8),
         translator: None,
         bits: None,

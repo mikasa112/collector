@@ -58,9 +58,9 @@ impl Iec61850Runner {
             &self.id,
             vec![DataPoint {
                 id: COMM_STATUS_ID,
-                name: "通讯状态",
+                name: "通讯状态".into(),
                 value: Val::U8(fault as u8),
-                key: "communicationStatus",
+                key: "communicationStatus".into(),
                 translator: None,
                 bits: None,
                 words: None,

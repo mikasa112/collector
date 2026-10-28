@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::sync::Arc;
 use std::time::Duration;
 
 use tokio::sync::{mpsc, watch};
@@ -28,8 +29,8 @@ const MAX_READ_FAILURES: u32 = 3;
 /// 三张点位查找表的打包引用，避免函数参数过多。
 struct PointMaps<'a> {
     cfg_map: &'a HashMap<PointId, ModbusConfig>,
-    key_map: &'a HashMap<&'static str, PointId>,
-    name_map: &'a HashMap<&'static str, PointId>,
+    key_map: &'a HashMap<Arc<str>, PointId>,
+    name_map: &'a HashMap<Arc<str>, PointId>,
 }
 
 /// round-robin 读取一圈 block 的结果
@@ -137,9 +138,9 @@ impl ModbusRunner {
             &self.id,
             vec![DataPoint {
                 id: 0xFFFF,
-                name: "通讯状态",
+                name: "通讯状态".into(),
                 value: Val::U8(fault as u8),
-                key: "communicationStatus",
+                key: "communicationStatus".into(),
                 translator: None,
                 bits: None,
                 words: None,
@@ -409,9 +410,12 @@ fn resolve_name<'a>(point: &'a PointRef, cfg_map: &'a HashMap<PointId, ModbusCon
     match point {
         PointRef::Key(k) | PointRef::Name(k) => cfg_map
             .values()
-            .find(|cfg| cfg.key == k)
-            .map(|cfg| cfg.name)
+            .find(|cfg| cfg.key.as_ref() == k.as_str())
+            .map(|cfg| cfg.name.as_ref())
             .unwrap_or("unknown"),
-        PointRef::Id(id) => cfg_map.get(id).map(|cfg| cfg.name).unwrap_or("unknown"),
+        PointRef::Id(id) => cfg_map
+            .get(id)
+            .map(|cfg| cfg.name.as_ref())
+            .unwrap_or("unknown"),
     }
 }

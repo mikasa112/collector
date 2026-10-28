@@ -86,7 +86,7 @@ impl Blocks {
                 }
 
                 let region_idx = logical_regions.len();
-                logical_regions.push(LogicalRegion { cfg });
+                logical_regions.push(LogicalRegion { cfg: cfg.clone() });
 
                 let mut region_offset = 0u16;
                 let mut next_addr = cfg.register_address;
@@ -278,13 +278,13 @@ impl Blocks {
             };
             out.push(DataPoint {
                 id: region.cfg.id as u32,
-                name: region.cfg.name,
+                name: region.cfg.name.clone(),
                 value,
-                key: region.cfg.key,
-                translator: region.cfg.trans,
-                bits: region.cfg.warn_bits,
-                words: region.cfg.status_words,
-                unit: region.cfg.unit,
+                key: region.cfg.key.clone(),
+                translator: region.cfg.trans.clone(),
+                bits: region.cfg.warn_bits.clone(),
+                words: region.cfg.status_words.clone(),
+                unit: region.cfg.unit.clone(),
                 level: region.cfg.level,
             });
         }
@@ -453,7 +453,7 @@ mod tests {
     ) -> ModbusConfig {
         ModbusConfig {
             id: 1,
-            name: "p",
+            name: "p".into(),
             data_type,
             unit: None,
             remarks: None,
@@ -464,7 +464,7 @@ mod tests {
             scale: 1.0,
             offset: 0.0,
             enable: true,
-            key: "",
+            key: "".into(),
             trans: None,
             status_words: None,
             warn_bits: None,

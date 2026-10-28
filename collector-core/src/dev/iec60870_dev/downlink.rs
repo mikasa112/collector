@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use anyhow::{Context, anyhow};
 use collector_iec60870::{Client, DoublePointValue, StepCommandValue};
@@ -9,8 +10,8 @@ use crate::core::point::{PointId, PointRef, Val};
 /// 控制点索引，支持按 ID / Key / Name 解析下发目标。
 pub(super) struct ControlIndex {
     by_id: HashMap<PointId, Iec104Config>,
-    by_key: HashMap<&'static str, PointId>,
-    by_name: HashMap<&'static str, PointId>,
+    by_key: HashMap<Arc<str>, PointId>,
+    by_name: HashMap<Arc<str>, PointId>,
 }
 
 impl ControlIndex {
@@ -21,10 +22,10 @@ impl ControlIndex {
             by_name: HashMap::new(),
         };
         for cfg in configs.iter().filter(|c| c.enable && !c.kind.is_monitor()) {
-            index.by_id.insert(cfg.id, *cfg);
-            index.by_key.insert(cfg.key, cfg.id);
+            index.by_id.insert(cfg.id, cfg.clone());
+            index.by_key.insert(cfg.key.clone(), cfg.id);
             if !cfg.name.is_empty() {
-                index.by_name.insert(cfg.name, cfg.id);
+                index.by_name.insert(cfg.name.clone(), cfg.id);
             }
         }
         index

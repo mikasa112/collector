@@ -1,6 +1,7 @@
 use calamine::{Data, DataType};
 use serde::Deserialize;
 use std::collections::HashMap;
+use std::sync::Arc;
 use tokio::fs;
 use tracing::error;
 
@@ -297,19 +298,18 @@ pub(crate) fn required_str<'a>(
         .ok_or_else(|| anyhow::Error::msg(format!("{field}不能为空")))
 }
 
-pub(crate) fn required_static_str(
+pub(crate) fn required_shared_str(
     row: &[Data],
     idx: usize,
     field: &str,
-) -> Result<&'static str, anyhow::Error> {
-    Ok(required_str(row, idx, field)?.to_owned().leak())
+) -> Result<Arc<str>, anyhow::Error> {
+    Ok(Arc::from(required_str(row, idx, field)?))
 }
 
-pub(crate) fn optional_static_str(row: &[Data], idx: usize) -> Option<&'static str> {
-    row.get(idx).and_then(|cell| cell.get_string()).map(|s| {
-        let leaked: &'static mut str = s.to_owned().leak();
-        leaked as &'static str
-    })
+pub(crate) fn optional_shared_str(row: &[Data], idx: usize) -> Option<Arc<str>> {
+    row.get(idx)
+        .and_then(|cell| cell.get_string())
+        .map(Arc::from)
 }
 
 /// 获取u16近似整数

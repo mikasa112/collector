@@ -1,8 +1,9 @@
 use calamine::{Data, DataType, HeaderRow, Range, Reader, Xlsx, open_workbook};
 use serde::Serialize;
+use std::sync::Arc;
 
 use crate::{
-    config::{optional_static_str, required_f64, required_static_str},
+    config::{optional_shared_str, required_f64, required_shared_str},
     core::point::{DataPoint, Translator, Val},
 };
 
@@ -34,27 +35,27 @@ impl TryFrom<&str> for Direction {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct GpioConfig {
     pub id: u32,
-    pub key: &'static str,
+    pub key: Arc<str>,
     pub gpio: u16,
     pub direction: Direction,
-    pub chip: &'static str,
+    pub chip: Arc<str>,
     pub line: u16,
-    pub name: Option<&'static str>,
+    pub name: Option<Arc<str>>,
     pub enable: bool,
-    pub trans: Option<&'static Translator>,
+    pub trans: Option<Arc<Translator>>,
 }
 
 impl GpioConfig {
     pub fn to_data_point(&self, value: u8) -> DataPoint {
         DataPoint {
             id: self.id,
-            key: self.key,
-            name: self.name.unwrap_or_default(),
+            key: self.key.clone(),
+            name: self.name.clone().unwrap_or_default(),
             value: Val::U8(value),
-            translator: self.trans,
+            translator: self.trans.clone(),
             bits: None,
             words: None,
             unit: None,
@@ -92,21 +93,18 @@ pub(crate) fn build_configs(path: String) -> Result<GpioConfigs, GpioConfigsErro
 impl GpioConfig {
     fn build(row: &[Data]) -> Result<Self, anyhow::Error> {
         let id = required_f64(row, 0, "id")? as u32;
-        let key = required_static_str(row, 1, "KEY")?;
+        let key = required_shared_str(row, 1, "KEY")?;
         let gpio = required_f64(row, 2, "GPIO")? as u16;
-        let direction: Direction = required_static_str(row, 3, "DIRECTION")?.try_into()?;
-        let chip = required_static_str(row, 4, "CHIP")?;
+        let direction: Direction = super::required_str(row, 3, "DIRECTION")?.try_into()?;
+        let chip = required_shared_str(row, 4, "CHIP")?;
         let line = required_f64(row, 5, "LINE")? as u16;
-        let name = optional_static_str(row, 6);
+        let name = optional_shared_str(row, 6);
         let enable = required_f64(row, 7, "ENABLE")? != 0.0;
         let trans = row
             .get(8)
             .and_then(|cell| cell.get_string())
             .and_then(|str| Translator::try_from(str).ok());
-        let trans: Option<&'static Translator> = match trans {
-            Some(t) => Some(Box::leak(Box::new(t))),
-            None => None,
-        };
+        let trans = trans.map(Arc::new);
         Ok(Self {
             id,
             key,

@@ -192,8 +192,8 @@ impl DataDriven for EmuRuntime {
 fn operation_mode(data: u8) -> DataPoint {
     DataPoint {
         id: OPERATION_MODE.id,
-        key: OPERATION_MODE.key,
-        name: "EMU充放电状态",
+        key: OPERATION_MODE.key.into(),
+        name: "EMU充放电状态".into(),
         value: Val::U8(data),
         translator: None,
         bits: None,
@@ -206,8 +206,8 @@ fn operation_mode(data: u8) -> DataPoint {
 fn permission(data: u8) -> DataPoint {
     DataPoint {
         id: PERMISSION.id,
-        key: PERMISSION.key,
-        name: "EMU充放电许可",
+        key: PERMISSION.key.into(),
+        name: "EMU充放电许可".into(),
         value: Val::U8(data),
         translator: None,
         bits: None,
@@ -220,8 +220,8 @@ fn permission(data: u8) -> DataPoint {
 fn health_status(data: u8) -> DataPoint {
     DataPoint {
         id: HEALTH_STATUS.id,
-        key: HEALTH_STATUS.key,
-        name: "EMU告警故障状态",
+        key: HEALTH_STATUS.key.into(),
+        name: "EMU告警故障状态".into(),
         value: Val::U8(data),
         translator: None,
         bits: None,
@@ -234,8 +234,8 @@ fn health_status(data: u8) -> DataPoint {
 fn charge_soc_limit(data: f64) -> DataPoint {
     DataPoint {
         id: CHARGE_SOC_LIMIT.id,
-        key: CHARGE_SOC_LIMIT.key,
-        name: "充电SOC限制",
+        key: CHARGE_SOC_LIMIT.key.into(),
+        name: "充电SOC限制".into(),
         value: Val::F64(data),
         translator: None,
         bits: None,
@@ -248,8 +248,8 @@ fn charge_soc_limit(data: f64) -> DataPoint {
 fn run_mode(data: u8) -> DataPoint {
     DataPoint {
         id: RUN_MODE.id,
-        key: RUN_MODE.key,
-        name: "EMU运行模式",
+        key: RUN_MODE.key.into(),
+        name: "EMU运行模式".into(),
         value: Val::U8(data),
         translator: None,
         bits: None,
@@ -262,8 +262,8 @@ fn run_mode(data: u8) -> DataPoint {
 fn control_source(data: u8) -> DataPoint {
     DataPoint {
         id: CONTROL_SOURCE.id,
-        key: CONTROL_SOURCE.key,
-        name: "EMU控制源",
+        key: CONTROL_SOURCE.key.into(),
+        name: "EMU控制源".into(),
         value: Val::U8(data),
         translator: None,
         bits: None,
@@ -276,8 +276,8 @@ fn control_source(data: u8) -> DataPoint {
 fn discharge_soc_limit(data: f64) -> DataPoint {
     DataPoint {
         id: DISCHARGE_SOC_LIMIT.id,
-        key: DISCHARGE_SOC_LIMIT.key,
-        name: "放电SOC限制",
+        key: DISCHARGE_SOC_LIMIT.key.into(),
+        name: "放电SOC限制".into(),
         value: Val::F64(data),
         translator: None,
         bits: None,
@@ -290,8 +290,8 @@ fn discharge_soc_limit(data: f64) -> DataPoint {
 fn grid_mode(data: u8) -> DataPoint {
     DataPoint {
         id: GRID_MODE.id,
-        key: GRID_MODE.key,
-        name: "并离网状态",
+        key: GRID_MODE.key.into(),
+        name: "并离网状态".into(),
         value: Val::U8(data),
         translator: None,
         bits: None,

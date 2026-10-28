@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use std::{
     collections::HashMap,
     fmt::{Debug, Display},
@@ -295,24 +296,24 @@ impl Display for Val {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct DataPoint {
     /// 数据点ID, 全局唯一
     pub id: PointId,
     /// 数据点key
-    pub key: &'static str,
+    pub key: Arc<str>,
     /// 数据点中文名称
-    pub name: &'static str,
+    pub name: Arc<str>,
     /// 数据点值
     pub value: Val,
     /// 数据点翻译
-    pub translator: Option<&'static Translator>,
+    pub translator: Option<Arc<Translator>>,
     /// 数据点按比特解析
-    pub bits: Option<&'static Bits>,
+    pub bits: Option<Arc<Bits>>,
     /// 数据点按字解析
-    pub words: Option<&'static Words>,
+    pub words: Option<Arc<Words>>,
     /// 数据点单位
-    pub unit: Option<&'static str>,
+    pub unit: Option<Arc<str>>,
     /// 数据点告警等级，值非0即命中该等级告警
     pub level: Option<WarnLevel>,
 }
@@ -329,7 +330,7 @@ impl DataPoint {
         let Ok(v) = u32::try_from(&self.value) else {
             return vec![];
         };
-        let Some(warn_bits) = self.bits else {
+        let Some(warn_bits) = &self.bits else {
             return vec![];
         };
         warn_bits
@@ -338,13 +339,13 @@ impl DataPoint {
             .filter(|it| it.level != WarnLevel::None)
             .enumerate()
             .filter(|(i, _)| (v >> i) & 1 == 1)
-            .map(|(_, bit)| *bit)
+            .map(|(_, bit)| bit.clone())
             .collect()
     }
 
-    pub fn current_status(&self) -> Option<&'static Word> {
+    pub fn current_status(&self) -> Option<&Word> {
         let v = u32::try_from(&self.value).ok()? as u16;
-        self.words?.0.get(&v)
+        self.words.as_ref()?.0.get(&v)
     }
 }
 
@@ -370,9 +371,9 @@ impl Display for DataPoints {
     }
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Translator {
-    pub en: &'static str,
+    pub en: Arc<str>,
 }
 
 impl TryFrom<&str> for Translator {
@@ -380,15 +381,15 @@ impl TryFrom<&str> for Translator {
 
     fn try_from(value: &str) -> Result<Self, Self::Error> {
         let v: Value = serde_json::from_str(value)?;
-        let en_str: &'static str = match v["en"].as_str() {
-            Some(v) => String::leak(String::from(v)),
+        let en_str: Arc<str> = match v["en"].as_str() {
+            Some(v) => Arc::from(v),
             None => return Err(anyhow::anyhow!("en field is missing")),
         };
         Ok(Self { en: en_str })
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Bits {
     pub bits: [Bit; 16],
 }
@@ -413,10 +414,10 @@ impl From<u8> for WarnLevel {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Bit {
-    pub zh: &'static str,
-    pub en: &'static str,
+    pub zh: Arc<str>,
+    pub en: Arc<str>,
     pub level: WarnLevel,
 }
 
@@ -448,8 +449,8 @@ impl TryFrom<&str> for Bit {
             None => WarnLevel::None,
         };
         Ok(Self {
-            zh: String::leak(zh),
-            en: String::leak(en),
+            zh: Arc::from(zh),
+            en: Arc::from(en),
             level,
         })
     }
@@ -463,7 +464,7 @@ impl TryFrom<&str> for Bits {
         if values.len() != 16 {
             return Err(anyhow::anyhow!("expected 16 values, got {}", values.len()));
         }
-        let mut bits = [Bit::default(); 16];
+        let mut bits = std::array::from_fn(|_| Bit::default());
         for (i, s) in values.iter().enumerate() {
             bits[i] = Bit::try_from(*s)?;
         }
@@ -471,7 +472,7 @@ impl TryFrom<&str> for Bits {
     }
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct Words(pub HashMap<u16, Word>);
 
 impl TryFrom<&str> for Words {
@@ -496,10 +497,10 @@ impl TryFrom<&str> for Words {
     }
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct Word {
-    pub zh: &'static str,
-    pub en: &'static str,
+    pub zh: Arc<str>,
+    pub en: Arc<str>,
 }
 
 impl TryFrom<&str> for Word {
@@ -516,8 +517,8 @@ impl TryFrom<&str> for Word {
             .ok_or(anyhow::anyhow!("en field is missing"))?
             .to_string();
         Ok(Self {
-            zh: String::leak(zh),
-            en: String::leak(en),
+            zh: Arc::from(zh),
+            en: Arc::from(en),
         })
     }
 }
@@ -529,31 +530,31 @@ mod tests {
     #[test]
     fn test_parse_translator() {
         let translator = Translator::try_from(r#"{"en": "Hello, World!"}"#).unwrap();
-        assert_eq!(translator.en, "Hello, World!");
+        assert_eq!(translator.en, "Hello, World!".into());
     }
 
     #[test]
     fn test_parse_status_word() {
         let status_word = Word::try_from("zh|en").unwrap();
-        assert_eq!(status_word.zh, "zh");
-        assert_eq!(status_word.en, "en");
+        assert_eq!(status_word.zh, "zh".into());
+        assert_eq!(status_word.en, "en".into());
     }
 
     #[test]
     fn test_parse_status_words() {
         let status_words = Words::try_from("0 zh|en\r\n1 zh|en").unwrap();
         assert_eq!(status_words.0.len(), 2);
-        assert_eq!(status_words.0[&0].zh, "zh");
-        assert_eq!(status_words.0[&0].en, "en");
-        assert_eq!(status_words.0[&1].zh, "zh");
-        assert_eq!(status_words.0[&1].en, "en");
+        assert_eq!(status_words.0[&0].zh, "zh".into());
+        assert_eq!(status_words.0[&0].en, "en".into());
+        assert_eq!(status_words.0[&1].zh, "zh".into());
+        assert_eq!(status_words.0[&1].en, "en".into());
     }
 
     #[test]
     fn test_parse_warn_bit() {
         let warn_bit = Bit::try_from("zh|en|1").unwrap();
-        assert_eq!(warn_bit.zh, "zh");
-        assert_eq!(warn_bit.en, "en");
+        assert_eq!(warn_bit.zh, "zh".into());
+        assert_eq!(warn_bit.en, "en".into());
         assert_eq!(warn_bit.level, WarnLevel::Normal);
     }
 
@@ -578,16 +579,16 @@ mod tests {
         硬件故障-环境过温故障|Hardware malfunction - environmental overheating fault"#,
         )
         .unwrap();
-        assert_eq!(warn_bits.bits[0].zh, "硬件故障-A 相硬件过流");
+        assert_eq!(warn_bits.bits[0].zh, "硬件故障-A 相硬件过流".into());
         assert_eq!(
             warn_bits.bits[0].en,
-            "Hardware failure - Phase A hardware overcurrent"
+            "Hardware failure - Phase A hardware overcurrent".into()
         );
         assert_eq!(warn_bits.bits[0].level, WarnLevel::None);
-        assert_eq!(warn_bits.bits[1].zh, "硬件故障-B 相硬件过流");
+        assert_eq!(warn_bits.bits[1].zh, "硬件故障-B 相硬件过流".into());
         assert_eq!(
             warn_bits.bits[1].en,
-            "Hardware failure - B-phase hardware overcurrent"
+            "Hardware failure - B-phase hardware overcurrent".into()
         );
         assert_eq!(warn_bits.bits[1].level, WarnLevel::None);
     }

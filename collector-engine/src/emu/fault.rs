@@ -22,7 +22,7 @@ pub struct FaultDiagnosis {
 struct FaultAlarm {
     dev: String,
     code: u32,
-    name: &'static str,
+    name: std::sync::Arc<str>,
     level: WarnLevel,
 }
 
@@ -36,7 +36,7 @@ impl FaultDiagnosis {
     /// 将一个带 bits 定义的寄存器展开为若干个单独的告警 DataPoint，
     /// 命中告警的 bit val 置 1，否则置 0；id 留待调用方统一编号
     fn bit_points(point: &DataPoint) -> Vec<DataPoint> {
-        let Some(bits) = point.bits else {
+        let Some(ref bits) = point.bits else {
             return vec![];
         };
         let Ok(v) = u32::try_from(&point.value) else {
@@ -48,8 +48,8 @@ impl FaultDiagnosis {
             .enumerate()
             .map(|(i, bit)| DataPoint {
                 id: 0,
-                key: bit.en,
-                name: bit.zh,
+                key: bit.en.clone(),
+                name: bit.zh.clone(),
                 value: Val::U8(((v >> i) & 1) as u8),
                 translator: None,
                 bits: None,
@@ -63,7 +63,7 @@ impl FaultDiagnosis {
     /// 提取寄存器当前命中的故障位，dev 为所属设备表名，
     /// code = point.id * 16 + bit 序号，保证同一 bit 位置每次 tick 算出的 code 一致
     fn fault_alarms(dev: &str, point: &DataPoint) -> Vec<FaultAlarm> {
-        let Some(bits) = point.bits else {
+        let Some(bits) = &point.bits else {
             return vec![];
         };
         let Ok(v) = u32::try_from(&point.value) else {
@@ -77,7 +77,7 @@ impl FaultDiagnosis {
             .map(|(i, bit)| FaultAlarm {
                 dev: dev.to_string(),
                 code: point.id * 16 + i as u32,
-                name: bit.zh,
+                name: bit.zh.clone(),
                 level: bit.level,
             })
             .collect()
@@ -90,7 +90,7 @@ impl FaultDiagnosis {
         Some(FaultAlarm {
             dev: dev.to_string(),
             code: point.id,
-            name: point.name,
+            name: point.name.clone(),
             level,
         })
     }

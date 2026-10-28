@@ -1,10 +1,11 @@
+use std::sync::Arc;
 use std::{collections::HashMap, time::Duration};
 
 use calamine::{Data, DataType, HeaderRow, Reader, Xlsx, open_workbook};
 
 use crate::{
     config::{
-        optional_static_str, required_f64, required_hex, required_static_str, required_str,
+        optional_shared_str, required_f64, required_hex, required_shared_str, required_str,
         required_usize_integerish,
     },
     core::point::{Bits, Translator, Words},
@@ -155,17 +156,17 @@ impl TryFrom<&str> for CanDataType {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct CanFrameConfig {
     pub id: u32,
-    pub name: &'static str,
+    pub name: Arc<str>,
     pub frame_id: u32,
     pub id_type: IdType,
     pub dlc: u8,
     pub cycle_duration: Duration,
     pub timeout_duration: Duration,
-    pub send: &'static str,
-    pub receive: &'static str,
+    pub send: Arc<str>,
+    pub receive: Arc<str>,
     pub rule: Rule,
     pub enable: bool,
 }
@@ -179,7 +180,7 @@ impl CanFrameConfig {
         let id = required_usize_integerish(row, 0, "序号")
             .map_err(|err| CanConfParseError::invalid_field(ENTITY, "序号", err))?
             as u32;
-        let name = required_static_str(row, 1, "报文名称")
+        let name = required_shared_str(row, 1, "报文名称")
             .map_err(|err| CanConfParseError::invalid_field(ENTITY, "报文名称", err))?;
         let frame_id = required_hex(row, 2, "FrameID")
             .map_err(|err| CanConfParseError::invalid_field(ENTITY, "FrameID", err))?;
@@ -200,9 +201,9 @@ impl CanFrameConfig {
                 .map_err(|err| CanConfParseError::invalid_field(ENTITY, "超时ms", err))?
                 as u64,
         );
-        let send = required_static_str(row, 7, "发送方")
+        let send = required_shared_str(row, 7, "发送方")
             .map_err(|err| CanConfParseError::invalid_field(ENTITY, "发送方", err))?;
-        let receive = required_static_str(row, 8, "接收方")
+        let receive = required_shared_str(row, 8, "接收方")
             .map_err(|err| CanConfParseError::invalid_field(ENTITY, "接收方", err))?;
         let rule = Rule::try_from(
             required_str(row, 9, "规则")
@@ -227,25 +228,25 @@ impl CanFrameConfig {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct CanSignalConfig {
     pub id: u32,
-    pub name: &'static str,
+    pub name: Arc<str>,
     pub frame_id: u32,
-    pub signal_name: &'static str,
+    pub signal_name: Arc<str>,
     pub start_bit: u8,
     pub bit_len: u8,
     pub byte_order: ByteOrder,
     pub data_type: CanDataType,
     pub scale: f64,
     pub offset: f64,
-    pub unit: Option<&'static str>,
+    pub unit: Option<Arc<str>>,
     pub invalid_val: Option<u32>,
-    pub enum_values: Option<&'static Words>,
-    pub remark: Option<&'static str>,
-    pub key: &'static str,
-    pub trans: Option<&'static Translator>,
-    pub enum_bits: Option<&'static Bits>,
+    pub enum_values: Option<Arc<Words>>,
+    pub remark: Option<Arc<str>>,
+    pub key: Arc<str>,
+    pub trans: Option<Arc<Translator>>,
+    pub enum_bits: Option<Arc<Bits>>,
 }
 
 impl CanSignalConfig {
@@ -257,11 +258,11 @@ impl CanSignalConfig {
         let id = required_usize_integerish(row, 0, "点号")
             .map_err(|err| CanConfParseError::invalid_field(ENTITY, "点号", err))?
             as u32;
-        let name = required_static_str(row, 1, "点位名称")
+        let name = required_shared_str(row, 1, "点位名称")
             .map_err(|err| CanConfParseError::invalid_field(ENTITY, "点位名称", err))?;
         let frame_id = required_hex(row, 2, "FrameID")
             .map_err(|err| CanConfParseError::invalid_field(ENTITY, "FrameID", err))?;
-        let signal_name = required_static_str(row, 3, "信号名称").unwrap_or_default();
+        let signal_name = required_shared_str(row, 3, "信号名称").unwrap_or_default();
         let start_bit = required_usize_integerish(row, 4, "起始位")
             .map_err(|err| CanConfParseError::invalid_field(ENTITY, "起始位", err))?
             as u8;
@@ -280,33 +281,24 @@ impl CanSignalConfig {
             .map_err(|err| CanConfParseError::invalid_field(ENTITY, "缩放", err))?;
         let offset = required_f64(row, 9, "偏移")
             .map_err(|err| CanConfParseError::invalid_field(ENTITY, "偏移", err))?;
-        let unit = optional_static_str(row, 10);
-        let invalid_val = optional_static_str(row, 11).and_then(|it| it.parse::<u32>().ok());
+        let unit = optional_shared_str(row, 10);
+        let invalid_val = optional_shared_str(row, 11).and_then(|it| it.parse::<u32>().ok());
         let enum_values = row
             .get(12)
             .and_then(|it| it.get_string().and_then(|str| Words::try_from(str).ok()));
-        let enum_values: Option<&'static Words> = match enum_values {
-            Some(t) => Some(Box::leak(Box::new(t))),
-            None => None,
-        };
-        let remark = optional_static_str(row, 13);
-        let key = required_static_str(row, 14, "键")
+        let enum_values = enum_values.map(Arc::new);
+        let remark = optional_shared_str(row, 13);
+        let key = required_shared_str(row, 14, "键")
             .map_err(|err| CanConfParseError::invalid_field(ENTITY, "键", err))?;
         let trans = row
             .get(15)
             .and_then(|cell| cell.get_string())
             .and_then(|str| Translator::try_from(str).ok());
-        let trans: Option<&'static Translator> = match trans {
-            Some(t) => Some(Box::leak(Box::new(t))),
-            None => None,
-        };
+        let trans = trans.map(Arc::new);
         let enum_bits = row
             .get(16)
             .and_then(|it| it.get_string().and_then(|str| Bits::try_from(str).ok()));
-        let enum_bits: Option<&'static Bits> = match enum_bits {
-            Some(t) => Some(Box::leak(Box::new(t))),
-            None => None,
-        };
+        let enum_bits = enum_bits.map(Arc::new);
         Ok(Self {
             id,
             name,
@@ -328,11 +320,11 @@ impl CanSignalConfig {
         })
     }
 }
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct CanSignalExtConfig {
     pub id: u32,
-    pub name: &'static str,
-    pub poly_name: &'static str,
+    pub name: Arc<str>,
+    pub poly_name: Arc<str>,
     pub frame_id: u32,
     pub frame_num: u16,
     pub frame_id_step: u8,
@@ -344,10 +336,10 @@ pub struct CanSignalExtConfig {
     pub data_type: CanDataType,
     pub scale: f64,
     pub offset: f64,
-    pub unit: &'static str,
+    pub unit: Arc<str>,
     pub invalid_val: Option<u32>,
-    pub key: &'static str,
-    pub trans: Option<&'static Translator>,
+    pub key: Arc<str>,
+    pub trans: Option<Arc<Translator>>,
 }
 
 impl CanSignalExtConfig {
@@ -359,9 +351,9 @@ impl CanSignalExtConfig {
         let id = required_usize_integerish(row, 0, "点号")
             .map_err(|err| CanConfParseError::invalid_field(ENTITY, "点号", err))?
             as u32;
-        let name = required_static_str(row, 1, "点位名称")
+        let name = required_shared_str(row, 1, "点位名称")
             .map_err(|err| CanConfParseError::invalid_field(ENTITY, "点位名称", err))?;
-        let poly_name = required_static_str(row, 2, "聚合键")
+        let poly_name = required_shared_str(row, 2, "聚合键")
             .map_err(|err| CanConfParseError::invalid_field(ENTITY, "聚合键", err))?;
         let frame_id = required_hex(row, 3, "FrameID")
             .map_err(|err| CanConfParseError::invalid_field(ENTITY, "FrameID", err))?;
@@ -395,21 +387,18 @@ impl CanSignalExtConfig {
             .map_err(|err| CanConfParseError::invalid_field(ENTITY, "缩放", err))?;
         let offset = required_f64(row, 13, "偏移")
             .map_err(|err| CanConfParseError::invalid_field(ENTITY, "偏移", err))?;
-        let unit = required_static_str(row, 14, "单位")
+        let unit = required_shared_str(row, 14, "单位")
             .map_err(|err| CanConfParseError::invalid_field(ENTITY, "单位", err))?;
         let invalid_val = required_hex(row, 15, "无效值").unwrap_or_default();
         // .map_err(|err| CanConfParseError::invalid_field(ENTITY, "无效值", err))?
         // as u32;
-        let key = required_static_str(row, 16, "键")
+        let key = required_shared_str(row, 16, "键")
             .map_err(|err| CanConfParseError::invalid_field(ENTITY, "键", err))?;
         let trans = row
             .get(17)
             .and_then(|cell| cell.get_string())
             .and_then(|str| Translator::try_from(str).ok());
-        let trans: Option<&'static Translator> = match trans {
-            Some(t) => Some(Box::leak(Box::new(t))),
-            None => None,
-        };
+        let trans = trans.map(Arc::new);
         Ok(Self {
             id,
             name,
@@ -433,7 +422,7 @@ impl CanSignalExtConfig {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub enum CanSignal {
     Normal(CanSignalConfig),
     Ext(CanSignalExtConfig),

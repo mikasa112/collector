@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::sync::Arc;
 use std::time::Duration;
 
 use futures::StreamExt;
@@ -238,13 +239,13 @@ struct GpioConfDev {
 }
 
 fn create_gpio_devs(configs: GpioConfigs) -> Result<Vec<GpioConfDev>, gpio_cdev::Error> {
-    let mut by_chip: HashMap<&'static str, Vec<GpioConfig>> = HashMap::with_capacity(2);
+    let mut by_chip: HashMap<Arc<str>, Vec<GpioConfig>> = HashMap::with_capacity(2);
     for conf in configs {
-        by_chip.entry(conf.chip).or_default().push(conf);
+        by_chip.entry(conf.chip.clone()).or_default().push(conf);
     }
     let mut devs = Vec::new();
     for (chip_path, confs) in by_chip {
-        let mut chip = Chip::new(chip_path)?;
+        let mut chip = Chip::new(chip_path.as_ref())?;
         for cfg in confs {
             let line = chip.get_line(cfg.line as u32)?;
             devs.push(GpioConfDev { config: cfg, line });
@@ -269,10 +270,10 @@ async fn handle_di(
                 let events = dev.line.events(
                     LineRequestFlags::INPUT | LineRequestFlags::ACTIVE_LOW,
                     EventRequestFlags::BOTH_EDGES,
-                    dev.config.key,
+                    &dev.config.key,
                 )?;
                 let handle = AsyncLineEventHandle::new(events)?;
-                Ok((dev.config, handle))
+                Ok((dev.config.clone(), handle))
             },
         )
         .collect::<Result<Vec<(GpioConfig, AsyncLineEventHandle)>, gpio_cdev::Error>>()?;
@@ -349,7 +350,7 @@ async fn handle_do(
     mut stop_rx: watch::Receiver<bool>,
 ) -> Result<(), gpio_cdev::Error> {
     // 初始化所有 DO 类型的 GPIO 输出句柄
-    let mut output_handles: HashMap<&'static str, gpio_cdev::LineHandle> = HashMap::new();
+    let mut output_handles: HashMap<Arc<str>, gpio_cdev::LineHandle> = HashMap::new();
 
     for dev in devs
         .iter()
@@ -358,7 +359,7 @@ async fn handle_do(
         // 请求输出模式，初始值为 0
         match dev
             .line
-            .request(LineRequestFlags::OUTPUT, 0, dev.config.key)
+            .request(LineRequestFlags::OUTPUT, 0, &dev.config.key)
         {
             Ok(handle) => {
                 tracing::info!(
@@ -368,7 +369,7 @@ async fn handle_do(
                     dev.config.chip,
                     dev.config.line
                 );
-                output_handles.insert(dev.config.key, handle);
+                output_handles.insert(dev.config.key.clone(), handle);
             }
             Err(e) => {
                 tracing::error!("[{}] 初始化DO GPIO失败: {} - {}", id, dev.config.key, e);

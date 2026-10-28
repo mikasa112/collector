@@ -70,8 +70,8 @@ impl Tms {
             sys_tms_mode: Arc::new(RwLock::new(SysTmsMode::Auto)),
             point: Arc::new(RwLock::new(DataPoint {
                 id: SYS_TMS_MODE.id,
-                key: SYS_TMS_MODE.key,
-                name: "系统热管理模式",
+                key: SYS_TMS_MODE.key.into(),
+                name: "系统热管理模式".into(),
                 value: Val::U8(SysTmsMode::Auto as u8),
                 translator: None,
                 bits: None,
@@ -212,7 +212,7 @@ impl crate::DataDriven for Tms {
     async fn down(&self, points: &[DownDataPoint]) -> Result<(), StrategyError> {
         let (id, key) = {
             let point = self.point.read();
-            (point.id, point.key)
+            (point.id, point.key.clone())
         };
         for p in points.iter() {
             if PointRef::Id(id) == p.point || PointRef::Key(key.to_string()) == p.point {

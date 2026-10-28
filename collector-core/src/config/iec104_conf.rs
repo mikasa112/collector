@@ -1,10 +1,11 @@
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use calamine::{Data, DataType, HeaderRow, Range, Reader, Xlsx, open_workbook};
 
 use crate::{
     config::{
-        optional_static_str, required_f64, required_static_str, required_str,
+        optional_shared_str, required_f64, required_shared_str, required_str,
         required_usize_integerish,
     },
     core::point::{Bits, DataPoint, PointId, Translator, Val, WarnLevel, Words},
@@ -83,21 +84,21 @@ impl TryFrom<&str> for PointKind {
 /// - `status_words` 状态字翻译，每行 `值 中文|英文`；`warn_bits` 按位告警，必须正好 16 行，
 ///   每行 `中文|英文|等级(0~3)`。两列格式与 Modbus 点表一致，解析失败时记录告警并忽略该列
 /// - `level` 单点告警等级：`0`/留空不告警，`1`/`2`/`3` 为 Normal/High/Critical；值非 0 即命中该等级
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct Iec104Config {
     pub id: PointId,
-    pub key: &'static str,
-    pub name: &'static str,
+    pub key: Arc<str>,
+    pub name: Arc<str>,
     pub ca: i32,
     pub ioa: i32,
     pub kind: PointKind,
     pub scale: f64,
     pub offset: f64,
-    pub unit: Option<&'static str>,
+    pub unit: Option<Arc<str>>,
     pub enable: bool,
-    pub trans: Option<&'static Translator>,
-    pub status_words: Option<&'static Words>,
-    pub warn_bits: Option<&'static Bits>,
+    pub trans: Option<Arc<Translator>>,
+    pub status_words: Option<Arc<Words>>,
+    pub warn_bits: Option<Arc<Bits>>,
     pub level: Option<WarnLevel>,
 }
 
@@ -105,13 +106,13 @@ impl Iec104Config {
     pub fn to_data_point(&self, value: Val) -> DataPoint {
         DataPoint {
             id: self.id,
-            key: self.key,
-            name: self.name,
+            key: self.key.clone(),
+            name: self.name.clone(),
             value,
-            translator: self.trans,
-            bits: self.warn_bits,
-            words: self.status_words,
-            unit: self.unit,
+            translator: self.trans.clone(),
+            bits: self.warn_bits.clone(),
+            words: self.status_words.clone(),
+            unit: self.unit.clone(),
             level: self.level,
         }
     }
@@ -121,8 +122,8 @@ impl Iec104Config {
         if id == COMM_STATUS_ID {
             return Err(anyhow::anyhow!("id {COMM_STATUS_ID} 保留给通讯状态点"));
         }
-        let key = required_static_str(row, 1, "KEY")?;
-        let name = optional_static_str(row, 2).unwrap_or_default();
+        let key = required_shared_str(row, 1, "KEY")?;
+        let name = optional_shared_str(row, 2).unwrap_or_default();
         let ca = i32::try_from(required_usize_integerish(row, 3, "CA")?)
             .map_err(|_| anyhow::anyhow!("CA超出范围"))?;
         let ioa = i32::try_from(required_usize_integerish(row, 4, "IOA")?)
@@ -140,14 +141,14 @@ impl Iec104Config {
             return Err(anyhow::anyhow!("SCALE不能为0"));
         }
         let offset = row.get(7).and_then(|c| c.as_f64()).unwrap_or(0.0);
-        let unit = optional_static_str(row, 8);
+        let unit = optional_shared_str(row, 8);
         // 与 Modbus 点表一致：留空视为启用
         let enable = row.get(9).and_then(|c| c.as_f64()).unwrap_or(1.0) != 0.0;
         let trans = row
             .get(10)
             .and_then(|cell| cell.get_string())
             .and_then(|str| Translator::try_from(str).ok())
-            .map(|t| &*Box::leak(Box::new(t)));
+            .map(Arc::new);
         let status_words = parse_optional_cell(row, 11, "STATUS_WORDS", |s| Words::try_from(s));
         let warn_bits = parse_optional_cell(row, 12, "WARN_BITS", |s| Bits::try_from(s));
         let level = row
@@ -180,13 +181,13 @@ fn parse_optional_cell<T>(
     idx: usize,
     field: &str,
     parse: impl FnOnce(&str) -> Result<T, anyhow::Error>,
-) -> Option<&'static T> {
+) -> Option<Arc<T>> {
     let text = row.get(idx)?.get_string()?;
     if text.trim().is_empty() {
         return None;
     }
     match parse(text) {
-        Ok(v) => Some(&*Box::leak(Box::new(v))),
+        Ok(v) => Some(Arc::new(v)),
         Err(err) => {
             tracing::warn!("IEC104点表 {field} 解析失败, 已忽略: {err}");
             None
@@ -235,7 +236,7 @@ pub fn build_monitor_index(configs: &[Iec104Config]) -> HashMap<(i32, i32), Iec1
     configs
         .iter()
         .filter(|c| c.enable && c.kind.is_monitor())
-        .map(|c| ((c.ca, c.ioa), *c))
+        .map(|c| ((c.ca, c.ioa), c.clone()))
         .collect()
 }
 
@@ -246,25 +247,34 @@ mod tests {
     #[test]
     fn parse_sample_workbook() {
         let path = format!(
-            "{}/../config/iec104/iec104_示例点表.xlsx",
+            "{}/../config/iec104/PCS_英博_协控.xlsx",
             env!("CARGO_MANIFEST_DIR")
         );
         let configs = build_configs(path).unwrap();
         assert_eq!(configs.len(), 15);
-        let temp = configs.iter().find(|c| c.key == "temperature").unwrap();
+        let temp = configs
+            .iter()
+            .find(|c| c.key == "temperature".into())
+            .unwrap();
         assert_eq!((temp.ca, temp.ioa, temp.kind), (1, 16388, PointKind::Yc));
         assert_eq!((temp.scale, temp.offset), (0.1, -40.0));
         assert_eq!(build_monitor_index(&configs).len(), 9);
 
-        let breaker = configs.iter().find(|c| c.key == "breakerStatus").unwrap();
-        let words = breaker.status_words.expect("状态字应被解析");
-        assert_eq!(words.0[&1].zh, "合闸");
-        assert_eq!(words.0[&0].en, "Open");
+        let breaker = configs
+            .iter()
+            .find(|c| c.key == "breakerStatus".into())
+            .unwrap();
+        let words = breaker.status_words.clone().expect("状态字应被解析");
+        assert_eq!(words.0[&1].zh, "合闸".into());
+        assert_eq!(words.0[&0].en, "Open".into());
         assert!(breaker.warn_bits.is_none());
 
-        let trip = configs.iter().find(|c| c.key == "faultWord").unwrap();
-        let bits = trip.warn_bits.expect("告警位应被解析");
-        assert_eq!(bits.bits[0].zh, "保护动作");
+        let trip = configs
+            .iter()
+            .find(|c| c.key == "faultWord".into())
+            .unwrap();
+        let bits = trip.warn_bits.clone().expect("告警位应被解析");
+        assert_eq!(bits.bits[0].zh, "保护动作".into());
         assert_eq!(bits.bits[0].level, crate::core::point::WarnLevel::Critical);
         assert_eq!(bits.bits[15].level, crate::core::point::WarnLevel::None);
 
@@ -274,7 +284,10 @@ mod tests {
         assert_eq!(dp.warning().len(), 1);
 
         // 单点告警等级
-        let protect = configs.iter().find(|c| c.key == "protectTrip").unwrap();
+        let protect = configs
+            .iter()
+            .find(|c| c.key == "protectTrip".into())
+            .unwrap();
         assert_eq!(protect.level, Some(WarnLevel::Critical));
         let dp = protect.to_data_point(Val::U8(1));
         assert_eq!(dp.active_alarm_level(), Some(WarnLevel::Critical));
@@ -285,8 +298,8 @@ mod tests {
     fn point(id: PointId, ca: i32, ioa: i32, kind: PointKind) -> Iec104Config {
         Iec104Config {
             id,
-            key: "k",
-            name: "",
+            key: "k".into(),
+            name: "".into(),
             ca,
             ioa,
             kind,

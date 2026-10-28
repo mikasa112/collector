@@ -1,4 +1,5 @@
 use std::collections::HashSet;
+use std::sync::Arc;
 
 use calamine::{Data, DataType, HeaderRow, Reader, Xlsx, open_workbook};
 use collector_iec61850::{
@@ -7,7 +8,7 @@ use collector_iec61850::{
 
 use crate::{
     config::{
-        optional_static_str, required_f64, required_static_str, required_str,
+        optional_shared_str, required_f64, required_shared_str, required_str,
         required_usize_integerish,
     },
     core::point::{Bits, DataPoint, PointId, Translator, Val, WarnLevel, Words},
@@ -115,34 +116,34 @@ impl CtlOpts {
 #[derive(Debug, Clone)]
 pub struct Iec61850Config {
     pub id: PointId,
-    pub key: &'static str,
-    pub name: &'static str,
+    pub key: Arc<str>,
+    pub name: Arc<str>,
     /// 监视点带 FC；控制点不带
     pub reference: ObjectRef,
     pub kind: PointKind,
     pub scale: f64,
     pub offset: f64,
-    pub unit: Option<&'static str>,
+    pub unit: Option<Arc<str>>,
     pub enable: bool,
-    pub trans: Option<&'static Translator>,
-    pub status_words: Option<&'static Words>,
-    pub warn_bits: Option<&'static Bits>,
+    pub trans: Option<Arc<Translator>>,
+    pub status_words: Option<Arc<Words>>,
+    pub warn_bits: Option<Arc<Bits>>,
     pub level: Option<WarnLevel>,
     pub ctl_opts: CtlOpts,
-    pub feedback: Option<&'static str>,
+    pub feedback: Option<Arc<str>>,
 }
 
 impl Iec61850Config {
     pub fn to_data_point(&self, value: Val) -> DataPoint {
         DataPoint {
             id: self.id,
-            key: self.key,
-            name: self.name,
+            key: self.key.clone(),
+            name: self.name.clone(),
             value,
-            translator: self.trans,
-            bits: self.warn_bits,
-            words: self.status_words,
-            unit: self.unit,
+            translator: self.trans.clone(),
+            bits: self.warn_bits.clone(),
+            words: self.status_words.clone(),
+            unit: self.unit.clone(),
             level: self.level,
         }
     }
@@ -152,8 +153,8 @@ impl Iec61850Config {
         if id == COMM_STATUS_ID {
             return Err(anyhow::anyhow!("id {COMM_STATUS_ID} 保留给通讯状态点"));
         }
-        let key = required_static_str(row, 1, "KEY")?;
-        let name = optional_static_str(row, 2).unwrap_or_default();
+        let key = required_shared_str(row, 1, "KEY")?;
+        let name = optional_shared_str(row, 2).unwrap_or_default();
         let mut reference: ObjectRef = required_str(row, 3, "REF")?
             .parse()
             .map_err(|e| anyhow::anyhow!("{e}"))?;
@@ -187,14 +188,14 @@ impl Iec61850Config {
             return Err(anyhow::anyhow!("SCALE不能为0"));
         }
         let offset = row.get(7).and_then(|c| c.as_f64()).unwrap_or(0.0);
-        let unit = optional_static_str(row, 8);
+        let unit = optional_shared_str(row, 8);
         // 与其他点表一致：留空视为启用
         let enable = row.get(9).and_then(|c| c.as_f64()).unwrap_or(1.0) != 0.0;
         let trans = row
             .get(10)
             .and_then(|cell| cell.get_string())
             .and_then(|str| Translator::try_from(str).ok())
-            .map(|t| &*Box::leak(Box::new(t)));
+            .map(Arc::new);
         let status_words = parse_optional_cell(row, 11, "STATUS_WORDS", |s| Words::try_from(s));
         let warn_bits = parse_optional_cell(row, 12, "WARN_BITS", |s| Bits::try_from(s));
         let level = row
@@ -210,8 +211,8 @@ impl Iec61850Config {
             }
             None => CtlOpts::default(),
         };
-        let feedback = optional_static_str(row, 15)
-            .map(|s| s.trim())
+        let feedback = optional_shared_str(row, 15)
+            .map(|s| Arc::<str>::from(s.trim()))
             .filter(|s| !s.is_empty());
 
         Ok(Self {
@@ -247,13 +248,13 @@ fn parse_optional_cell<T>(
     idx: usize,
     field: &str,
     parse: impl FnOnce(&str) -> Result<T, anyhow::Error>,
-) -> Option<&'static T> {
+) -> Option<Arc<T>> {
     let text = row.get(idx)?.get_string()?;
     if text.trim().is_empty() {
         return None;
     }
     match parse(text) {
-        Ok(v) => Some(&*Box::leak(Box::new(v))),
+        Ok(v) => Some(Arc::new(v)),
         Err(err) => {
             tracing::warn!("IEC61850点表 {field} 解析失败, 已忽略: {err}");
             None
@@ -451,13 +452,13 @@ fn check_duplicate(existing: &[Iec61850Config], new: &Iec61850Config) -> Option<
 
 /// 控制点的回读点必须是点表里存在的监视点，否则无法确认命令是否生效。
 fn check_feedback(points: &mut [Iec61850Config]) {
-    let monitors: HashSet<&'static str> = points
+    let monitors: HashSet<Arc<str>> = points
         .iter()
         .filter(|p| p.kind.is_monitor())
-        .map(|p| p.key)
+        .map(|p| p.key.clone())
         .collect();
     for p in points.iter_mut().filter(|p| p.kind.is_control()) {
-        match p.feedback {
+        match &p.feedback {
             Some(fb) if !monitors.contains(fb) => {
                 tracing::warn!("IEC61850点 {}: 回读点 {fb} 不存在, 已忽略", p.key);
                 p.feedback = None;
@@ -493,13 +494,13 @@ mod tests {
             [28, 116, 6, 41]
         );
         assert_eq!(configs.points.len(), 191);
-        let by_key = |k: &str| configs.points.iter().find(|p| p.key == k).unwrap();
+        let by_key = |k: &str| configs.points.iter().find(|p| p.key == k.into()).unwrap();
 
         // 嵌套对象展开到叶子, FC 来自 fc 列
         let ab = by_key("MMXU1_PPV_phsAB");
         assert_eq!(ab.reference.to_dotted(), "MONT/MMXU1.PPV.phsAB.cVal.mag.f");
         assert_eq!((ab.reference.fc, ab.kind), (Some(Fc::Mx), PointKind::Yc));
-        assert_eq!(ab.name, "线电压-phsAB");
+        assert_eq!(ab.name, "线电压-phsAB".into());
 
         // 控制点: 引用到控制对象, 没有 FC, 带回读点
         let cmd = by_key("setGAPC1_StrVal6_cmd");
@@ -508,7 +509,7 @@ mod tests {
             ("MONT/setGAPC1.StrVal6", None)
         );
         assert_eq!(
-            (cmd.kind, cmd.feedback, cmd.enable),
+            (cmd.kind, cmd.feedback.as_deref(), cmd.enable),
             (PointKind::Yt, Some("setGAPC1_StrVal6"), true)
         );
         assert!(by_key("setGAPC1_StrVal6").kind.is_monitor());
@@ -568,7 +569,7 @@ mod tests {
         let q = configs
             .points
             .iter()
-            .find(|p| p.key == "staGGIO1_Ind1_q")
+            .find(|p| p.key == "staGGIO1_Ind1_q".into())
             .unwrap();
         assert_eq!(q.reference.to_dotted(), "MONT/staGGIO1.Ind1.q");
         assert_eq!(q.reference.fc, Some(Fc::St));
@@ -656,7 +657,7 @@ mod tests {
                 test: false
             }
         );
-        assert_eq!(c.feedback, Some("fb"));
+        assert_eq!(c.feedback.as_deref(), Some("fb"));
 
         r[14] = S("bogus".into());
         assert!(Iec61850Config::build(&r).is_err());
@@ -769,7 +770,7 @@ mod tests {
         };
         let mut points = vec![mon, ctl("c1", 2.0, "fb"), ctl("c2", 3.0, "nope")];
         check_feedback(&mut points);
-        assert_eq!(points[1].feedback, Some("fb"));
+        assert_eq!(points[1].feedback.as_deref(), Some("fb"));
         assert_eq!(points[2].feedback, None);
     }
 }

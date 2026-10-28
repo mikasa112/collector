@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
+use std::sync::Arc;
 
 use socketcan::{CanFrame, EmbeddedFrame, ExtendedId, Id, StandardId};
 use tracing::warn;
@@ -18,7 +19,7 @@ impl WritePlan {
     pub(super) fn build(
         entries: Vec<DownDataPoint>,
         point_map: &HashMap<PointId, CanPointConfig>,
-        name_map: &HashMap<&'static str, PointId>,
+        name_map: &HashMap<Arc<str>, PointId>,
         frame_map: &HashMap<u32, FrameBinding>,
         dev_id: &str,
     ) -> Self {
@@ -82,7 +83,7 @@ impl WritePlan {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub(super) struct CanPointConfig {
     binding_frame_id: u32,
     frame: CanFrameConfig,
@@ -105,7 +106,7 @@ struct FramePayload {
 impl FramePayload {
     fn new(frame: CanFrameConfig, raw_id: u32) -> Self {
         Self {
-            frame,
+            frame: frame.clone(),
             raw_id,
             data: vec![0; usize::from(frame.dlc)],
         }
@@ -126,13 +127,13 @@ impl FramePayload {
     }
 }
 
-pub(super) fn build_name_map(configs: &[CanConfig]) -> HashMap<&'static str, PointId> {
+pub(super) fn build_name_map(configs: &[CanConfig]) -> HashMap<Arc<str>, PointId> {
     let mut map = HashMap::new();
     for cfg in configs.iter().filter(|cfg| cfg.frame.enable) {
         for signal in &cfg.signals {
             let (id, name) = match signal {
-                CanSignal::Normal(s) => (s.id, s.name),
-                CanSignal::Ext(s) => (s.id, s.name),
+                CanSignal::Normal(s) => (s.id, s.name.clone()),
+                CanSignal::Ext(s) => (s.id, s.name.clone()),
             };
             map.insert(name, id);
         }
@@ -140,7 +141,7 @@ pub(super) fn build_name_map(configs: &[CanConfig]) -> HashMap<&'static str, Poi
     map
 }
 
-fn resolve_id(point: &PointRef, name_map: &HashMap<&'static str, PointId>) -> Option<PointId> {
+fn resolve_id(point: &PointRef, name_map: &HashMap<Arc<str>, PointId>) -> Option<PointId> {
     match point {
         PointRef::Id(id) => Some(*id),
         PointRef::Key(key) | PointRef::Name(key) => name_map.get(key.as_str()).copied(),
@@ -159,8 +160,8 @@ pub(super) fn build_point_map(configs: &[CanConfig]) -> HashMap<PointId, CanPoin
                 id,
                 CanPointConfig {
                     binding_frame_id: cfg.frame.frame_id,
-                    frame: cfg.frame,
-                    signal: *signal,
+                    frame: cfg.frame.clone(),
+                    signal: signal.clone(),
                 },
             );
         }
@@ -182,7 +183,7 @@ pub(super) fn build_frame_map(configs: &[CanConfig]) -> HashMap<u32, FrameBindin
         map.insert(
             cfg.frame.frame_id,
             FrameBinding {
-                frame: cfg.frame,
+                frame: cfg.frame.clone(),
                 point_ids,
             },
         );
@@ -215,21 +216,21 @@ fn encode_entry(
     dev_id: &str,
 ) {
     match point_cfg.signal {
-        CanSignal::Normal(signal) => {
+        CanSignal::Normal(ref signal) => {
             let Some(raw) = encode_value(
                 value,
                 signal.bit_len,
                 signal.data_type,
                 signal.scale,
                 signal.offset,
-                signal.name,
+                &signal.name,
                 dev_id,
             ) else {
                 return;
             };
-            let payload = payloads
-                .entry(point_cfg.frame.frame_id)
-                .or_insert_with(|| FramePayload::new(point_cfg.frame, point_cfg.frame.frame_id));
+            let payload = payloads.entry(point_cfg.frame.frame_id).or_insert_with(|| {
+                FramePayload::new(point_cfg.frame.clone(), point_cfg.frame.frame_id)
+            });
             set_raw(
                 &mut payload.data,
                 signal.start_bit,
@@ -238,7 +239,7 @@ fn encode_entry(
                 raw,
             );
         }
-        CanSignal::Ext(signal) => {
+        CanSignal::Ext(ref signal) => {
             warn!(
                 "[{}] 扩展信号暂不支持点位下发, 忽略: {}",
                 dev_id, signal.name
@@ -357,22 +358,22 @@ mod tests {
         let enabled = CanConfig {
             frame: CanFrameConfig {
                 id: 1,
-                name: "enabled",
+                name: "enabled".into(),
                 frame_id: 0x100,
                 id_type: IdType::Standard,
                 dlc: 8,
                 cycle_duration: Duration::from_millis(100),
                 timeout_duration: Duration::from_millis(200),
-                send: "a",
-                receive: "b",
+                send: "a".into(),
+                receive: "b".into(),
                 rule: Rule::Cycle,
                 enable: true,
             },
             signals: vec![CanSignal::Normal(CanSignalConfig {
                 id: 10,
-                name: "enabled_point",
+                name: "enabled_point".into(),
                 frame_id: 0x100,
-                signal_name: "enabled_point",
+                signal_name: "enabled_point".into(),
                 start_bit: 0,
                 bit_len: 8,
                 byte_order: ByteOrder::Intel,
@@ -383,7 +384,7 @@ mod tests {
                 invalid_val: None,
                 enum_values: None,
                 remark: None,
-                key: "",
+                key: "".into(),
                 trans: None,
                 enum_bits: None,
             })],
@@ -391,22 +392,22 @@ mod tests {
         let disabled = CanConfig {
             frame: CanFrameConfig {
                 id: 2,
-                name: "disabled",
+                name: "disabled".into(),
                 frame_id: 0x200,
                 id_type: IdType::Standard,
                 dlc: 8,
                 cycle_duration: Duration::from_millis(100),
                 timeout_duration: Duration::from_millis(200),
-                send: "a",
-                receive: "b",
+                send: "a".into(),
+                receive: "b".into(),
                 rule: Rule::Cycle,
                 enable: false,
             },
             signals: vec![CanSignal::Normal(CanSignalConfig {
                 id: 20,
-                name: "disabled_point",
+                name: "disabled_point".into(),
                 frame_id: 0x200,
-                signal_name: "disabled_point",
+                signal_name: "disabled_point".into(),
                 start_bit: 0,
                 bit_len: 8,
                 byte_order: ByteOrder::Intel,
@@ -417,7 +418,7 @@ mod tests {
                 invalid_val: None,
                 enum_values: None,
                 remark: None,
-                key: "",
+                key: "".into(),
                 trans: None,
                 enum_bits: None,
             })],

@@ -152,7 +152,7 @@ end)"#
     assert_eq!(energy.value, Val::U32(65538));
     assert_eq!(temp.value, Val::I16(-5));
     assert_eq!(comm.value, Val::U8(0));
-    assert_eq!(energy.unit, Some("kWh"));
+    assert_eq!(energy.unit.as_deref(), Some("kWh"));
     {
         let r = regs.lock().unwrap();
         assert_eq!(r[10], 777, "dispatch 应经 on_write 写入从站");

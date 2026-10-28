@@ -29,7 +29,7 @@
 //! - **读写分离**：使用 RwLock 优化读多写少场景
 //! - **快照缓存**：避免重复排序和克隆
 //! - **零拷贝**：使用 Arc 共享数据
-//! - **变化检测**：只在数据实际变化时更新版本号和推送通知
+//! - **变化检测**：只在数值或元数据实际变化时更新版本号和推送通知
 
 use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
@@ -141,28 +141,34 @@ impl DataCenter {
     /// 接收来自设备的数据点，更新缓存并通知订阅者
     ///
     /// # 性能优化
-    /// - 只在数据实际变化时更新版本号
+    /// - 只在数值或元数据实际变化时更新版本号
     /// - 只在有订阅者时才构建快照
-    /// - 使用值比较避免无效更新
+    /// - 使用点位比较避免无效更新
     pub fn ingest(&self, dev_id: &str, points: Vec<DataPoint>) {
         let device = self.get_or_create_device(dev_id);
         let mut cache = Self::write_cache(&device, dev_id);
 
         let mut changed = false;
 
-        // 遍历所有数据点，只更新值发生变化的点
+        // 遍历所有数据点，只更新数值或元数据发生变化的点
         for point in points {
             let point_id = point.id;
-            let new_value = point.value.clone();
-
             match cache.latest_by_id.get(&point_id) {
-                // 如果值相同，跳过更新
-                Some(old) if old.value == new_value => {}
-                // 如果值不同或点不存在，更新缓存
+                // 元数据也参与比较，确保配置更新后旧引用可以释放。
+                Some(old) if old == &point => {}
+                // 如果点位不同或点不存在，更新缓存
                 _ => {
+                    if let Some(old) = cache.latest_by_id.remove(&point_id) {
+                        if cache.by_key.get(old.key.as_ref()) == Some(&point_id) {
+                            cache.by_key.remove(old.key.as_ref());
+                        }
+                        if cache.by_name.get(old.name.as_ref()) == Some(&point_id) {
+                            cache.by_name.remove(old.name.as_ref());
+                        }
+                    }
                     // 更新索引
-                    cache.by_key.insert(point.key, point_id);
-                    cache.by_name.insert(point.name, point_id);
+                    cache.by_key.insert(point.key.clone(), point_id);
+                    cache.by_name.insert(point.name.clone(), point_id);
                     cache.latest_by_id.insert(point_id, point);
                     changed = true;
                 }
@@ -416,11 +422,11 @@ struct DeviceCache {
 
     /// Key 到 PointId 的索引
     /// 用于通过 key 快速查找数据点
-    by_key: AHashMap<&'static str, PointId>,
+    by_key: AHashMap<Arc<str>, PointId>,
 
     /// Name 到 PointId 的索引
     /// 用于通过 name 快速查找数据点
-    by_name: AHashMap<&'static str, PointId>,
+    by_name: AHashMap<Arc<str>, PointId>,
 
     /// 排序后的数据点快照（按 PointId 排序）
     /// 使用 Arc 实现零拷贝共享
@@ -463,15 +469,44 @@ mod tests {
     fn point(id: u32, value: u8) -> DataPoint {
         DataPoint {
             id,
-            name: "p",
+            name: "p".into(),
             value: Val::U8(value),
-            key: "p",
+            key: "p".into(),
             translator: None,
             bits: None,
             words: None,
             unit: None,
             level: None,
         }
+    }
+
+    #[test]
+    fn replacing_metadata_releases_old_indexes_after_snapshot_is_dropped() {
+        let center = DataCenter::new(1);
+        let mut original = point(1, 1);
+        original.key = "old-key".into();
+        original.name = "old-name".into();
+        let old_key = Arc::downgrade(&original.key);
+        let old_name = Arc::downgrade(&original.name);
+        center.ingest("metadata-test", vec![original]);
+        let snapshot = center.read_all("metadata-test");
+        let mut replacement = point(1, 1); // 值不变，仅更新元数据
+        replacement.key = "new-key".into();
+        replacement.name = "new-name".into();
+        center.ingest("metadata-test", vec![replacement]);
+        let current = center.read_all("metadata-test");
+        assert_eq!(current[0].key.as_ref(), "new-key");
+        let device = center.get_or_create_device("metadata-test");
+        {
+            let cache = DataCenter::read_cache(&device, "metadata-test");
+            assert!(!cache.by_key.contains_key("old-key"));
+            assert!(!cache.by_name.contains_key("old-name"));
+            assert_eq!(cache.by_key.get("new-key"), Some(&1));
+        }
+        assert!(old_key.upgrade().is_some());
+        drop(snapshot);
+        assert!(old_key.upgrade().is_none());
+        assert!(old_name.upgrade().is_none());
     }
 
     #[test]

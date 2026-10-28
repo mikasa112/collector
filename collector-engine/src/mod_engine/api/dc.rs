@@ -57,16 +57,16 @@ fn val_as_u16(val: &Val) -> Option<u16> {
 }
 
 fn append_status_and_faults(lua: &Lua, t: &Table, point: &DataPoint) -> mlua::Result<()> {
-    if let Some(status_words) = point.words
+    if let Some(ref status_words) = point.words
         && let Some(raw) = val_as_u16(&point.value)
         && let Some(sw) = status_words.0.get(&raw)
     {
         let st = lua.create_table()?;
-        st.set("zh", sw.zh)?;
-        st.set("en", sw.en)?;
+        st.set("zh", sw.zh.as_ref())?;
+        st.set("en", sw.en.as_ref())?;
         t.set("status", st)?;
     }
-    if let Some(warn_bits) = point.bits
+    if let Some(ref warn_bits) = point.bits
         && let Some(raw) = val_as_u16(&point.value)
     {
         let faults = lua.create_table()?;
@@ -76,8 +76,8 @@ fn append_status_and_faults(lua: &Lua, t: &Table, point: &DataPoint) -> mlua::Re
                 let wb = &warn_bits.bits[bit as usize];
                 let ft = lua.create_table()?;
                 ft.set("bit", bit)?;
-                ft.set("zh", wb.zh)?;
-                ft.set("en", wb.en)?;
+                ft.set("zh", wb.zh.as_ref())?;
+                ft.set("en", wb.en.as_ref())?;
                 ft.set("level", wb.level as u8)?;
                 faults.set(idx, ft)?;
                 idx += 1;
@@ -105,8 +105,8 @@ pub fn create_dc_table(
                 for (i, point) in points.iter().enumerate() {
                     let t = lua.create_table()?;
                     t.set("id", point.id)?;
-                    t.set("key", point.key)?;
-                    t.set("name", point.name)?;
+                    t.set("key", point.key.as_ref())?;
+                    t.set("name", point.name.as_ref())?;
                     t.set("value", val_to_lua(lua, &point.value)?)?;
                     append_status_and_faults(lua, &t, point)?;
                     result.set(i + 1, t)?;
@@ -135,8 +135,8 @@ pub fn create_dc_table(
                     Some(point) => {
                         let t = lua.create_table()?;
                         t.set("id", point.id)?;
-                        t.set("key", point.key)?;
-                        t.set("name", point.name)?;
+                        t.set("key", point.key.as_ref())?;
+                        t.set("name", point.name.as_ref())?;
                         t.set("value", val_to_lua(lua, &point.value)?)?;
                         append_status_and_faults(lua, &t, &point)?;
                         Ok(Value::Table(t))

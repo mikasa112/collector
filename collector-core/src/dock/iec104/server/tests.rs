@@ -48,8 +48,8 @@ fn cfg(ca: i32, ioa: i32, kind: ServerPointKind, point_id: PointId) -> NorthIec1
 fn dp(id: PointId, value: Val) -> DataPoint {
     DataPoint {
         id,
-        key: "k",
-        name: "n",
+        key: "k".into(),
+        name: "n".into(),
         value,
         translator: None,
         bits: None,

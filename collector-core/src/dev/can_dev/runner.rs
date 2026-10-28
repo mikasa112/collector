@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::io;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use futures::StreamExt;
@@ -47,9 +48,9 @@ impl CanRunner {
             &self.id,
             vec![DataPoint {
                 id: 0xFFFF,
-                name: "通讯状态",
+                name: "通讯状态".into(),
                 value: Val::U8(fault as u8),
-                key: "communicationStatus",
+                key: "communicationStatus".into(),
                 translator: None,
                 bits: None,
                 words: None,
@@ -185,7 +186,7 @@ impl CanRunner {
         stop_rx: &mut watch::Receiver<bool>,
         frame_states: &mut HashMap<u32, FrameState>,
         point_map: &HashMap<u32, super::downlink::CanPointConfig>,
-        name_map: &HashMap<&'static str, PointId>,
+        name_map: &HashMap<Arc<str>, PointId>,
         frame_map: &HashMap<u32, FrameBinding>,
     ) -> Result<(), CanDevError> {
         self.state.store(&self.id, LifecycleState::Running);
@@ -391,13 +392,13 @@ fn decode_signal(cfg: &CanSignalConfig, data: &[u8]) -> Option<DataPoint> {
     }
     Some(DataPoint {
         id: cfg.id,
-        name: cfg.name,
+        name: cfg.name.clone(),
         value: decode_value(raw, cfg.bit_len, cfg.data_type, cfg.scale, cfg.offset),
-        key: cfg.key,
-        translator: cfg.trans,
-        bits: cfg.enum_bits,
-        words: cfg.enum_values,
-        unit: cfg.unit,
+        key: cfg.key.clone(),
+        translator: cfg.trans.clone(),
+        bits: cfg.enum_bits.clone(),
+        words: cfg.enum_values.clone(),
+        unit: cfg.unit.clone(),
         level: None,
     })
 }
@@ -435,7 +436,7 @@ fn decode_ext_signal(
 
     Some(DataPoint {
         id: cfg.id,
-        name: cfg.name,
+        name: cfg.name.clone(),
         value: Val::List(
             state
                 .values
@@ -447,8 +448,8 @@ fn decode_ext_signal(
                 })
                 .collect(),
         ),
-        key: cfg.key,
-        translator: cfg.trans,
+        key: cfg.key.clone(),
+        translator: cfg.trans.clone(),
         bits: None,
         words: None,
         unit: None,
@@ -624,9 +625,9 @@ fn resolve_signal_name<'a>(
         PointRef::Key(k) | PointRef::Name(k) => k,
         PointRef::Id(id) => point_map
             .get(id)
-            .map(|cfg| match cfg.signal {
-                CanSignal::Normal(s) => s.name,
-                CanSignal::Ext(s) => s.name,
+            .map(|cfg| match &cfg.signal {
+                CanSignal::Normal(s) => s.name.as_ref(),
+                CanSignal::Ext(s) => s.name.as_ref(),
             })
             .unwrap_or("unknown"),
     }
@@ -648,23 +649,23 @@ mod tests {
         let cfg = CanConfig {
             frame: CanFrameConfig {
                 id: 1,
-                name: "frame",
+                name: "frame".into(),
                 frame_id: 0x100,
                 id_type: IdType::Extended,
                 dlc: 8,
                 cycle_duration: Duration::from_millis(100),
                 timeout_duration: Duration::from_millis(200),
-                send: "a",
-                receive: "b",
+                send: "a".into(),
+                receive: "b".into(),
                 rule: Rule::Cycle,
                 enable: true,
             },
             signals: vec![
                 CanSignal::Normal(CanSignalConfig {
                     id: 10,
-                    name: "speed",
+                    name: "speed".into(),
                     frame_id: 0x100,
-                    signal_name: "speed",
+                    signal_name: "speed".into(),
                     start_bit: 0,
                     bit_len: 16,
                     byte_order: ByteOrder::Intel,
@@ -675,14 +676,14 @@ mod tests {
                     invalid_val: None,
                     enum_values: None,
                     remark: None,
-                    key: "",
+                    key: "".into(),
                     trans: None,
                     enum_bits: None,
                 }),
                 CanSignal::Ext(CanSignalExtConfig {
                     id: 11,
-                    name: "cells",
-                    poly_name: "cells",
+                    name: "cells".into(),
+                    poly_name: "cells".into(),
                     frame_id: 0x100,
                     frame_num: 3,
                     frame_id_step: 2,
@@ -694,9 +695,9 @@ mod tests {
                     data_type: CanDataType::U8,
                     scale: 1.0,
                     offset: 0.0,
-                    unit: "",
+                    unit: "".into(),
                     invalid_val: None,
-                    key: "",
+                    key: "".into(),
                     trans: None,
                 }),
             ],
@@ -711,8 +712,8 @@ mod tests {
     fn decode_ext_signal_uses_frame_offset_for_later_frames() {
         let cfg = CanSignalExtConfig {
             id: 11,
-            name: "cells",
-            poly_name: "cells",
+            name: "cells".into(),
+            poly_name: "cells".into(),
             frame_id: 0x100,
             frame_num: 3,
             frame_id_step: 2,
@@ -724,9 +725,9 @@ mod tests {
             data_type: CanDataType::U8,
             scale: 1.0,
             offset: 0.0,
-            unit: "",
+            unit: "".into(),
             invalid_val: None,
-            key: "",
+            key: "".into(),
             trans: None,
         };
 
@@ -753,8 +754,8 @@ mod tests {
     fn decode_ext_signal_resets_cache_when_new_cycle_starts() {
         let cfg = CanSignalExtConfig {
             id: 11,
-            name: "cells",
-            poly_name: "cells",
+            name: "cells".into(),
+            poly_name: "cells".into(),
             frame_id: 0x100,
             frame_num: 2,
             frame_id_step: 2,
@@ -766,9 +767,9 @@ mod tests {
             data_type: CanDataType::U8,
             scale: 1.0,
             offset: 0.0,
-            unit: "",
+            unit: "".into(),
             invalid_val: None,
-            key: "",
+            key: "".into(),
             trans: None,
         };
 

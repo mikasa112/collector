@@ -13,42 +13,42 @@ fn main() {
         word_map.insert(
             0,
             Word {
-                zh: "停止",
-                en: "Stop",
+                zh: "停止".into(),
+                en: "Stop".into(),
             },
         );
         word_map.insert(
             1,
             Word {
-                zh: "运行",
-                en: "Run",
+                zh: "运行".into(),
+                en: "Run".into(),
             },
         );
-        let words: &'static Words = Box::leak(Box::new(Words(word_map)));
+        let words = std::sync::Arc::new(Words(word_map));
 
         data_center().ingest(
             "demo",
             vec![
                 DataPoint {
                     id: 1,
-                    key: "run_state",
-                    name: "运行状态",
+                    key: "run_state".into(),
+                    name: "运行状态".into(),
                     value: Val::U8(1),
                     translator: None,
                     bits: None,
-                    words: Some(words),
+                    words: Some(words.clone()),
                     unit: None,
                     level: None,
                 },
                 DataPoint {
                     id: 2,
-                    key: "voltage",
-                    name: "电压",
+                    key: "voltage".into(),
+                    name: "电压".into(),
                     value: Val::F64(398.5),
                     translator: None,
                     bits: None,
                     words: None,
-                    unit: Some("V"),
+                    unit: Some("V".into()),
                     level: None,
                 },
             ],
