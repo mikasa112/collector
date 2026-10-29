@@ -7,11 +7,9 @@ MOD = {
 
 local CONFIG = {
     poll_ms = 5000,
-    -- 每块表一个条目，按一表一串口配置：dev_id 全局唯一，串口不要与其他设备共用；address 为表地址（12 位十进制）
+    -- 万润现场只有1块400V表。dev_id 全局唯一；address 为表地址（12位十进制）。
     meters = {
         { dev_id = "amc_meter_1", link = { serial = "/dev/ttyS1", baud = 2400, parity = "E", address = "000000000001", timeout = 1200 } },
-        { dev_id = "amc_meter_2", link = { serial = "/dev/ttyS2", baud = 2400, parity = "E", address = "000000000001", timeout = 1200 } },
-        { dev_id = "amc_meter_3", link = { serial = "/dev/ttyS3", baud = 2400, parity = "E", address = "000000000001", timeout = 1200 } },
     },
 }
 

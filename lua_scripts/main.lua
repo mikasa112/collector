@@ -18,7 +18,7 @@ local engine = require("_engine")
 
 -- 当前激活的项目定义文件（存放于 projects/ 目录下）
 -- 如需切换不同测试项目，只需更改 require 路径即可
-local active_project_module = "projects.奥林波斯"
+local active_project_module = "projects.万润"
 
 local ok, project = pcall(require, active_project_module)
 if not ok or not project then

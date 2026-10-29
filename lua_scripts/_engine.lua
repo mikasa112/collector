@@ -154,6 +154,11 @@ function Engine.start(project)
                     if project.TOPIC_SET_BANK2_YT then
                         conn:subscribe(project.TOPIC_SET_BANK2_YT, function(_, payload) handle_set_yt_mapped(bau2_yt_map, payload) end)
                     end
+                    -- 项目可自行注册非奥林波斯设备的遥调/遥控下行路由。
+                    -- register_downlinks 只负责 subscribe，具体标准点号到协议点号的反向映射由项目 Lua 管理。
+                    if project.register_downlinks then
+                        project.register_downlinks(conn)
+                    end
                 end)
                 return
             end
@@ -430,6 +435,26 @@ function Engine.start(project)
         if not conn then
             log.warn("通用引擎: MQTT 未连接，跳过本次上送")
             return
+        end
+
+        -- 通用项目路由：项目 Lua 返回已经完成四遥分类和标准点号映射的发布列表。
+        -- route = { topic = "/pds/meter/0/yc", points = {{id=1,value=...}, ...} }
+        if project.collect_routes then
+            local ok, routes = pcall(project.collect_routes)
+            if not ok then
+                log.warn("项目自定义采集路由执行失败: " .. tostring(routes))
+            elseif routes then
+                for _, route in ipairs(routes) do
+                    if route.topic and route.points then
+                        publish(route.topic, route.points)
+                    end
+                end
+            end
+
+            -- 纯自定义项目不再执行下面的奥林波斯固定 CRD/PCS/BANK/RACK 流程。
+            if project.USE_GENERIC_ROUTES then
+                return
+            end
         end
 
         -- 1. CRD
