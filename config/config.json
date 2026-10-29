@@ -1,6 +1,6 @@
 {
-  "product_type": "开发机测试",
-  "project": "开发机测试",
+  "product_type": "EMS",
+  "project": "万润2.5MW/5MWh EMS",
   "program": {
     "emu": {
       "enable": false
@@ -15,10 +15,10 @@
       "path": "lua_scripts"
     },
     "north_modbus": {
-      "enable": true,
+      "enable": false,
       "north_modbus_host": "0.0.0.0",
       "north_modbus_port": 9092,
-      "north_modbus_conf": "./config/北向/MODBUS_REGISTERS.xlsx"
+      "north_modbus_conf": "./config/MODBUS_REGISTERS.xlsx"
     },
     "north_iec104": {
       "enable": false,
@@ -35,18 +35,29 @@
       "id": "agc",
       "tick_ms": 500,
       "upstream_timeout_ms": 60000,
-      "p_deadband": 1.0,
-      "q_deadband": 1.0,
+      "p_deadband": 1,
+      "q_deadband": 1,
+      "positive_is_discharge": true,
       "members": [
         {
-          "dev": "ctrl_a", "rated_kva": 500.0,
-          "p_set": 1, "q_set": 2, "p_actual": 3, "q_actual": 4,
-          "p_upper": 5, "p_lower": 6, "q_upper": 7, "q_lower": 8
+          "dev": "ctrl_a",
+          "rated_kva": 2500.0,
+          "p_set": 2005,
+          "q_set": 2006,
+          "p_actual": 13,
+          "q_actual": 14,
+          "p_max_charge": 19,
+          "p_max_discharge": 20
         },
         {
-          "dev": "ctrl_b", "rated_kva": 500.0,
-          "p_set": 1, "q_set": 2, "p_actual": 3, "q_actual": 4,
-          "p_upper": 5, "p_lower": 6, "q_upper": 7, "q_lower": 8
+          "dev": "ctrl_b",
+          "rated_kva": 2500.0,
+          "p_set": 2005,
+          "q_set": 2006,
+          "p_actual": 13,
+          "q_actual": 14,
+          "p_max_charge": 19,
+          "p_max_discharge": 20
         }
       ]
     },
@@ -67,15 +78,39 @@
     "pcs": {
       "id": "pcs",
       "type": "PCS",
-      "desc": "英博电气125kWPCS",
+      "desc": "英博电气2.5MW",
       "config": {
         "type": "PCS",
         "com_type": "ModbusTCP",
-        "register_file": "./config/pcs/PCS_英博_125.xlsx",
+        "register_file": "./config/pcs/PCS_英博_协控.xlsx",
         "interval": 2000,
         "timeout": 2000,
-        "ip": "127.0.0.1",
-        "port": 10000,
+        "ip": "192.168.0.1",
+        "port": 502,
+        "slave": 1,
+        "serial_tty": null,
+        "baud_rate": null,
+        "data_bits": null,
+        "parity": null,
+        "stop_bits": null,
+        "interface": null,
+        "desc": null,
+        "request_interval": 50,
+        "max_gap": null
+      }
+    },
+    "bau": {
+      "id": "bau",
+      "type": "BAU",
+      "desc": "协能BAU",
+      "config": {
+        "type": "BAU",
+        "com_type": "ModbusTCP",
+        "register_file": "./config/pcs/PCS_英博_协控.xlsx",
+        "interval": 2000,
+        "timeout": 2000,
+        "ip": "192.168.0.2",
+        "port": 502,
         "slave": 1,
         "serial_tty": null,
         "baud_rate": null,
@@ -87,6 +122,396 @@
         "request_interval": null,
         "max_gap": null
       }
+    },
+    "bcu1": {
+      "id": "bcu1",
+      "type": "BCU",
+      "desc": "协能BCU",
+      "config": {
+        "type": "BCU",
+        "com_type": "ModbusTCP",
+        "register_file": "./config/bms/BAU_协能.xlsx",
+        "interval": 2000,
+        "timeout": 2000,
+        "ip": "192.168.0.2",
+        "port": 502,
+        "slave": 2,
+        "serial_tty": null,
+        "baud_rate": null,
+        "data_bits": null,
+        "parity": null,
+        "stop_bits": null,
+        "interface": null,
+        "desc": null,
+        "request_interval": null,
+        "max_gap": null
+      }
+    },
+    "bcu2": {
+      "id": "bcu2",
+      "type": "BCU",
+      "desc": "协能BCU",
+      "config": {
+        "type": "BCU",
+        "com_type": "ModbusTCP",
+        "register_file": "./config/bms/BCU_协能.xlsx",
+        "interval": 2000,
+        "timeout": 2000,
+        "ip": "192.168.0.2",
+        "port": 502,
+        "slave": 3,
+        "serial_tty": null,
+        "baud_rate": null,
+        "data_bits": null,
+        "parity": null,
+        "stop_bits": null,
+        "interface": null,
+        "desc": null,
+        "request_interval": null,
+        "max_gap": null
+      }
+    },
+    "bcu3": {
+      "id": "bcu3",
+      "type": "BCU",
+      "desc": "协能BCU",
+      "config": {
+        "type": "BCU",
+        "com_type": "ModbusTCP",
+        "register_file": "./config/bms/BCU_协能.xlsx",
+        "interval": 2000,
+        "timeout": 2000,
+        "ip": "192.168.0.2",
+        "port": 502,
+        "slave": 4,
+        "serial_tty": null,
+        "baud_rate": null,
+        "data_bits": null,
+        "parity": null,
+        "stop_bits": null,
+        "interface": null,
+        "desc": null,
+        "request_interval": null,
+        "max_gap": null
+      }
+    },
+    "bcu4": {
+      "id": "bcu4",
+      "type": "BCU",
+      "desc": "协能BCU",
+      "config": {
+        "type": "BCU",
+        "com_type": "ModbusTCP",
+        "register_file": "./config/bms/BCU_协能.xlsx",
+        "interval": 2000,
+        "timeout": 2000,
+        "ip": "192.168.0.2",
+        "port": 502,
+        "slave": 5,
+        "serial_tty": null,
+        "baud_rate": null,
+        "data_bits": null,
+        "parity": null,
+        "stop_bits": null,
+        "interface": null,
+        "desc": null,
+        "request_interval": null,
+        "max_gap": null
+      }
+    },
+    "bcu5": {
+      "id": "bcu5",
+      "type": "BCU",
+      "desc": "协能BCU",
+      "config": {
+        "type": "BCU",
+        "com_type": "ModbusTCP",
+        "register_file": "./config/bms/BCU_协能.xlsx",
+        "interval": 2000,
+        "timeout": 2000,
+        "ip": "192.168.0.2",
+        "port": 502,
+        "slave": 6,
+        "serial_tty": null,
+        "baud_rate": null,
+        "data_bits": null,
+        "parity": null,
+        "stop_bits": null,
+        "interface": null,
+        "desc": null,
+        "request_interval": null,
+        "max_gap": null
+      }
+    },
+    "bcu6": {
+      "id": "bcu6",
+      "type": "BCU",
+      "desc": "协能BCU",
+      "config": {
+        "type": "BCU",
+        "com_type": "ModbusTCP",
+        "register_file": "./config/bms/BCU_协能.xlsx",
+        "interval": 2000,
+        "timeout": 2000,
+        "ip": "192.168.0.2",
+        "port": 502,
+        "slave": 7,
+        "serial_tty": null,
+        "baud_rate": null,
+        "data_bits": null,
+        "parity": null,
+        "stop_bits": null,
+        "interface": null,
+        "desc": null,
+        "request_interval": null,
+        "max_gap": null
+      }
+    },
+    "bcu7": {
+      "id": "bcu7",
+      "type": "BCU",
+      "desc": "协能BCU",
+      "config": {
+        "type": "BCU",
+        "com_type": "ModbusTCP",
+        "register_file": "./config/bms/BCU_协能.xlsx",
+        "interval": 2000,
+        "timeout": 2000,
+        "ip": "192.168.0.2",
+        "port": 502,
+        "slave": 8,
+        "serial_tty": null,
+        "baud_rate": null,
+        "data_bits": null,
+        "parity": null,
+        "stop_bits": null,
+        "interface": null,
+        "desc": null,
+        "request_interval": null,
+        "max_gap": null
+      }
+    },
+    "bcu8": {
+      "id": "bcu8",
+      "type": "BCU",
+      "desc": "协能BCU",
+      "config": {
+        "type": "BCU",
+        "com_type": "ModbusTCP",
+        "register_file": "./config/bms/BCU_协能.xlsx",
+        "interval": 2000,
+        "timeout": 2000,
+        "ip": "192.168.0.2",
+        "port": 502,
+        "slave": 9,
+        "serial_tty": null,
+        "baud_rate": null,
+        "data_bits": null,
+        "parity": null,
+        "stop_bits": null,
+        "interface": null,
+        "desc": null,
+        "request_interval": null,
+        "max_gap": null
+      }
+    },
+    "bcu9": {
+      "id": "bcu9",
+      "type": "BCU",
+      "desc": "协能BCU",
+      "config": {
+        "type": "BCU",
+        "com_type": "ModbusTCP",
+        "register_file": "./config/bms/BCU_协能.xlsx",
+        "interval": 2000,
+        "timeout": 2000,
+        "ip": "192.168.0.2",
+        "port": 502,
+        "slave": 10,
+        "serial_tty": null,
+        "baud_rate": null,
+        "data_bits": null,
+        "parity": null,
+        "stop_bits": null,
+        "interface": null,
+        "desc": null,
+        "request_interval": null,
+        "max_gap": null
+      }
+    },
+    "bcu10": {
+      "id": "bcu10",
+      "type": "BCU",
+      "desc": "协能BCU",
+      "config": {
+        "type": "BCU",
+        "com_type": "ModbusTCP",
+        "register_file": "./config/bms/BCU_协能.xlsx",
+        "interval": 2000,
+        "timeout": 2000,
+        "ip": "192.168.0.2",
+        "port": 502,
+        "slave": 11,
+        "serial_tty": null,
+        "baud_rate": null,
+        "data_bits": null,
+        "parity": null,
+        "stop_bits": null,
+        "interface": null,
+        "desc": null,
+        "request_interval": null,
+        "max_gap": null
+      }
+    },
+    "bcu11": {
+      "id": "bcu11",
+      "type": "BCU",
+      "desc": "协能BCU",
+      "config": {
+        "type": "BCU",
+        "com_type": "ModbusTCP",
+        "register_file": "./config/bms/BCU_协能.xlsx",
+        "interval": 2000,
+        "timeout": 2000,
+        "ip": "192.168.0.2",
+        "port": 502,
+        "slave": 12,
+        "serial_tty": null,
+        "baud_rate": null,
+        "data_bits": null,
+        "parity": null,
+        "stop_bits": null,
+        "interface": null,
+        "desc": null,
+        "request_interval": null,
+        "max_gap": null
+      }
+    },
+    "bcu12": {
+      "id": "bcu12",
+      "type": "BCU",
+      "desc": "协能BCU",
+      "config": {
+        "type": "BCU",
+        "com_type": "ModbusTCP",
+        "register_file": "./config/bms/BCU_协能.xlsx",
+        "interval": 2000,
+        "timeout": 2000,
+        "ip": "192.168.0.2",
+        "port": 502,
+        "slave": 13,
+        "serial_tty": null,
+        "baud_rate": null,
+        "data_bits": null,
+        "parity": null,
+        "stop_bits": null,
+        "interface": null,
+        "desc": null,
+        "request_interval": null,
+        "max_gap": null
+      }
+    },
+    "10kv_meter1": {
+      "id": "10kv_meter1",
+      "type": "KV_METER",
+      "desc": "高压侧10kV电表",
+      "config": {}
+    },
+    "10kv_meter2": {
+      "id": "10kv_meter2",
+      "type": "KV_METER",
+      "desc": "高压侧10kV电表",
+      "config": {}
+    },
+    "meter1": {
+      "id": "meter1",
+      "type": "METER",
+      "desc": "低压侧电表",
+      "config": {}
+    },
+    "meter2": {
+      "id": "meter2",
+      "type": "METER",
+      "desc": "低压侧电表",
+      "config": {}
+    },
+    "meter3": {
+      "id": "meter3",
+      "type": "METER",
+      "desc": "低压侧电表",
+      "config": {}
+    },
+    "meter4": {
+      "id": "meter4",
+      "type": "METER",
+      "desc": "低压侧电表",
+      "config": {}
+    },
+    "meter5": {
+      "id": "meter5",
+      "type": "METER",
+      "desc": "低压侧电表",
+      "config": {}
+    },
+    "meter6": {
+      "id": "meter6",
+      "type": "METER",
+      "desc": "低压侧电表",
+      "config": {}
+    },
+    "meter7": {
+      "id": "meter7",
+      "type": "METER",
+      "desc": "低压侧电表",
+      "config": {}
+    },
+    "meter8": {
+      "id": "meter8",
+      "type": "METER",
+      "desc": "低压侧电表",
+      "config": {}
+    },
+    "meter9": {
+      "id": "meter9",
+      "type": "METER",
+      "desc": "低压侧电表",
+      "config": {}
+    },
+    "meter10": {
+      "id": "meter10",
+      "type": "METER",
+      "desc": "低压侧电表",
+      "config": {}
+    },
+    "meter11": {
+      "id": "meter11",
+      "type": "METER",
+      "desc": "低压侧电表",
+      "config": {}
+    },
+    "meter12": {
+      "id": "meter12",
+      "type": "METER",
+      "desc": "低压侧电表",
+      "config": {}
+    },
+    "meter13": {
+      "id": "meter13",
+      "type": "METER",
+      "desc": "低压侧电表",
+      "config": {}
+    },
+    "meter14": {
+      "id": "meter14",
+      "type": "METER",
+      "desc": "低压侧电表",
+      "config": {}
+    },
+    "meter15": {
+      "id": "meter15",
+      "type": "METER",
+      "desc": "低压侧电表",
+      "config": {}
     }
   }
 }
