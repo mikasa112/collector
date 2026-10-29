@@ -282,10 +282,24 @@ pub struct MqttRule {
     pub point_ids: Vec<PointId>,
 }
 
+/// 支持数值单元格和文本格式的数字（如单元格被设为"文本"后填入的 "0.1"）。
 pub(crate) fn required_f64(row: &[Data], idx: usize, field: &str) -> Result<f64, anyhow::Error> {
-    row.get(idx)
-        .and_then(|cell| cell.get_float())
-        .ok_or_else(|| anyhow::Error::msg(format!("{field}不能为空")))
+    let cell = row
+        .get(idx)
+        .ok_or_else(|| anyhow::Error::msg(format!("{field}不能为空")))?;
+    if let Some(v) = cell.get_float() {
+        return Ok(v);
+    }
+    if let Some(v) = cell.get_int() {
+        return Ok(v as f64);
+    }
+    let text = cell
+        .get_string()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| anyhow::Error::msg(format!("{field}不能为空")))?;
+    text.parse::<f64>()
+        .map_err(|_| anyhow::Error::msg(format!("{field}格式错误: {text}")))
 }
 
 pub(crate) fn required_str<'a>(
