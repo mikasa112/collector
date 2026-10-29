@@ -3,7 +3,7 @@
 -- 每个点占 2 个寄存器（32 位），默认按 ABCD 字序解码；若实测数值异常，改 CONFIG.word_order（如 "CDAB"）。
 -- 电能：二次侧 WPP/WPN/WQP/WQN 为 Long（Wh），一次侧 EPP/EPN/EQP/EQN 为 float（Wh），上报时统一换算为 kWh。
 MOD = {
-    name = "PD606",
+    name = "PD606E",
     description = "万润5MWh项目_PD606",
 }
 
