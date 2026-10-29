@@ -16,6 +16,15 @@ M.HOST = "127.0.0.1"
 M.PORT = 1883
 M.USE_GENERIC_ROUTES = true
 
+-- 电池仓与采集设备的对应关系。新增电池仓只需追加配置，北向Topic会自动携带仓号和簇号。
+-- bau/bcus中的值必须与南向协议脚本注册到dc的dev_id一致。
+M.BATTERY_CONTAINERS = {
+    { index = 0, name = "1#电池仓", bau = "bau", bcus = {
+        "bcu1", "bcu2", "bcu3", "bcu4", "bcu5", "bcu6",
+        "bcu7", "bcu8", "bcu9", "bcu10", "bcu11", "bcu12",
+    } },
+}
+
 -- 启动 527AMC 的南向采集。后续其它万润协议脚本也在此处 require，北向映射仍集中保留在本文件。
 local ok, err = pcall(require, "projects.527AMC电表_万润")
 if not ok then
@@ -169,25 +178,28 @@ function M.collect_routes()
         table.insert(routes, { topic = "/pds/pcs/0/yt", points = pcs_yt })
     end
 
-    -- BAU堆级数据：发布到后端实际使用的emu/0模型。
-    local bau_raw = dc.read_all("bau") or {}
-    local emu_yc = map_points(bau_raw, BAU_EMU_YC_MAP)
-    local voltage = point_value(bau_raw, 50)
-    local current = point_value(bau_raw, 51)
-    if voltage ~= nil and current ~= nil then
-        add_point(emu_yc, 30, voltage * current / 1000) -- kW，符号沿用BMS电流方向
-    end
-    if #emu_yc > 0 then
-        table.insert(routes, { topic = "/pds/emu/0/yc", points = emu_yc })
-    end
-    table.insert(routes, { topic = "/pds/emu/0/yx", points = map_comm_status(bau_raw) })
+    for _, container in ipairs(M.BATTERY_CONTAINERS or {}) do
+        local container_index = container.index or 0
+        local bau_raw = dc.read_all(container.bau) or {}
+        local emu_yc = map_points(bau_raw, BAU_EMU_YC_MAP)
+        local voltage = point_value(bau_raw, 50)
+        local current = point_value(bau_raw, 51)
+        if voltage ~= nil and current ~= nil then
+            add_point(emu_yc, 30, voltage * current / 1000)
+        end
+        if #emu_yc > 0 then
+            table.insert(routes, { topic = "/pds/bank/" .. container_index .. "/yc", points = emu_yc })
+        end
+        table.insert(routes, { topic = "/pds/bank/" .. container_index .. "/yx", points = map_comm_status(bau_raw) })
 
-    -- 12个BCU分别作为12个Rack实例，不合并，便于拓扑和设备页逐簇绑定。
-    for i = 1, 12 do
-        local raw = dc.read_all("bcu" .. i) or {}
-        local rack_yc = map_points(raw, BCU_RACK_YC_MAP)
-        if #rack_yc > 0 then
-            table.insert(routes, { topic = "/pds/rack/" .. (i - 1) .. "/yc", points = rack_yc })
+        for rack_index, bcu_dev_id in ipairs(container.bcus or {}) do
+            local raw = dc.read_all(bcu_dev_id) or {}
+            local rack_yc = map_points(raw, BCU_RACK_YC_MAP)
+            local rack_prefix = "/pds/bank/" .. container_index .. "/rack/" .. (rack_index - 1)
+            if #rack_yc > 0 then
+                table.insert(routes, { topic = rack_prefix .. "/yc", points = rack_yc })
+            end
+            -- RackYX 1001是组端过压告警，不是通讯状态；待告警字位协议确认后单独映射YX。
         end
     end
     return routes
