@@ -82,7 +82,7 @@
       "config": {
         "type": "PCS",
         "com_type": "ModbusTCP",
-        "register_file": "./config/pcs/PCS_英博_协控.xlsx",
+        "register_file": "./config/pcs/PCS_英博_大机.xlsx",
         "interval": 2000,
         "timeout": 2000,
         "ip": "192.168.0.1",
@@ -106,7 +106,7 @@
       "config": {
         "type": "BAU",
         "com_type": "ModbusTCP",
-        "register_file": "./config/pcs/PCS_英博_协控.xlsx",
+        "register_file": "./config/bms/BAU_协能.xlsx",
         "interval": 2000,
         "timeout": 2000,
         "ip": "192.168.0.2",
@@ -130,7 +130,7 @@
       "config": {
         "type": "BCU",
         "com_type": "ModbusTCP",
-        "register_file": "./config/bms/BAU_协能.xlsx",
+        "register_file": "./config/bms/BCU_协能.xlsx",
         "interval": 2000,
         "timeout": 2000,
         "ip": "192.168.0.2",
