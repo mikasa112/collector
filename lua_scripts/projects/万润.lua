@@ -16,6 +16,13 @@ M.HOST = "127.0.0.1"
 M.PORT = 1883
 M.USE_GENERIC_ROUTES = true
 
+-- PCS 型号默认跟随南向点表自动识别：
+--   PCS_英博_125.xlsx  -> PCS_KW
+--   PCS_英博_大机.xlsx -> PCS_MW
+-- 不要为两种型号改 MQTT topic，后端会根据资产绑定的 PCS_KW / PCS_MW 选择物理模型。
+-- 如果首轮采集尚未出现可识别的 key，使用 fallback；也可将 model 显式改成 PCS_KW/PCS_MW。
+M.PCS = { dev = "pcs", index = 0, model = "AUTO", fallback = "PCS_MW" }
+
 -- 电池仓与采集设备的对应关系。新增电池仓只需追加配置，北向Topic会自动携带仓号和簇号。
 -- bau/bcus中的值必须与南向协议脚本注册到dc的dev_id一致。
 M.BATTERY_CONTAINERS = {
@@ -50,17 +57,42 @@ local METER_YC_MAP = {
     -- EQ1/EQ2 的象限定义需按现场表计参数确认后，才能映射到32/33，当前不猜测。
 }
 
--- 英博2.5MW PCS采集点 -> 后端PcsYC标准点。
--- 协议给的是三路线电压，后端历史模型字段名仍为A/B/C相电压；这里保留三路顺序，后续应统一模型命名。
-local PCS_YC_MAP = {
-    [2] = { 1 }, [3] = { 2 }, [4] = { 3 },
-    [5] = { 4 }, [6] = { 5 }, [7] = { 6 },
-    [17] = { 7 },
-    [18] = { 11 }, [19] = { 15 }, [20] = { 23 },
-    [8] = { 24 }, [9] = { 25 }, [10] = { 26 },
-    [1] = { 29 },
-    [23] = { 30 }, [24] = { 31 },
+-- kW 协议点表与后端 PcsYC 的前 33 点一致，后半段在厂家点表中穿插了版本、故障字和 BMS 点，
+-- 因此必须按语义显式映射，不能直接透传数字。
+local PCS_KW_YC_MAP = {}
+for id = 1, 33 do PCS_KW_YC_MAP[id] = { id } end
+PCS_KW_YC_MAP[35] = { 34 }; PCS_KW_YC_MAP[36] = { 35 }; PCS_KW_YC_MAP[37] = { 36 }
+PCS_KW_YC_MAP[38] = { 37 }; PCS_KW_YC_MAP[39] = { 38 }; PCS_KW_YC_MAP[40] = { 39 }
+PCS_KW_YC_MAP[59] = { 40 }; PCS_KW_YC_MAP[60] = { 41 }; PCS_KW_YC_MAP[61] = { 42 }
+PCS_KW_YC_MAP[62] = { 43 }; PCS_KW_YC_MAP[63] = { 44 }; PCS_KW_YC_MAP[64] = { 45 }
+PCS_KW_YC_MAP[133] = { 46 }; PCS_KW_YC_MAP[134] = { 47 }; PCS_KW_YC_MAP[135] = { 48 }
+PCS_KW_YC_MAP[136] = { 49 }; PCS_KW_YC_MAP[137] = { 50 }; PCS_KW_YC_MAP[138] = { 51 }
+for source = 139, 155 do PCS_KW_YC_MAP[source] = { source - 87 } end
+
+local PCS_KW_YX_MAP = {
+    [1000] = { 1002 }, [1001] = { 1003 }, [1002] = { 1004 }, [1003] = { 1005 },
+    [1004] = { 1006 }, [1005] = { 1007 }, [1006] = { 1008 }, [1007] = { 1009 },
+    [1008] = { 1010 }, [1009] = { 1011 }, [1013] = { 1012 },
+    [156] = { 1014 }, [157] = { 1015 }, [158] = { 1016 }, [159] = { 1017 },
+    [160] = { 1018 }, [164] = { 1019 }, [165] = { 1020 },
 }
+
+local PCS_KW_YT_FROM_PROTOCOL = {}
+for source = 2000, 2016 do PCS_KW_YT_FROM_PROTOCOL[source] = { source + 1 } end
+for source = 2018, 2020 do PCS_KW_YT_FROM_PROTOCOL[source] = { source } end
+PCS_KW_YT_FROM_PROTOCOL[2022] = { 2022 }; PCS_KW_YT_FROM_PROTOCOL[2023] = { 2023 }
+PCS_KW_YT_FROM_PROTOCOL[2028] = { 2024 }; PCS_KW_YT_FROM_PROTOCOL[2029] = { 2025 }
+PCS_KW_YT_FROM_PROTOCOL[2030] = { 2026 }; PCS_KW_YT_FROM_PROTOCOL[2031] = { 2027 }
+PCS_KW_YT_FROM_PROTOCOL[2032] = { 2028 }; PCS_KW_YT_FROM_PROTOCOL[2033] = { 2029 }
+PCS_KW_YT_FROM_PROTOCOL[2034] = { 2030 }; PCS_KW_YT_FROM_PROTOCOL[2035] = { 2031 }
+PCS_KW_YT_FROM_PROTOCOL[2039] = { 2032 }; PCS_KW_YT_FROM_PROTOCOL[2040] = { 2033 }
+PCS_KW_YT_FROM_PROTOCOL[2041] = { 2034 }; PCS_KW_YT_FROM_PROTOCOL[2042] = { 2035 }
+
+-- MW 大机点表就是后端 PcsMwYC/PcsMwYX/PcsMwYT 的物理模型，仅做四遥分类，点号不再改写。
+local PCS_MW_YC_MAP, PCS_MW_YX_MAP, PCS_MW_YT_FROM_PROTOCOL = {}, {}, {}
+for id = 1, 57 do PCS_MW_YC_MAP[id] = { id } end
+for id = 58, 71 do PCS_MW_YX_MAP[id] = { id } end
+for id = 2000, 2029 do PCS_MW_YT_FROM_PROTOCOL[id] = { id } end
 
 -- 协能BAU堆级数据 -> 后端现有EmuYC标准点。
 -- 当前策略、首页、收益计算均固定读取emu/0，因此堆级BMS必须落到该模型，而不是不可解析的bank主题。
@@ -96,19 +128,12 @@ local BCU_RACK_YC_MAP = {
 
 -- 后端PcsYT标准点 -> 英博PCS协议遥调点。
 -- 只开放语义完全一致的点位；启动、停机、待机等控制不得靠枚举猜测。
-local PCS_YT_TO_PROTOCOL = {
-    [2001] = 2001, -- 运行模式选择
-    [2004] = 2002, -- 并网有功给定
-    [2005] = 2003, -- 并网无功给定
-    [2007] = 2005, -- VF电压给定
-    [2008] = 2006, -- VF频率给定
-    [2031] = 2004, -- 并网功率因数
-}
-
-local PCS_PROTOCOL_TO_YT = {}
-for std_id, protocol_id in pairs(PCS_YT_TO_PROTOCOL) do
-    PCS_PROTOCOL_TO_YT[protocol_id] = { std_id }
+local PCS_KW_YT_TO_PROTOCOL = {}
+for protocol_id, standard_ids in pairs(PCS_KW_YT_FROM_PROTOCOL) do
+    PCS_KW_YT_TO_PROTOCOL[standard_ids[1]] = protocol_id
 end
+-- kW 机的启停、复位等是遥控 Coils，后端为了统一策略调用将其暴露为 PcsYT 2036..2043。
+for standard_id = 2036, 2043 do PCS_KW_YT_TO_PROTOCOL[standard_id] = 3000 + standard_id - 2036 end
 
 -- 万润现场只有1块400V电表，使用通用MeterYC模型，不冒充10kV表。
 local METER_ROUTES = {
@@ -141,16 +166,34 @@ local function add_point(points, id, value)
     if value ~= nil then table.insert(points, { id = id, value = value }) end
 end
 
-local function map_comm_status(raw)
+local function map_comm_status(raw, alarm_id)
+    alarm_id = alarm_id or 1001
     for _, point in ipairs(raw or {}) do
         if point.id == COMM_STATUS_ID then
-            -- dc.set_comm(true) 表示通讯正常；后端1001是“通讯诊断”告警位，故需要取反。
+            -- dc.set_comm(true) 表示通讯正常；后端通讯诊断是告警位，故需要取反。
             local normal = point.value == 1 or point.value == true or point.value == "1"
-            return { { id = 1001, value = normal and 0 or 1 } }
+            return { { id = alarm_id, value = normal and 0 or 1 } }
         end
     end
     -- 尚未获得任何通讯状态时按故障上送，避免界面误显示正常。
-    return { { id = 1001, value = 1 } }
+    return { { id = alarm_id, value = 1 } }
+end
+
+local function detect_pcs_model(raw)
+    if M.PCS.model == "PCS_KW" or M.PCS.model == "PCS_MW" then return M.PCS.model end
+    for _, point in ipairs(raw or {}) do
+        -- key 来自南向 xlsx，比靠数值或单一点号判断更稳定。
+        if point.key == "pcsPortAPhVolt" or point.key == "pcsCtrlSwFaultW1" then return "PCS_KW" end
+        if point.key == "workStatus" or point.key == "maximumRechargeableActivePowerOfPcs" then return "PCS_MW" end
+    end
+    return M.PCS.fallback or "PCS_KW"
+end
+
+local function pcs_profile(model)
+    if model == "PCS_MW" then
+        return PCS_MW_YC_MAP, PCS_MW_YX_MAP, PCS_MW_YT_FROM_PROTOCOL, nil, COMM_STATUS_ID
+    end
+    return PCS_KW_YC_MAP, PCS_KW_YX_MAP, PCS_KW_YT_FROM_PROTOCOL, PCS_KW_YT_TO_PROTOCOL, 1001
 end
 
 function M.collect_routes()
@@ -167,15 +210,20 @@ function M.collect_routes()
     end
 
     -- PCS：遥测、通讯遥信以及遥调回读。
-    local pcs_raw = dc.read_all("pcs") or {}
-    local pcs_yc = map_points(pcs_raw, PCS_YC_MAP)
+    local pcs_raw = dc.read_all(M.PCS.dev) or {}
+    local pcs_model = detect_pcs_model(pcs_raw)
+    local yc_map, yx_map, yt_map, _, comm_id = pcs_profile(pcs_model)
+    local pcs_yc = map_points(pcs_raw, yc_map)
     if #pcs_yc > 0 then
-        table.insert(routes, { topic = "/pds/pcs/0/yc", points = pcs_yc })
+        table.insert(routes, { topic = "/pds/pcs/" .. M.PCS.index .. "/yc", points = pcs_yc })
     end
-    table.insert(routes, { topic = "/pds/pcs/0/yx", points = map_comm_status(pcs_raw) })
-    local pcs_yt = map_points(pcs_raw, PCS_PROTOCOL_TO_YT)
+    local pcs_yx = map_points(pcs_raw, yx_map)
+    local comm = map_comm_status(pcs_raw, comm_id)
+    for _, point in ipairs(comm) do table.insert(pcs_yx, point) end
+    table.insert(routes, { topic = "/pds/pcs/" .. M.PCS.index .. "/yx", points = pcs_yx })
+    local pcs_yt = map_points(pcs_raw, yt_map)
     if #pcs_yt > 0 then
-        table.insert(routes, { topic = "/pds/pcs/0/yt", points = pcs_yt })
+        table.insert(routes, { topic = "/pds/pcs/" .. M.PCS.index .. "/yt", points = pcs_yt })
     end
 
     for _, container in ipairs(M.BATTERY_CONTAINERS or {}) do
@@ -226,8 +274,18 @@ local function handle_mapped_downlink(device_id, mapping, payload)
 end
 
 function M.register_downlinks(conn)
-    conn:subscribe("/asw/pcs/0/setyt", function(_, payload)
-        handle_mapped_downlink("pcs", PCS_YT_TO_PROTOCOL, payload)
+    conn:subscribe("/asw/pcs/" .. M.PCS.index .. "/setyt", function(_, payload)
+        local raw = dc.read_all(M.PCS.dev) or {}
+        local model = detect_pcs_model(raw)
+        local _, _, _, mapping = pcs_profile(model)
+        if model == "PCS_MW" then
+            -- 后端已按 PcsMwYT 转换成大机原始点号，采集层直接下发。
+            local direct = {}
+            for id = 2000, 2029 do direct[id] = id end
+            handle_mapped_downlink(M.PCS.dev, direct, payload)
+        else
+            handle_mapped_downlink(M.PCS.dev, mapping, payload)
+        end
     end)
     -- 后端当前会向此主题发送RackYT 2103跳机指令，但协能协议只有一键并网、复位和电操控制，
     -- 尚不能证明哪一个与“跳机”语义及取值完全一致。先明确拒绝，待联调确认后再加入白名单。
@@ -235,5 +293,12 @@ function M.register_downlinks(conn)
         log.warn("收到BMS控制但尚未建立经现场确认的协能BAU控制映射，已拒绝执行: " .. tostring(payload))
     end)
 end
+
+-- 只用于无设备的自动化契约测试，生产路径仍仅调用 collect_routes/register_downlinks。
+M._test = {
+    map_points = map_points,
+    detect_pcs_model = detect_pcs_model,
+    pcs_profile = pcs_profile,
+}
 
 return M

@@ -1,0 +1,45 @@
+{
+  "enabled": false,
+  "servers": [
+    {
+      "name": "万润PCS",
+      "host": "127.0.0.1",
+      "port": 15020,
+      "collector_devices": ["pcs"],
+      "units": {
+        "1": { "profile": "pcs" }
+      }
+    },
+    {
+      "name": "万润BMS",
+      "host": "127.0.0.1",
+      "port": 15021,
+      "collector_devices": [
+        "bau", "bcu1", "bcu2", "bcu3", "bcu4", "bcu5", "bcu6",
+        "bcu7", "bcu8", "bcu9", "bcu10", "bcu11", "bcu12"
+      ],
+      "units": {
+        "1": { "profile": "bau" },
+        "2": { "profile": "bcu", "rack": 1 },
+        "3": { "profile": "bcu", "rack": 2 },
+        "4": { "profile": "bcu", "rack": 3 },
+        "5": { "profile": "bcu", "rack": 4 },
+        "6": { "profile": "bcu", "rack": 5 },
+        "7": { "profile": "bcu", "rack": 6 },
+        "8": { "profile": "bcu", "rack": 7 },
+        "9": { "profile": "bcu", "rack": 8 },
+        "10": { "profile": "bcu", "rack": 9 },
+        "11": { "profile": "bcu", "rack": 10 },
+        "12": { "profile": "bcu", "rack": 11 },
+        "13": { "profile": "bcu", "rack": 12 }
+      }
+    }
+  ],
+  "collector_config": {
+    "source": "../config.json",
+    "output": "generated/config_万润_EMS_模拟.json",
+    "register_files": {
+      "bau": "./config/simulator/BAU_协能_模拟.xlsx"
+    }
+  }
+}
