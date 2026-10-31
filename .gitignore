@@ -29,6 +29,7 @@ __pycache__/
 data.db
 
 dist.tar.gz
+config.tar.gz
 
 # 项目图标上传目录
 logo/
