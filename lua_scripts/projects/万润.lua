@@ -21,9 +21,10 @@ M.USE_GENERIC_ROUTES = true
 
 -- dev 必须与 config.json 中 devices 的设备ID一致
 local PCS_DEV = "pcs"
-local TOPIC_YC = "/pds/pcs_mw/0/yc"
-local TOPIC_YT = "/pds/pcs_mw/0/yt"
-local TOPIC_SET_YT = "/asw/pcs_mw/0/setyt"
+local TOPIC_YC = "/pds/pcs/0/yc"
+local TOPIC_YX = "/pds/pcs/0/yx"
+local TOPIC_YT = "/pds/pcs/0/yt"
+local TOPIC_SET_YT = "/asw/pcs/0/setyt"
 
 local YC_FIRST, YC_LAST = 1, 57
 local YT_FIRST, YT_LAST = 2000, 2029
@@ -35,6 +36,27 @@ local CRD_TOPIC_SET_YK = "/asw/crd/0/setyk"
 local CRD_YC_FIRST, CRD_YC_LAST = 1, 59
 local CRD_YX_FIRST, CRD_YX_LAST = 60, 86
 local CRD_YK_FIRST, CRD_YK_LAST = 87, 88
+
+-- 协能 BAU 点号分段（参考 config/bms/BAU_协能.xlsx）
+local BAU_DEV = "bau"
+local BAU_TOPIC_YC = "/pds/bank/0/yc"
+local BAU_TOPIC_YX = "/pds/bank/0/yx"
+local BAU_TOPIC_YT = "/pds/bank/0/yt"
+local BAU_TOPIC_SET_YT = "/asw/bank/0/setyt"
+local BAU_YX_RANGES = { { 1, 11 }, { 29, 34 }, { 100, 101 } }
+local BAU_YC_RANGES = { { 12, 28 }, { 50, 85 }, { 102, 108 } }
+local BAU_YT_FIRST, BAU_YT_LAST = 2000, 2171
+local BAU_YT_RANGES = { { BAU_YT_FIRST, BAU_YT_LAST } }
+
+-- BCU 簇点号分段
+local BCU_COUNT = 12
+local BCU_YX_FIRST, BCU_YX_LAST = 1, 8
+local BCU_YC_FIRST, BCU_YC_LAST = 9, 137
+local BCU_YT_FIRST, BCU_YT_LAST = 2000, 2224
+local BCU_CELL_FIRST, BCU_CELL_LAST = 200, 201
+
+-- 通信状态字：北向补充遥信点，点号 65535；设备有有效数据为 1，否则为 0
+local COMM_STATUS_ID = 65535
 
 local function in_range(id, first, last)
     return type(id) == "number" and id >= first and id <= last
@@ -51,6 +73,33 @@ local function pick_points(raw, first, last)
     return result
 end
 
+-- 取出落在任一 {first,last} 区间内且有值的点
+local function pick_ranges(raw, ranges)
+    local result = {}
+    for _, point in ipairs(raw or {}) do
+        if point.value ~= nil then
+            for _, r in ipairs(ranges) do
+                if in_range(point.id, r[1], r[2]) then
+                    table.insert(result, { id = point.id, value = point.value })
+                    break
+                end
+            end
+        end
+    end
+    return result
+end
+
+local function comm_status_point(raw)
+    local online = 0
+    for _, point in ipairs(raw or {}) do
+        if point.value ~= nil then
+            online = 1
+            break
+        end
+    end
+    return { id = COMM_STATUS_ID, value = online }
+end
+
 function M.collect_routes()
     local raw = dc.read_all(PCS_DEV) or {}
     local routes = {}
@@ -60,9 +109,48 @@ function M.collect_routes()
         table.insert(routes, { topic = TOPIC_YC, points = yc })
     end
 
+    -- PCS 遥信：仅有通信状态字，离线时也上送 0
+    table.insert(routes, { topic = TOPIC_YX, points = { comm_status_point(raw) } })
+
     local yt = pick_points(raw, YT_FIRST, YT_LAST)
     if #yt > 0 then
         table.insert(routes, { topic = TOPIC_YT, points = yt })
+    end
+
+    -- BAU（协能）：按点号分段拆成 yx/yc/yt 三个 topic，yx 附带通信状态字
+    local bau_raw = dc.read_all(BAU_DEV) or {}
+    local bau_yx = pick_ranges(bau_raw, BAU_YX_RANGES)
+    table.insert(bau_yx, comm_status_point(bau_raw))
+    table.insert(routes, { topic = BAU_TOPIC_YX, points = bau_yx })
+    local bau_yc = pick_ranges(bau_raw, BAU_YC_RANGES)
+    if #bau_yc > 0 then
+        table.insert(routes, { topic = BAU_TOPIC_YC, points = bau_yc })
+    end
+    local bau_yt = pick_ranges(bau_raw, BAU_YT_RANGES)
+    if #bau_yt > 0 then
+        table.insert(routes, { topic = BAU_TOPIC_YT, points = bau_yt })
+    end
+
+    -- BCU 簇：设备 bcu1..bcu12 对应 bcuid 0..11
+    for n = 1, BCU_COUNT do
+        local bcu_id = n - 1
+        local bcu_raw = dc.read_all("bcu" .. n) or {}
+        local rack = "/pds/bank/0/rack/" .. bcu_id
+        local bcu_yx = pick_points(bcu_raw, BCU_YX_FIRST, BCU_YX_LAST)
+        table.insert(bcu_yx, comm_status_point(bcu_raw))
+        table.insert(routes, { topic = rack .. "/yx", points = bcu_yx })
+        local bcu_yc = pick_points(bcu_raw, BCU_YC_FIRST, BCU_YC_LAST)
+        if #bcu_yc > 0 then
+            table.insert(routes, { topic = rack .. "/yc", points = bcu_yc })
+        end
+        local bcu_yt = pick_points(bcu_raw, BCU_YT_FIRST, BCU_YT_LAST)
+        if #bcu_yt > 0 then
+            table.insert(routes, { topic = rack .. "/yt", points = bcu_yt })
+        end
+        local cell_yc = pick_points(bcu_raw, BCU_CELL_FIRST, BCU_CELL_LAST)
+        if #cell_yc > 0 then
+            table.insert(routes, { topic = "/pds/bank/0/cell/" .. bcu_id .. "/yc", points = cell_yc })
+        end
     end
 
     local crd_raw = dc.read_all(CRD_DEV) or {}
@@ -71,9 +159,8 @@ function M.collect_routes()
         table.insert(routes, { topic = CRD_TOPIC_YC, points = crd_yc })
     end
     local crd_yx = pick_points(crd_raw, CRD_YX_FIRST, CRD_YX_LAST)
-    if #crd_yx > 0 then
-        table.insert(routes, { topic = CRD_TOPIC_YX, points = crd_yx })
-    end
+    table.insert(crd_yx, comm_status_point(crd_raw))
+    table.insert(routes, { topic = CRD_TOPIC_YX, points = crd_yx })
 
     return routes
 end
@@ -101,6 +188,15 @@ function M.register_downlinks(conn)
     conn:subscribe(TOPIC_SET_YT, function(_, payload)
         handle_set_yt(PCS_DEV, YT_FIRST, YT_LAST, payload)
     end)
+    conn:subscribe(BAU_TOPIC_SET_YT, function(_, payload)
+        handle_set_yt(BAU_DEV, BAU_YT_FIRST, BAU_YT_LAST, payload)
+    end)
+    for n = 1, BCU_COUNT do
+        local dev = "bcu" .. n
+        conn:subscribe("/asw/bank/0/rack/" .. (n - 1) .. "/setyt", function(_, payload)
+            handle_set_yt(dev, BCU_YT_FIRST, BCU_YT_LAST, payload)
+        end)
+    end
     conn:subscribe(CRD_TOPIC_SET_YK, function(_, payload)
         handle_set_yt(CRD_DEV, CRD_YK_FIRST, CRD_YK_LAST, payload)
     end)
