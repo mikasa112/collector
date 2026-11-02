@@ -1,50 +1,67 @@
--- 万润 PCS 南向点表 -> MQTT 物理模型契约测试。
+-- 万润生产北向 Topic 与点号分流契约测试。
 -- 运行：在 collector 目录执行 `lua tests/wanrun_pcs_contract_test.lua`
 
 package.path = "lua_scripts/?.lua;lua_scripts/?/init.lua;" .. package.path
-package.loaded["projects.527AMC电表_万润"] = true
 log = { error = function() end, warn = function() end, info = function() end }
 
-local project = require("projects.万润")
-local test = assert(project._test)
+local frames = {
+    pcs = { { id = 1, value = 16 }, { id = 57, value = 0 }, { id = 58, value = 1, faults = { { bit = 0, zh = "与主控通信故障", en = "Communication failure with main control", level = 2 } } }, { id = 71, value = 2 }, { id = 2000, value = 2 }, { id = 2029, value = 0 } },
+    bau = { { id = 1, value = 1, faults = { { bit = 0, zh = "BMS内部通讯故障", en = "BMS internal communication fault", level = 2 } } }, { id = 12, value = 72 }, { id = 27, value = { 0, 0 } }, { id = 50, value = 1372.4 }, { id = 2171, value = 1 } },
+    crd = { { id = 1, value = 235.9 }, { id = 59, value = 0 }, { id = 60, value = 0 }, { id = 86, value = 0 } },
+}
+for n = 1, 12 do
+    frames["bcu" .. n] = { { id = 3, value = 1, faults = { { bit = 0, zh = "总压过压", en = "Total voltage overvoltage", level = 3 } } }, { id = 9, value = 3 }, { id = 17, value = 1, faults = { { bit = 0, zh = "从控告警", en = "Slave alarm", level = 2 } } }, { id = 87, value = 1996 }, { id = 200, value = { 3.29, 3.30 } }, { id = 201, value = { 21.0 } }, { id = 2207, value = 26 } }
+end
+dc = { read_all = function(dev) return frames[dev] or {} end }
 
-local function equal(actual, expected, message)
-    if actual ~= expected then
-        error((message or "assertion failed") .. ": expected=" .. tostring(expected) .. ", actual=" .. tostring(actual))
+local project = require("projects.万润")
+local routes = project.collect_routes()
+local by_topic, route_by_topic = {}, {}
+for _, route in ipairs(routes) do
+    by_topic[route.topic] = route.points
+    route_by_topic[route.topic] = route
+end
+
+local function exists(topic) assert(by_topic[topic], "missing route: " .. topic) end
+exists("/pds/pcs/0/yc")
+exists("/pds/pcs/0/yx")
+exists("/pds/pcs/0/yt")
+local pcs_yx = {}
+for _, point in ipairs(by_topic["/pds/pcs/0/yx"]) do pcs_yx[point.id] = point.value end
+assert(pcs_yx[58] == 1, "missing PCSMW YX 58")
+assert(pcs_yx[71] == 2, "missing PCSMW YX 71")
+assert(pcs_yx[65535] == 0, "online PCSMW must report communication fault=0")
+assert(route_by_topic["/pds/pcs/0/yx"].include_faults == true, "PCSMW YX must publish point-table fault metadata")
+exists("/pds/bank/0/yc")
+exists("/pds/bank/0/yx")
+exists("/pds/bank/0/yt")
+exists("/pds/crd/0/yc")
+exists("/pds/crd/0/yx")
+for rack = 0, 11 do
+    exists("/pds/bank/0/rack/" .. rack .. "/yc")
+    exists("/pds/bank/0/rack/" .. rack .. "/yx")
+    exists("/pds/bank/0/rack/" .. rack .. "/yt")
+    exists("/pds/bank/0/cell/" .. rack .. "/yc")
+end
+local first_bcu_yx = by_topic["/pds/bank/0/rack/0/yx"]
+local has_point_17, has_critical_fault = false, false
+for _, point in ipairs(first_bcu_yx) do
+    if point.id == 17 then has_point_17 = true end
+    if point.id == 3 and point.faults and point.faults[1] and point.faults[1].level == 3 then
+        has_critical_fault = true
+    end
+end
+assert(has_point_17, "BCU alarm point 17 must be routed as YX")
+assert(has_critical_fault, "BCU fault metadata must preserve level from point table")
+
+frames.pcs = { { id = 65535, value = 1 } }
+local offline_routes = project.collect_routes()
+for _, route in ipairs(offline_routes) do
+    if route.topic == "/pds/pcs/0/yx" then
+        local offline_yx = {}
+        for _, point in ipairs(route.points) do offline_yx[point.id] = point.value end
+        assert(offline_yx[65535] == 1, "offline PCSMW must report communication fault=1")
     end
 end
 
-local function by_id(points)
-    local result = {}
-    for _, point in ipairs(points) do result[point.id] = point.value end
-    return result
-end
-
-equal(test.detect_pcs_model({ { id = 1, key = "pcsPortAPhVolt", value = 400 } }), "PCS_KW", "125kW protocol detection")
-equal(test.detect_pcs_model({ { id = 1, key = "workStatus", value = 2 } }), "PCS_MW", "MW protocol detection")
-
-local kw_yc, kw_yx, kw_yt, kw_downlink, kw_comm = test.pcs_profile("PCS_KW")
-local kw_values = by_id(test.map_points({
-    { id = 1, value = 380.1 }, { id = 35, value = 12 }, { id = 59, value = 760.0 },
-    { id = 133, value = 1 }, { id = 139, value = 10.5 }, { id = 155, value = 73.0 },
-}, kw_yc))
-equal(kw_values[1], 380.1, "kW base telemetry")
-equal(kw_values[34], 12, "kW clock remap")
-equal(kw_values[40], 760.0, "kW DCDC remap")
-equal(kw_values[46], 1, "kW derating remap")
-equal(kw_values[52], 10.5, "kW branch current remap")
-equal(kw_values[68], 73.0, "kW chip temperature remap")
-equal(by_id(test.map_points({ { id = 1000, value = 1 }, { id = 156, value = 7 }, { id = 164, value = 9 } }, kw_yx))[1014], 7, "kW fault word remap")
-equal(by_id(test.map_points({ { id = 2028, value = 58 }, { id = 2035, value = 0.98 } }, kw_yt))[2024], 58, "kW setting readback remap")
-equal(kw_downlink[2004], 2003, "kW active power downlink")
-equal(kw_downlink[2036], 3000, "kW reset coil downlink")
-equal(kw_comm, 1001, "kW communication point")
-
-local mw_yc, mw_yx, mw_yt, mw_downlink, mw_comm = test.pcs_profile("PCS_MW")
-equal(by_id(test.map_points({ { id = 18, value = 1250.0 } }, mw_yc))[18], 1250.0, "MW active power passthrough")
-equal(by_id(test.map_points({ { id = 62, value = 3 }, { id = 69, value = 4 } }, mw_yx))[62], 3, "MW fault passthrough")
-equal(by_id(test.map_points({ { id = 2002, value = 800.0 } }, mw_yt))[2002], 800.0, "MW setting passthrough")
-equal(mw_downlink, nil, "MW downlink is direct")
-equal(mw_comm, 0xFFFF, "MW communication point")
-
-print("wanrun PCS contract tests passed")
+print("wanrun production route contract tests passed")

@@ -1,12 +1,12 @@
 -- 万润项目北向：从数据中心读取英博大机 PCS 点位，经 MQTT 上送，并接收遥调下发。
 --
 -- 点号直接沿用 config/pcs/PCS_英博_大机.xlsx 的序号，不做重映射：
---   sheet1 序号 1..57    遥测 -> /pds/pcs_mw/yc
---   sheet2 序号 2000..2029 遥调回读 -> /pds/pcs_mw/yt
---   下发 /pds/pcs_mw/setyt -> dc.dispatch(pcs, 序号, 值)
+--   sheet1 序号 1..57    遥测 -> /pds/pcs/0/yc
+--   sheet2 序号 2000..2029 遥调回读 -> /pds/pcs/0/yt
+--   下发 /asw/pcs/0/setyt -> dc.dispatch(pcs, 序号, 值)
 -- 测控柜点号沿用 config/测控/测控柜_万润.xlsx 的 id：
---   1..59 遥测 -> /pds/crd/yc；60..86 遥信 -> /pds/crd/yx；87..88 遥控合分闸，仅下发不回读
---   下发 /pds/crd/setyk -> dc.dispatch(crd, id, 值)
+--   1..59 遥测 -> /pds/crd/0/yc；60..86 遥信 -> /pds/crd/0/yx；87..88 遥控合分闸，仅下发不回读
+--   下发 /asw/crd/0/setyk -> dc.dispatch(crd, id, 值)
 
 MOD = {
     name = "万润项目北向",
@@ -27,6 +27,7 @@ local TOPIC_YT = "/pds/pcs/0/yt"
 local TOPIC_SET_YT = "/asw/pcs/0/setyt"
 
 local YC_FIRST, YC_LAST = 1, 57
+local YX_FIRST, YX_LAST = 58, 71
 local YT_FIRST, YT_LAST = 2000, 2029
 
 local CRD_DEV = "crd"
@@ -50,12 +51,12 @@ local BAU_YT_RANGES = { { BAU_YT_FIRST, BAU_YT_LAST } }
 
 -- BCU 簇点号分段
 local BCU_COUNT = 12
-local BCU_YX_FIRST, BCU_YX_LAST = 1, 8
-local BCU_YC_FIRST, BCU_YC_LAST = 9, 137
+local BCU_YX_RANGES = { { 1, 8 }, { 17, 17 } }
+local BCU_YC_RANGES = { { 9, 16 }, { 18, 137 } }
 local BCU_YT_FIRST, BCU_YT_LAST = 2000, 2224
 local BCU_CELL_FIRST, BCU_CELL_LAST = 200, 201
 
--- 通信状态字：北向补充遥信点，点号 65535；设备有有效数据为 1，否则为 0
+-- 通信故障字：北向补充遥信点，点号 65535；0=正常在线，1=通信故障/离线
 local COMM_STATUS_ID = 65535
 
 local function in_range(id, first, last)
@@ -67,7 +68,7 @@ local function pick_points(raw, first, last)
     local result = {}
     for _, point in ipairs(raw or {}) do
         if in_range(point.id, first, last) and point.value ~= nil then
-            table.insert(result, { id = point.id, value = point.value })
+            table.insert(result, { id = point.id, value = point.value, faults = point.faults })
         end
     end
     return result
@@ -80,7 +81,7 @@ local function pick_ranges(raw, ranges)
         if point.value ~= nil then
             for _, r in ipairs(ranges) do
                 if in_range(point.id, r[1], r[2]) then
-                    table.insert(result, { id = point.id, value = point.value })
+                    table.insert(result, { id = point.id, value = point.value, faults = point.faults })
                     break
                 end
             end
@@ -90,14 +91,17 @@ local function pick_ranges(raw, ranges)
 end
 
 local function comm_status_point(raw)
-    local online = 0
+    -- 采集引擎已在 65535 点维护通信故障状态，优先原样透传，避免离线后的缓存点被误判为在线。
     for _, point in ipairs(raw or {}) do
-        if point.value ~= nil then
-            online = 1
-            break
+        if point.id == COMM_STATUS_ID and point.value ~= nil then
+            return { id = COMM_STATUS_ID, value = tonumber(point.value) == 0 and 0 or 1 }
         end
     end
-    return { id = COMM_STATUS_ID, value = online }
+    -- 兼容没有内置通信点的旧设备：有有效数据视为在线，空帧视为离线。
+    for _, point in ipairs(raw or {}) do
+        if point.value ~= nil then return { id = COMM_STATUS_ID, value = 0 } end
+    end
+    return { id = COMM_STATUS_ID, value = 1 }
 end
 
 function M.collect_routes()
@@ -109,8 +113,10 @@ function M.collect_routes()
         table.insert(routes, { topic = TOPIC_YC, points = yc })
     end
 
-    -- PCS 遥信：仅有通信状态字，离线时也上送 0
-    table.insert(routes, { topic = TOPIC_YX, points = { comm_status_point(raw) } })
+    -- PCS 遥信：58..71 与后端 PcsMwYX.java 保持一致，并附带通信状态字。
+    local yx = pick_points(raw, YX_FIRST, YX_LAST)
+    table.insert(yx, comm_status_point(raw))
+    table.insert(routes, { topic = TOPIC_YX, points = yx, include_faults = true })
 
     local yt = pick_points(raw, YT_FIRST, YT_LAST)
     if #yt > 0 then
@@ -121,7 +127,7 @@ function M.collect_routes()
     local bau_raw = dc.read_all(BAU_DEV) or {}
     local bau_yx = pick_ranges(bau_raw, BAU_YX_RANGES)
     table.insert(bau_yx, comm_status_point(bau_raw))
-    table.insert(routes, { topic = BAU_TOPIC_YX, points = bau_yx })
+    table.insert(routes, { topic = BAU_TOPIC_YX, points = bau_yx, include_faults = true })
     local bau_yc = pick_ranges(bau_raw, BAU_YC_RANGES)
     if #bau_yc > 0 then
         table.insert(routes, { topic = BAU_TOPIC_YC, points = bau_yc })
@@ -136,10 +142,10 @@ function M.collect_routes()
         local bcu_id = n - 1
         local bcu_raw = dc.read_all("bcu" .. n) or {}
         local rack = "/pds/bank/0/rack/" .. bcu_id
-        local bcu_yx = pick_points(bcu_raw, BCU_YX_FIRST, BCU_YX_LAST)
+        local bcu_yx = pick_ranges(bcu_raw, BCU_YX_RANGES)
         table.insert(bcu_yx, comm_status_point(bcu_raw))
-        table.insert(routes, { topic = rack .. "/yx", points = bcu_yx })
-        local bcu_yc = pick_points(bcu_raw, BCU_YC_FIRST, BCU_YC_LAST)
+        table.insert(routes, { topic = rack .. "/yx", points = bcu_yx, include_faults = true })
+        local bcu_yc = pick_ranges(bcu_raw, BCU_YC_RANGES)
         if #bcu_yc > 0 then
             table.insert(routes, { topic = rack .. "/yc", points = bcu_yc })
         end

@@ -6,15 +6,34 @@ local utils = require("_utils")
 local Engine = {}
 local COMM_STATUS_ID = 0xFFFF
 
---- 裁剪数据点为 {"id": value, ...}，key 显式为 string 防止被 json 编码为数组
-local function to_payload(points)
+--- 裁剪数据点为 {"id": value, ...}，key 显式为 string 防止被 json 编码为数组。
+--- include_faults=true 时附加点表已解析的活动故障位，原有数值点格式保持不变。
+local function to_payload(points, include_faults)
     local result = {}
+    local active_faults = {}
     if points then
         for _, p in ipairs(points) do
             if p.id ~= nil and p.value ~= nil then
                 result[tostring(p.id)] = p.value
             end
+            if include_faults and p.id ~= nil and p.faults then
+                for _, fault in ipairs(p.faults) do
+                    if fault.level and tonumber(fault.level) and tonumber(fault.level) > 0 then
+                        table.insert(active_faults, {
+                            point = p.id,
+                            bit = fault.bit,
+                            zh = fault.zh,
+                            en = fault.en,
+                            level = fault.level,
+                        })
+                    end
+                end
+            end
         end
+    end
+    if include_faults then
+        result["_faultsVersion"] = 1
+        if #active_faults > 0 then result["_faults"] = active_faults end
     end
     return result
 end
@@ -116,14 +135,14 @@ function Engine.start(project)
     end
 
     -- 统一发布消息
-    local function publish(topic, points)
+    local function publish(topic, points, include_faults)
         if not conn then return end
         -- before_publish 钩子：插件可借此审计/改写本次发布内容；返回 nil 则丢弃本次发布
         local p = hook.emit("before_publish", { topic = topic, points = points })
         if not p then return end
         topic, points = p.topic, p.points
         local ok, err = pcall(function()
-            conn:publish(topic, to_payload(points))
+            conn:publish(topic, to_payload(points, include_faults))
         end)
         if not ok then
             log.warn("MQTT 上送失败 topic=" .. topic .. ": " .. tostring(err))
@@ -214,7 +233,7 @@ function Engine.start(project)
         local result = {}
         for _, p in ipairs(raw_yx) do
             if p.id ~= nil and p.id >= 1000 and p.id <= 1079 then
-                table.insert(result, { id = p.id + 8000, value = p.value })
+                table.insert(result, { id = p.id + 8000, value = p.value, faults = p.faults })
             end
         end
         if comm_pt then table.insert(result, comm_pt) end
@@ -228,7 +247,7 @@ function Engine.start(project)
         local result = {}
         for _, p in ipairs(raw_yx) do
             if p.id ~= nil and p.id >= 1000 and p.id <= 1052 then
-                table.insert(result, { id = p.id + 8200, value = p.value })
+                table.insert(result, { id = p.id + 8200, value = p.value, faults = p.faults })
             end
         end
         if comm_pt then table.insert(result, comm_pt) end
@@ -341,11 +360,11 @@ function Engine.start(project)
                 local mapped_yx = {}
                 for _, p in ipairs(raw_yx) do
                     local local_offset = p.id - start_yx
-                    table.insert(mapped_yx, { id = 12000 + local_offset + yx_offset, value = p.value })
+                    table.insert(mapped_yx, { id = 12000 + local_offset + yx_offset, value = p.value, faults = p.faults })
                 end
 
                 publish("/pds/bank/" .. bank_index .. "/rack/" .. i .. "/yc", mapped_yc)
-                publish("/pds/bank/" .. bank_index .. "/rack/" .. i .. "/yx", mapped_yx)
+                publish("/pds/bank/" .. bank_index .. "/rack/" .. i .. "/yx", mapped_yx, true)
 
                 -- 提取并发布该簇的单体温度(75)与单体电压(76)，偏移量相对 start_yc 为 25/26
                 -- 注意：目前协议文件仅给出簇1的寄存器地址（重复次数=1，未按簇展开），
@@ -402,11 +421,11 @@ function Engine.start(project)
                 local mapped_yx = {}
                 for _, p in ipairs(raw_yx) do
                     local local_offset = p.id - start_yx
-                    table.insert(mapped_yx, { id = 10000 + local_offset + yx_offset, value = p.value })
+                    table.insert(mapped_yx, { id = 10000 + local_offset + yx_offset, value = p.value, faults = p.faults })
                 end
 
                 publish("/pds/bank/" .. bank_index .. "/rack/" .. i .. "/yc", mapped_yc)
-                publish("/pds/bank/" .. bank_index .. "/rack/" .. i .. "/yx", mapped_yx)
+                publish("/pds/bank/" .. bank_index .. "/rack/" .. i .. "/yx", mapped_yx, true)
 
                 -- 提取并发布该簇的单体电压(500)与单体温度(506)
                 -- 注意：cell_data 必须是 {id=, value=} 对象组成的数组，交给 publish()->to_payload() 用 ipairs 遍历，
@@ -446,7 +465,7 @@ function Engine.start(project)
             elseif routes then
                 for _, route in ipairs(routes) do
                     if route.topic and route.points then
-                        publish(route.topic, route.points)
+                        publish(route.topic, route.points, route.include_faults == true)
                     end
                 end
             end
@@ -466,18 +485,18 @@ function Engine.start(project)
         local p1_yc, p1_yt, p1_yx, p2_yc, p2_yt, p2_yx = collect_pcs()
         publish("/pds/pcs/0/yc", p1_yc)
         publish("/pds/pcs/0/yt", p1_yt)
-        publish("/pds/pcs/0/yx", p1_yx)
+        publish("/pds/pcs/0/yx", p1_yx, true)
         publish("/pds/pcs/1/yc", p2_yc)
         publish("/pds/pcs/1/yt", p2_yt)
-        publish("/pds/pcs/1/yx", p2_yx)
+        publish("/pds/pcs/1/yx", p2_yx, true)
 
         -- 3. BANK
         local b1_yc, b1_yx, b1_yt, b2_yc, b2_yx, b2_yt = collect_bank()
         publish("/pds/bank/0/yc", b1_yc)
-        publish("/pds/bank/0/yx", b1_yx)
+        publish("/pds/bank/0/yx", b1_yx, true)
         publish("/pds/bank/0/yt", b1_yt)
         publish("/pds/bank/1/yc", b2_yc)
-        publish("/pds/bank/1/yx", b2_yx)
+        publish("/pds/bank/1/yx", b2_yx, true)
         publish("/pds/bank/1/yt", b2_yt)
 
         -- 4. RACKS
