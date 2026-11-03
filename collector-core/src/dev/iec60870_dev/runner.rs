@@ -17,7 +17,7 @@ use crate::dev::dev_config::Iec104DeviceConfig;
 use crate::dev::{LifecycleState, state::SharedState};
 
 use super::backoff::Backoff;
-use super::downlink::{ControlIndex, send_command};
+use super::downlink::{ControlIndex, PendingSelects, dispatch_command, notify_command_confirm};
 
 /// 连接保持超过该时长才视为"稳定"并重置重连退避，防止对端反复秒断时高频重连。
 const STABLE_AFTER: Duration = Duration::from_secs(30);
@@ -63,6 +63,7 @@ impl Iec60870Runner {
     async fn connect(
         &self,
         monitor: &Arc<HashMap<(i32, i32), Iec104Config>>,
+        pending: &PendingSelects,
         events_tx: mpsc::UnboundedSender<ConnectionEvent>,
     ) -> anyhow::Result<Client> {
         let mut client = Client::new(&self.config.ip, self.config.port)?;
@@ -76,7 +77,10 @@ impl Iec60870Runner {
         });
         let dev_id = self.id.clone();
         let monitor = Arc::clone(monitor);
-        client.set_asdu_received_handler(move |_addr, asdu| handle_asdu(&dev_id, &monitor, asdu));
+        let pending = Arc::clone(pending);
+        client.set_asdu_received_handler(move |_addr, asdu| {
+            handle_asdu(&dev_id, &monitor, &pending, asdu)
+        });
         client.set_connection_event_handler(move |event| {
             let _ = events_tx.send(event);
         });
@@ -101,6 +105,7 @@ impl Iec60870Runner {
         stop_rx: &mut watch::Receiver<bool>,
         cas: &[i32],
         control: &ControlIndex,
+        pending: &PendingSelects,
     ) -> anyhow::Result<()> {
         client.start_data_transfer();
         self.interrogate(client, cas)?;
@@ -156,7 +161,7 @@ impl Iec60870Runner {
                             warn!("[{}] 未找到控制点配置, 忽略IEC104下发: {:?}", self.id, entry.point);
                             continue;
                         };
-                        if let Err(err) = send_command(client, cfg, &entry.value) {
+                        if let Err(err) = dispatch_command(client, cfg, &entry.value, pending).await {
                             warn!("[{}] IEC104下发失败: {:#}", self.id, err);
                         }
                     }
@@ -170,6 +175,7 @@ impl Iec60870Runner {
         let mut stop_rx = self.stop_rx.clone();
         let monitor = Arc::new(build_monitor_index(&self.configs));
         let control = ControlIndex::build(&self.configs);
+        let pending: PendingSelects = Arc::default();
         let mut cas: Vec<i32> = monitor.keys().map(|(ca, _)| *ca).collect();
         cas.sort_unstable();
         cas.dedup();
@@ -188,12 +194,19 @@ impl Iec60870Runner {
             self.set_comm_fault(true);
 
             let (events_tx, mut events_rx) = mpsc::unbounded_channel();
-            match self.connect(&monitor, events_tx).await {
+            match self.connect(&monitor, &pending, events_tx).await {
                 Ok(mut client) => {
                     self.state.store(&self.id, LifecycleState::Connected);
                     let connected_at = time::Instant::now();
                     let result = self
-                        .run_connected(&mut client, &mut events_rx, &mut stop_rx, &cas, &control)
+                        .run_connected(
+                            &mut client,
+                            &mut events_rx,
+                            &mut stop_rx,
+                            &cas,
+                            &control,
+                            &pending,
+                        )
                         .await;
                     // 关闭连接会等待底层线程退出，放到阻塞线程里避免卡住运行时
                     let _ = tokio::task::spawn_blocking(move || drop(client)).await;
@@ -229,7 +242,23 @@ impl Iec60870Runner {
 
 /// 处理对端上送的 ASDU：按 (CA, IOA) 匹配点表，转换后写入数据中心。
 /// 在 lib60870 的接收线程中被调用，只做同步、非阻塞的工作。
-fn handle_asdu(dev_id: &str, monitor: &HashMap<(i32, i32), Iec104Config>, asdu: Asdu) -> bool {
+fn handle_asdu(
+    dev_id: &str,
+    monitor: &HashMap<(i32, i32), Iec104Config>,
+    pending: &PendingSelects,
+    asdu: Asdu,
+) -> bool {
+    // 遥控选择的确认：唤醒正在等待的下发流程
+    if notify_command_confirm(
+        pending,
+        asdu.type_id,
+        asdu.cot,
+        asdu.is_negative,
+        asdu.ca,
+        asdu.elements.iter().map(|el| el.ioa),
+    ) {
+        return true;
+    }
     if asdu.is_negative {
         warn!(
             "[{}] 收到否定确认: type={} cot={} ca={}",
@@ -303,6 +332,7 @@ mod tests {
             status_words: None,
             warn_bits: None,
             level: None,
+            select: false,
         }
     }
 

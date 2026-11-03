@@ -76,7 +76,7 @@ impl TryFrom<&str> for PointKind {
 /// IEC 104 点表中的一行。
 ///
 /// Excel 工作表名 `iec104`，第 1 行为表头，列依次为：
-/// `id | key | name | ca | ioa | type | scale | offset | unit | enable | trans | status_words | warn_bits | level`
+/// `id | key | name | ca | ioa | type | scale | offset | unit | enable | trans | status_words | warn_bits | level | select`
 ///
 /// - `ca` 公共地址，`ioa` 信息对象地址
 /// - `scale`/`offset` 仅对遥测与设点生效：上送 `value = raw * scale + offset`，
@@ -84,6 +84,8 @@ impl TryFrom<&str> for PointKind {
 /// - `status_words` 状态字翻译，每行 `值 中文|英文`；`warn_bits` 按位告警，必须正好 16 行，
 ///   每行 `中文|英文|等级(0~3)`。两列格式与 Modbus 点表一致，解析失败时记录告警并忽略该列
 /// - `level` 单点告警等级：`0`/留空不告警，`1`/`2`/`3` 为 Normal/High/Critical；值非 0 即命中该等级
+/// - `select` 仅对 `yk`/`yk_double` 生效：非 0 表示该遥控点需要"选择+执行"两步命令，
+///   先发选择并等待子站肯定确认后才发执行；`0`/留空为直接执行（兼容旧点表，该列可整列缺省）
 #[derive(Debug, Clone)]
 pub struct Iec104Config {
     pub id: PointId,
@@ -100,6 +102,8 @@ pub struct Iec104Config {
     pub status_words: Option<Arc<Words>>,
     pub warn_bits: Option<Arc<Bits>>,
     pub level: Option<WarnLevel>,
+    /// 遥控是否需要先选择再执行（仅 `Yk`/`YkDouble` 有意义）。
+    pub select: bool,
 }
 
 impl Iec104Config {
@@ -156,6 +160,10 @@ impl Iec104Config {
             .and_then(|cell| cell.as_f64())
             .map(|v| WarnLevel::from(v as u8))
             .filter(|lvl| *lvl != WarnLevel::None);
+        let select = row.get(14).and_then(|c| c.as_f64()).unwrap_or(0.0) != 0.0;
+        if select && !matches!(kind, PointKind::Yk | PointKind::YkDouble) {
+            tracing::warn!("IEC104点 {key} 的select仅对yk/yk_double生效, 已忽略");
+        }
         Ok(Self {
             id,
             key,
@@ -171,6 +179,7 @@ impl Iec104Config {
             status_words,
             warn_bits,
             level,
+            select: select && matches!(kind, PointKind::Yk | PointKind::YkDouble),
         })
     }
 }
@@ -311,6 +320,7 @@ mod tests {
             status_words: None,
             warn_bits: None,
             level: None,
+            select: false,
         }
     }
 
@@ -335,6 +345,54 @@ mod tests {
         assert!(Iec104Config::build(&row(65535.0, None)).is_err());
         assert!(Iec104Config::build(&row(1.0, None)).unwrap().enable);
         assert!(!Iec104Config::build(&row(1.0, Some(0.0))).unwrap().enable);
+    }
+
+    #[test]
+    fn select_column() {
+        use calamine::Data::{Float, String as S};
+        // 14 列之后第 15 列为 select；缺省整列时按直接执行
+        let row = |kind: &str, select: Option<f64>| {
+            let mut r = vec![
+                Float(1.0),
+                S("k".into()),
+                Data::Empty,
+                Float(1.0),
+                Float(1.0),
+                S(kind.into()),
+                Data::Empty,
+                Data::Empty,
+                Data::Empty,
+                Data::Empty,
+                Data::Empty,
+                Data::Empty,
+                Data::Empty,
+                Data::Empty,
+            ];
+            if let Some(v) = select {
+                r.push(Float(v));
+            }
+            r
+        };
+        assert!(Iec104Config::build(&row("yk", Some(1.0))).unwrap().select);
+        assert!(Iec104Config::build(&row("yk_double", Some(1.0))).unwrap().select);
+        assert!(!Iec104Config::build(&row("yk", Some(0.0))).unwrap().select);
+        assert!(!Iec104Config::build(&row("yk", None)).unwrap().select);
+        // 非遥控点配置了 select 被忽略
+        assert!(!Iec104Config::build(&row("yt_short", Some(1.0))).unwrap().select);
+    }
+
+    #[test]
+    fn wanrun_control_cabinet_uses_select() {
+        let path = format!(
+            "{}/../config/测控/测控柜_万润.xlsx",
+            env!("CARGO_MANIFEST_DIR")
+        );
+        let configs = build_configs(path).unwrap();
+        let yk: Vec<_> = configs.iter().filter(|c| c.kind == PointKind::Yk).collect();
+        assert_eq!(yk.len(), 2);
+        assert!(yk.iter().all(|c| c.select));
+        assert!(configs.iter().filter(|c| c.kind != PointKind::Yk).all(|c| !c.select));
+        assert_eq!(configs.len(), 88);
     }
 
     #[test]

@@ -2,6 +2,8 @@
 //! 通过 TCP 连接它，验证总召、突发上送、遥控遥调下发、断线重连。
 
 use std::net::TcpListener;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use collector_iec60870::{
@@ -50,6 +52,7 @@ fn cfg(
         status_words: None,
         warn_bits: None,
         level: None,
+        select: false,
     }
 }
 
@@ -65,6 +68,11 @@ fn point_table() -> Vec<Iec104Config> {
         cfg(4002, "voltageSet", 25090, PointKind::YtScaled, 0.1, 0.0),
         cfg(4003, "tapChange", 25091, PointKind::YtStep, 1.0, 0.0),
         cfg(4004, "ratioSet", 25092, PointKind::YtNormalized, 1.0, 0.0),
+        // 需要"选择+执行"的单点遥控
+        Iec104Config {
+            select: true,
+            ..cfg(3003, "selectCmd", 24579, PointKind::Yk, 1.0, 0.0)
+        },
     ]
 }
 
@@ -237,4 +245,86 @@ async fn reconnects_after_slave_restart() {
 
     dev.stop().await.unwrap();
     assert_eq!(dev.state(), LifecycleState::Stopped);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn single_command_with_select() {
+    let dev_id = "iec104-it-select";
+    let port = free_port();
+    let mut slave = Slave::new(port, slave_points(true)).unwrap();
+    let log: Arc<Mutex<Vec<ReceivedCommand>>> = Arc::default();
+    let accept_select = Arc::new(AtomicBool::new(true));
+    {
+        let log = Arc::clone(&log);
+        let accept_select = Arc::clone(&accept_select);
+        slave.set_command_handler(move |cmd| {
+            log.lock().unwrap().push(*cmd);
+            // 子站可以否定选择；执行命令一律接受
+            !cmd.select || accept_select.load(Ordering::SeqCst)
+        });
+    }
+    slave.start();
+
+    let mut dev = device(dev_id, port);
+    dev.init().unwrap();
+    dev.start().await.unwrap();
+    wait_until("连接并总召", || {
+        dev.state() == LifecycleState::Running && value(dev_id, 1001) == Some(Val::U8(1))
+    })
+    .await;
+
+    let snapshot = || log.lock().unwrap().clone();
+
+    // 1. 带选择的点：先收到选择（S/E=1），再收到执行（S/E=0），值一致
+    data_center()
+        .dispatch(dev_id, vec![DownDataPoint::by_id(3003, Val::U8(1))])
+        .await
+        .unwrap();
+    wait_until("选择+执行两条命令", || snapshot().len() >= 2).await;
+    let cmds = snapshot();
+    assert_eq!(cmds.len(), 2);
+    assert!(cmds[0].select && !cmds[1].select);
+    assert!(
+        cmds.iter()
+            .all(|c| c.ioa == 24579 && c.value == CommandValue::Single(true))
+    );
+
+    // 2. 不带选择的点：只有一条直接执行
+    log.lock().unwrap().clear();
+    data_center()
+        .dispatch(dev_id, vec![DownDataPoint::by_id(3001, Val::U8(1))])
+        .await
+        .unwrap();
+    wait_until("直接执行一条命令", || !snapshot().is_empty()).await;
+    sleep(Duration::from_millis(300)).await;
+    let cmds = snapshot();
+    assert_eq!(cmds.len(), 1);
+    assert!(!cmds[0].select && cmds[0].ioa == 24577);
+
+    // 3. 子站否定选择：只有选择命令，不应再发执行
+    log.lock().unwrap().clear();
+    accept_select.store(false, Ordering::SeqCst);
+    data_center()
+        .dispatch(dev_id, vec![DownDataPoint::by_id(3003, Val::U8(1))])
+        .await
+        .unwrap();
+    wait_until("收到被否定的选择", || !snapshot().is_empty()).await;
+    sleep(Duration::from_millis(800)).await;
+    let cmds = snapshot();
+    assert_eq!(cmds.len(), 1, "选择被否定后不应发执行: {cmds:?}");
+    assert!(cmds[0].select);
+
+    // 4. 否定后恢复：下一次下发仍然正常走完两步
+    log.lock().unwrap().clear();
+    accept_select.store(true, Ordering::SeqCst);
+    data_center()
+        .dispatch(dev_id, vec![DownDataPoint::by_id(3003, Val::U8(0))])
+        .await
+        .unwrap();
+    wait_until("恢复后选择+执行", || snapshot().len() >= 2).await;
+    let cmds = snapshot();
+    assert!(cmds[0].select && !cmds[1].select);
+    assert!(cmds.iter().all(|c| c.value == CommandValue::Single(false)));
+
+    dev.stop().await.unwrap();
 }
