@@ -142,7 +142,7 @@ local function poll_meter(m, dev)
 end
 
 if #devs > 0 then
-    task.spawn(function()
+    local function run()
         while true do
             if not conn then
                 local c, err = modbus.connect(CONFIG.link)
@@ -161,6 +161,20 @@ if #devs > 0 then
                 end
             end
             wait(CONFIG.poll_ms)
+        end
+    end
+
+    -- 监督：任何错误（含引擎 200ms 预算超时中断）都只记日志并重启轮询，避免协程被杀后数据停更
+    task.spawn(function()
+        while true do
+            local ok, err = pcall(run)
+            if not ok then
+                log.error("轮询异常，1秒后重启: " .. tostring(err))
+                -- 调用被中断后连接对象可能一直处于"被借用"状态，必须丢弃并回收，下一轮重新连接
+                conn = nil
+                collectgarbage()
+            end
+            wait(1000)
         end
     end)
 end

@@ -24,6 +24,9 @@ local CONFIG = {
 -- 起始地址与寄存器总数：0x0600 ~ 0x065B（最后一个点 0x065A 占 0x065A/0x065B）
 local BASE_ADDR = 0x0600
 local REG_COUNT = 0x065C - 0x0600
+-- 分块读取：引擎对脚本单次执行预算仅 200ms，串口读取的等待也计入；
+-- 一次读 92 个寄存器在 9600 波特率下超过 200ms，故拆成小块（须为偶数，保证 32 位点不跨块）
+local CHUNK = 24
 
 -- 点表：addr 为协议地址，scale 为转换系数，fmt 默认 I32（Long 有符号）；U32 / F32 见各行
 local POINTS = {
@@ -116,13 +119,19 @@ local function read_failed(m, dev, what, err)
 end
 
 local function poll_meter(m, dev)
-    local regs, err = conn:read_holding(BASE_ADDR, REG_COUNT, m.slave)
-    -- 引擎对脚本单次执行只给 200ms 预算（wait 让出时重置），而串口读取的等待时间也计入其中；
-    -- 读完立刻 wait(1) 让出一次重置预算，否则慢读取/重试后继续跑 Lua 会被判超时，协程被杀、数据停更
-    wait(1)
-    if not regs then
-        read_failed(m, dev, "读取", err)
-        return
+    local regs = {}
+    for off = 0, REG_COUNT - 1, CHUNK do
+        local n = math.min(CHUNK, REG_COUNT - off)
+        local part, err = conn:read_holding(BASE_ADDR + off, n, m.slave)
+        -- 读完立刻 wait 让出一次重置预算，否则读取耗时之后继续跑 Lua 会被判超时
+        wait(20)
+        if not part then
+            read_failed(m, dev, string.format("读取0x%04X", BASE_ADDR + off), err)
+            return
+        end
+        for i = 1, n do
+            regs[off + i] = part[i]
+        end
     end
     fail_count[m.dev_id] = 0
 
@@ -140,7 +149,7 @@ local function poll_meter(m, dev)
 end
 
 if #devs > 0 then
-    task.spawn(function()
+    local function run()
         while true do
             if not conn then
                 local c, err = modbus.connect(CONFIG.link)
@@ -159,6 +168,20 @@ if #devs > 0 then
                 end
             end
             wait(CONFIG.poll_ms)
+        end
+    end
+
+    -- 监督：任何错误（含引擎 200ms 预算超时中断）都只记日志并重启轮询，避免协程被杀后数据停更
+    task.spawn(function()
+        while true do
+            local ok, err = pcall(run)
+            if not ok then
+                log.error("轮询异常，1秒后重启: " .. tostring(err))
+                -- 调用被中断后连接对象可能一直处于"被借用"状态，必须丢弃并回收，下一轮重新连接
+                conn = nil
+                collectgarbage()
+            end
+            wait(1000)
         end
     end)
 end
