@@ -99,18 +99,30 @@ local function pick_ranges(raw, ranges)
     return result
 end
 
-local function comm_status_point(raw)
+local function comm_status_point(raw, alarm_level)
+    local function build(value)
+        local point = { id = COMM_STATUS_ID, value = value }
+        if value ~= 0 and alarm_level and alarm_level > 0 then
+            point.faults = { {
+                bit = 0,
+                zh = "设备通信故障",
+                en = "Device communication fault",
+                level = alarm_level,
+            } }
+        end
+        return point
+    end
     -- 采集引擎已在 65535 点维护通信故障状态，优先原样透传，避免离线后的缓存点被误判为在线。
     for _, point in ipairs(raw or {}) do
         if point.id == COMM_STATUS_ID and point.value ~= nil then
-            return { id = COMM_STATUS_ID, value = tonumber(point.value) == 0 and 0 or 1 }
+            return build(tonumber(point.value) == 0 and 0 or 1)
         end
     end
     -- 兼容没有内置通信点的旧设备：有有效数据视为在线，空帧视为离线。
     for _, point in ipairs(raw or {}) do
-        if point.value ~= nil then return { id = COMM_STATUS_ID, value = 0 } end
+        if point.value ~= nil then return build(0) end
     end
-    return { id = COMM_STATUS_ID, value = 1 }
+    return build(1)
 end
 
 function M.collect_routes()
@@ -185,7 +197,12 @@ function M.collect_routes()
         if #meter_yc > 0 then
             table.insert(routes, { topic = topic .. "/yc", points = meter_yc })
         end
-        table.insert(routes, { topic = topic .. "/yx", points = { comm_status_point(meter_raw) } })
+        local comm_level = meter.index >= 2 and 3 or nil
+        table.insert(routes, {
+            topic = topic .. "/yx",
+            points = { comm_status_point(meter_raw, comm_level) },
+            include_faults = comm_level ~= nil,
+        })
     end
 
     return routes
