@@ -83,7 +83,9 @@ function M.collect_routes()
         -- PCS 遥信：58..71 与后端 PcsMwYX.java 保持一致，并附带通信状态字。
         local yx = pick_points(raw, YX_FIRST, YX_LAST)
         table.insert(yx, comm_status_point(raw))
-        table.insert(routes, { topic = topic .. "/yx", points = yx, include_faults = true })
+        -- 现场后端的 MQTT JSON 解析器不接受 _faultsVersion/_faults 扩展字段，
+        -- 因此只上送原始遥信点和 65535 通信诊断点。
+        table.insert(routes, { topic = topic .. "/yx", points = yx })
 
         local yt = pick_points(raw, YT_FIRST, YT_LAST)
         if #yt > 0 then
