@@ -1,5 +1,5 @@
 -- AMC 多功能表（Modbus RTU）：读取 0x0023~0x003E，注册为数据中心设备。
--- 两块表挂在同一串口（RS485 总线）上，从站地址分别为 2、3，共用一个连接，串行轮询。
+-- 四块表挂在同一串口（RS485 总线）上，从站地址分别为 2、3、4、5，共用一个连接，串行轮询。
 --
 -- 换算（文档 6.5.2）：
 --   0x0023 高字节 DPT、低字节 DCT；0x0024 高字节 DPQ、低字节为功率符号位。
@@ -19,6 +19,8 @@ local CONFIG = {
     meters = {
         { dev_id = "amc_meter_1", slave = 2 },
         { dev_id = "amc_meter_2", slave = 3 },
+        { dev_id = "amc_meter_3", slave = 4 },
+        { dev_id = "amc_meter_4", slave = 5 },
     },
 }
 

@@ -57,13 +57,12 @@ local BCU_YT_FIRST, BCU_YT_LAST = 2000, 2224
 local BCU_CELL_FIRST, BCU_CELL_LAST = 200, 201
 
 -- 电表（Modbus RTU，纯采集无下发），点号沿用各电表脚本的点表顺序，另附通信状态遥信 65535：
---   400V 527AMC：amc_meter_1/2 -> /pds/meter/0、/pds/meter/1，遥测 1..25
---   10kV PD606E：pd606_10kv_meter_1/2 -> /pds/meter/2、/pds/meter/3，遥测 1..42
+--   400V 527AMC：amc_meter_1..4 -> /pds/meter/0..3，遥测 1..25
 local METERS = {
     { dev = "amc_meter_1", index = 0, yc_last = 25 },
     { dev = "amc_meter_2", index = 1, yc_last = 25 },
-    { dev = "pd606_10kv_meter_1", index = 2, yc_last = 42 },
-    { dev = "pd606_10kv_meter_2", index = 3, yc_last = 42 },
+    { dev = "amc_meter_3", index = 2, yc_last = 25 },
+    { dev = "amc_meter_4", index = 3, yc_last = 25 },
 }
 
 -- 通信故障字：北向补充遥信点，点号 65535；0=正常在线，1=通信故障/离线
@@ -178,7 +177,7 @@ function M.collect_routes()
     table.insert(crd_yx, comm_status_point(crd_raw))
     table.insert(routes, { topic = CRD_TOPIC_YX, points = crd_yx })
 
-    -- 电表（400V + 10kV）：纯采集，无下发
+    -- 电表（400V 527AMC）：纯采集，无下发
     for _, meter in ipairs(METERS) do
         local meter_raw = dc.read_all(meter.dev) or {}
         local topic = "/pds/meter/" .. meter.index
