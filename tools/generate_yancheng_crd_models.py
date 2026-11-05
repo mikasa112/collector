@@ -99,7 +99,12 @@ def is_alarm(label: str) -> bool:
 
 
 def generate_yx(points: list[dict[str, object]]) -> str:
-    lines = common_header("com.inpower.common.model.yx", "CrdYX", "盐城盈海 IEC104 测控柜遥信模型（1000~1079，另含65535通讯诊断）。")
+    last_point_id = max((int(point["id"]) for point in points), default=1000)
+    lines = common_header(
+        "com.inpower.common.model.yx",
+        "CrdYX",
+        f"盐城盈海 IEC104 测控柜遥信模型（1000~{last_point_id}，另含65535通讯诊断）。",
+    )
     lines.insert(5, "import com.inpower.common.annotation.AlarmBit;")
     for point in points:
         lines.append(f'    @JsonProperty("{point["id"]}")')

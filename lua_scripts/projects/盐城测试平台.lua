@@ -7,7 +7,7 @@
 --   下发 /asw/pcs/{0..3}/setyt -> dc.dispatch(pcsN, 序号, 值)
 --   设备 pcs1..pcs4 对应 pcs 实例 0..3
 -- 测控柜点号沿用 config/测控/测控柜_盐城盈海.xlsx 的 id：
---   1..93 遥测 -> /pds/crd/0/yc；1000..1079 遥信 -> /pds/crd/0/yx；2000..2003 遥控，仅下发不回读
+--   1..93 遥测 -> /pds/crd/0/yc；1000..1064 遥信 -> /pds/crd/0/yx；2000..2003 遥控，仅下发不回读
 --   下发 /asw/crd/0/setyk -> dc.dispatch(crd, id, 值)
 
 MOD = {
@@ -32,7 +32,7 @@ local CRD_TOPIC_YC = "/pds/crd/0/yc"
 local CRD_TOPIC_YX = "/pds/crd/0/yx"
 local CRD_TOPIC_SET_YK = "/asw/crd/0/setyk"
 local CRD_YC_FIRST, CRD_YC_LAST = 1, 93
-local CRD_YX_FIRST, CRD_YX_LAST = 1000, 1079
+local CRD_YX_FIRST, CRD_YX_LAST = 1000, 1064
 local CRD_YK_FIRST, CRD_YK_LAST = 2000, 2003
 
 -- 通信故障字：北向补充遥信点，点号 65535；0=正常在线，1=通信故障/离线
