@@ -1,4 +1,4 @@
--- AMC 多功能表（Modbus RTU）：读取 0x0023~0x003E，注册为数据中心设备。
+-- AMC 多功能表（Modbus RTU）：读取 0x0023~0x0042（含吸收/释放有功电能），另读 PT/CT 变比，注册为数据中心设备。
 -- 四块表挂在同一串口（RS485 总线）上，从站地址分别为 2、3、4、5，共用一个连接，串行轮询。
 --
 -- 换算（文档 6.5.2）：
@@ -6,26 +6,37 @@
 --   电压 = 读值 × 10^(DPT-4) V；电流 = 读值 × 10^(DCT-4) A；功率 = 读值 × 10^(DPQ-4) W/var/VA，上报时统一除以 1000 为 kW/kvar/kVA。
 --   符号位（高到低）：Q、Qc、Qb、Qa、P、Pc、Pb、Pa，置 1 表示负。视在功率无符号。
 --   功率因数 = 读值/1000；频率 = 读值/100 Hz。
+--   吸收有功电能（0x003F~0x0040）、释放有功电能（0x0041~0x0042），均为二次侧：Val_t = 高字×65536 + 低字；一次侧 = Val_t/1000 × PT × CT，单位 kWh。
+--   PT 在 0x0003、CT 在 0x0004，变化极少，读到后缓存，每隔 RATIO_REFRESH_POLLS 次成功采集刷新一次。
 MOD = {
     name = "527AMC",
     description = "万润5MWh项目_527AMC",
 }
 
 local CONFIG = {
+    tick_ms = 1000, -- 轮询节拍；各表 poll_ms 按节拍取整，未单独指定的表用 poll_ms
     poll_ms = 3000,
+    slave_gap_ms = 100, -- 相邻从站请求之间留出的总线空闲时间
     offline_after = 3, -- 连续读取失败多少次才置通讯故障，滤掉总线偶发超时
     -- 同一串口，从站地址不同；dev_id 全局唯一
     link = { type = "rtu", serial = "/dev/ttyS3", baud = 9600, parity = "N", timeout = 1000 },
     meters = {
         { dev_id = "amc_meter_1", slave = 2 },
         { dev_id = "amc_meter_2", slave = 3 },
-        { dev_id = "amc_meter_3", slave = 4 },
-        { dev_id = "amc_meter_4", slave = 5 },
+        { dev_id = "amc_meter_3", slave = 4, poll_ms = 1000 },
+        { dev_id = "amc_meter_4", slave = 5, poll_ms = 1000 },
     },
 }
 
 local BASE_ADDR = 0x0023
-local REG_COUNT = 0x003F - 0x0023
+local REG_COUNT = 0x0043 - 0x0023 -- 含 0x003F~0x0042 吸收/释放有功电能
+-- 电能点：addr 为二次侧 Uint32 起始地址（高字在前）
+local ENERGY_POINTS = {
+    { addr = 0x003F, id = 26, key = "EPimp", name = "吸收有功电能" },
+    { addr = 0x0041, id = 27, key = "EPexp", name = "释放有功电能" },
+}
+local RATIO_ADDR = 0x0003 -- 0x0003 PT、0x0004 CT
+local RATIO_REFRESH_POLLS = 600
 
 -- 点表：kind 决定换算方式（U/I/P 取小数位寄存器，fixed 用 scale）；sign 为功率符号位序号（bit0=Pa ... bit7=Q）
 local POINTS = {
@@ -68,6 +79,7 @@ for i, def in ipairs(POINTS) do
 end
 
 local fail_count = {} -- dev_id -> 连续失败次数
+local ratios = {} -- dev_id -> { pt =, ct =, age = 距上次读取的成功采集次数 }
 
 local conn -- 共用连接；modbus.connect 失败时为 nil，轮询里会重试
 
@@ -89,6 +101,25 @@ end
 -- 10^(d-4) 对应的小数位数：d>=4 时为整数
 local function decimals_of(d)
     return d < 4 and (4 - d) or 0
+end
+
+-- 读取并缓存 PT/CT；读取失败时保留旧缓存，从未读到过则返回 nil（电能点不上报，避免上报错误倍率的值）
+local function get_ratio(m)
+    local r = ratios[m.dev_id]
+    if r and r.age < RATIO_REFRESH_POLLS then
+        r.age = r.age + 1
+        return r
+    end
+    wait(CONFIG.slave_gap_ms)
+    local regs, err = conn:read_holding(RATIO_ADDR, 2, m.slave)
+    wait(1)
+    if regs and regs[1] and regs[2] and regs[1] >= 1 and regs[2] >= 1 then
+        r = { pt = regs[1], ct = regs[2], age = 0 }
+        ratios[m.dev_id] = r
+    else
+        log.warn("[" .. m.dev_id .. "] 读取PT/CT失败: " .. tostring(err))
+    end
+    return r
 end
 
 local function poll_meter(m, dev)
@@ -139,44 +170,71 @@ local function poll_meter(m, dev)
             type = "f64", value = v,
         }
     end
+
+    -- 有功电能（一次侧 kWh）
+    local ratio = get_ratio(m)
+    if ratio then
+        for _, e in ipairs(ENERGY_POINTS) do
+            local i = e.addr - BASE_ADDR + 1
+            local val_t = regs[i] * 65536 + regs[i + 1]
+            out[#out + 1] = {
+                id = e.id, key = e.key, name = e.name, unit = "kWh",
+                type = "f64", value = round(val_t / 1000 * ratio.pt * ratio.ct, 3),
+            }
+        end
+    end
     dev:ingest(out)
     dev:set_comm(true)
 end
 
+-- 各表轮询周期按节拍取整；慢表错开相位，避免同一节拍里读所有表而超出节拍时长
+local slow_count = 0
+for _, d in ipairs(devs) do
+    local every = math.max(1, math.ceil((d.m.poll_ms or CONFIG.poll_ms) / CONFIG.tick_ms))
+    d.every = every
+    if every > 1 then
+        d.phase = slow_count % every
+        slow_count = slow_count + 1
+    end
+end
+
 if #devs > 0 then
-    local function run()
-        while true do
-            if not conn then
-                local c, err = modbus.connect(CONFIG.link)
-                wait(1) -- 连接耗时同样计入预算
-                if c then
-                    conn = c
-                else
-                    log.warn("连接失败: " .. tostring(err))
-                    for _, d in ipairs(devs) do d.dev:set_comm(false) end
-                end
+    local tick = 0
+    local busy = false -- 上一节拍还没跑完时跳过本节拍，避免并发占用串口
+
+    local function run_tick()
+        if not conn then
+            local c, err = modbus.connect(CONFIG.link)
+            wait(1) -- 连接耗时同样计入预算
+            if c then
+                conn = c
+            else
+                log.warn("连接失败: " .. tostring(err))
+                for _, d in ipairs(devs) do d.dev:set_comm(false) end
+                return
             end
-            if conn then
-                for _, d in ipairs(devs) do
-                    poll_meter(d.m, d.dev)
-                    wait(200) -- 相邻从站请求留出总线空闲时间
-                end
+        end
+        for _, d in ipairs(devs) do
+            if d.every == 1 or tick % d.every == d.phase then
+                poll_meter(d.m, d.dev)
+                wait(CONFIG.slave_gap_ms)
             end
-            wait(CONFIG.poll_ms)
         end
     end
 
-    -- 监督：任何错误（含引擎 200ms 预算超时中断）都只记日志并重启轮询，避免协程被杀后数据停更
-    task.spawn(function()
-        while true do
-            local ok, err = pcall(run)
+    timer.every(CONFIG.tick_ms, function()
+        if busy then return end
+        busy = true
+        tick = tick + 1
+        task.spawn(function()
+            local ok, err = pcall(run_tick)
             if not ok then
-                log.error("轮询异常，1秒后重启: " .. tostring(err))
-                -- 调用被中断后连接对象可能一直处于"被借用"状态，必须丢弃并回收，下一轮重新连接
+                log.error("轮询异常: " .. tostring(err))
+                -- 调用被中断后连接对象可能一直处于"被借用"状态，必须丢弃并回收，下一节拍重新连接
                 conn = nil
                 collectgarbage()
             end
-            wait(1000)
-        end
+            busy = false
+        end)
     end)
 end

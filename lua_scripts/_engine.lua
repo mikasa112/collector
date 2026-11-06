@@ -450,6 +450,29 @@ function Engine.start(project)
     -- 启动连接与采集轮询
     task.spawn(connect_mqtt)
 
+    -- 执行项目路由函数并发布其返回的所有 route
+    local function publish_project_routes(collect)
+        local ok, routes = pcall(collect)
+        if not ok then
+            log.warn("项目自定义采集路由执行失败: " .. tostring(routes))
+        elseif routes then
+            for _, route in ipairs(routes) do
+                if route.topic and route.points then
+                    publish(route.topic, route.points, route.include_faults == true)
+                end
+            end
+        end
+    end
+
+    -- 可选快速通道：项目提供 collect_fast_routes 时，按 FAST_INTERVAL_MS（默认 1000）单独上送
+    if project.collect_fast_routes then
+        timer.every(project.FAST_INTERVAL_MS or 1000, function()
+            if conn then
+                publish_project_routes(project.collect_fast_routes)
+            end
+        end)
+    end
+
     timer.every(2000, function()
         if not conn then
             log.warn("通用引擎: MQTT 未连接，跳过本次上送")
@@ -459,16 +482,7 @@ function Engine.start(project)
         -- 通用项目路由：项目 Lua 返回已经完成四遥分类和标准点号映射的发布列表。
         -- route = { topic = "/pds/meter/0/yc", points = {{id=1,value=...}, ...} }
         if project.collect_routes then
-            local ok, routes = pcall(project.collect_routes)
-            if not ok then
-                log.warn("项目自定义采集路由执行失败: " .. tostring(routes))
-            elseif routes then
-                for _, route in ipairs(routes) do
-                    if route.topic and route.points then
-                        publish(route.topic, route.points, route.include_faults == true)
-                    end
-                end
-            end
+            publish_project_routes(project.collect_routes)
 
             -- 纯自定义项目不再执行下面的奥林波斯固定 CRD/PCS/BANK/RACK 流程。
             if project.USE_GENERIC_ROUTES then

@@ -18,6 +18,7 @@ M.MOD = MOD
 M.HOST = "127.0.0.1"
 M.PORT = 1883
 M.USE_GENERIC_ROUTES = true
+M.FAST_INTERVAL_MS = 1000
 
 -- dev 必须与 config.json 中 devices 的设备ID一致
 local PCS_DEV = "pcs"
@@ -57,12 +58,13 @@ local BCU_YT_FIRST, BCU_YT_LAST = 2000, 2224
 local BCU_CELL_FIRST, BCU_CELL_LAST = 200, 201
 
 -- 电表（Modbus RTU，纯采集无下发），点号沿用各电表脚本的点表顺序，另附通信状态遥信 65535：
---   400V 527AMC：amc_meter_1..4 -> /pds/meter/0..3，遥测 1..25
+--   400V 527AMC：amc_meter_1..4 -> /pds/meter/0..3，遥测 1..27（26 吸收有功电能、27 释放有功电能，kWh）
+--   fast=true 的表走 collect_fast_routes，按 FAST_INTERVAL_MS 上送，其余随主周期（2s）上送
 local METERS = {
-    { dev = "amc_meter_1", index = 0, yc_last = 25 },
-    { dev = "amc_meter_2", index = 1, yc_last = 25 },
-    { dev = "amc_meter_3", index = 2, yc_last = 25 },
-    { dev = "amc_meter_4", index = 3, yc_last = 25 },
+    { dev = "amc_meter_1", index = 0, yc_last = 27 },
+    { dev = "amc_meter_2", index = 1, yc_last = 27 },
+    { dev = "amc_meter_3", index = 2, yc_last = 27, fast = true },
+    { dev = "amc_meter_4", index = 3, yc_last = 27, fast = true },
 }
 
 -- 通信故障字：北向补充遥信点，点号 65535；0=正常在线，1=通信故障/离线
@@ -123,6 +125,31 @@ local function comm_status_point(raw, alarm_level)
         if point.value ~= nil then return build(0) end
     end
     return build(1)
+end
+
+local function append_meter_routes(routes, fast)
+    for _, meter in ipairs(METERS) do
+        if (meter.fast == true) == fast then
+            local meter_raw = dc.read_all(meter.dev) or {}
+            local topic = "/pds/meter/" .. meter.index
+            local meter_yc = pick_points(meter_raw, 1, meter.yc_last)
+            if #meter_yc > 0 then
+                table.insert(routes, { topic = topic .. "/yc", points = meter_yc })
+            end
+            local comm_level = meter.index >= 2 and 3 or nil
+            table.insert(routes, {
+                topic = topic .. "/yx",
+                points = { comm_status_point(meter_raw, comm_level) },
+                include_faults = comm_level ~= nil,
+            })
+        end
+    end
+end
+
+function M.collect_fast_routes()
+    local routes = {}
+    append_meter_routes(routes, true)
+    return routes
 end
 
 function M.collect_routes()
@@ -189,21 +216,8 @@ function M.collect_routes()
     table.insert(crd_yx, comm_status_point(crd_raw))
     table.insert(routes, { topic = CRD_TOPIC_YX, points = crd_yx })
 
-    -- 电表（400V 527AMC）：纯采集，无下发
-    for _, meter in ipairs(METERS) do
-        local meter_raw = dc.read_all(meter.dev) or {}
-        local topic = "/pds/meter/" .. meter.index
-        local meter_yc = pick_points(meter_raw, 1, meter.yc_last)
-        if #meter_yc > 0 then
-            table.insert(routes, { topic = topic .. "/yc", points = meter_yc })
-        end
-        local comm_level = meter.index >= 2 and 3 or nil
-        table.insert(routes, {
-            topic = topic .. "/yx",
-            points = { comm_status_point(meter_raw, comm_level) },
-            include_faults = comm_level ~= nil,
-        })
-    end
+    -- 电表（400V 527AMC）：纯采集，无下发；快速表由 collect_fast_routes 上送
+    append_meter_routes(routes, false)
 
     return routes
 end
