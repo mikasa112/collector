@@ -58,13 +58,12 @@ local BCU_YT_FIRST, BCU_YT_LAST = 2000, 2224
 local BCU_CELL_FIRST, BCU_CELL_LAST = 200, 201
 
 -- 电表（Modbus RTU，纯采集无下发），点号沿用各电表脚本的点表顺序，另附通信状态遥信 65535：
---   400V 527AMC：amc_meter_1..4 -> /pds/meter/0..3，遥测 1..27（26 吸收有功电能、27 释放有功电能，kWh）
+--   10kV 关口表 527AMC：amc_meter_1..2 -> /pds/meter/0..1，遥测 1..28（26 频率、27 吸收有功电能、28 释放有功电能，电能单位 kWh）
 --   fast=true 的表走 collect_fast_routes，按 FAST_INTERVAL_MS 上送，其余随主周期（2s）上送
+--   comm_level：通信故障告警等级，不填则只上送状态不带告警
 local METERS = {
-    { dev = "amc_meter_1", index = 0, yc_last = 27 },
-    { dev = "amc_meter_2", index = 1, yc_last = 27 },
-    { dev = "amc_meter_3", index = 2, yc_last = 27, fast = true },
-    { dev = "amc_meter_4", index = 3, yc_last = 27, fast = true },
+    { dev = "amc_meter_1", index = 0, yc_last = 28, comm_level = 3 },
+    { dev = "amc_meter_2", index = 1, yc_last = 28, comm_level = 3 },
 }
 
 -- 通信故障字：北向补充遥信点，点号 65535；0=正常在线，1=通信故障/离线
@@ -136,7 +135,7 @@ local function append_meter_routes(routes, fast)
             if #meter_yc > 0 then
                 table.insert(routes, { topic = topic .. "/yc", points = meter_yc })
             end
-            local comm_level = meter.index >= 2 and 3 or nil
+            local comm_level = meter.comm_level
             table.insert(routes, {
                 topic = topic .. "/yx",
                 points = { comm_status_point(meter_raw, comm_level) },
@@ -216,7 +215,7 @@ function M.collect_routes()
     table.insert(crd_yx, comm_status_point(crd_raw))
     table.insert(routes, { topic = CRD_TOPIC_YX, points = crd_yx })
 
-    -- 电表（400V 527AMC）：纯采集，无下发；快速表由 collect_fast_routes 上送
+    -- 电表（10kV 关口表 527AMC）：纯采集，无下发；快速表由 collect_fast_routes 上送
     append_meter_routes(routes, false)
 
     return routes
