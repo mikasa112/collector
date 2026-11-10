@@ -59,11 +59,22 @@ local BCU_CELL_FIRST, BCU_CELL_LAST = 200, 201
 
 -- 电表（Modbus RTU，纯采集无下发），点号沿用各电表脚本的点表顺序，另附通信状态遥信 65535：
 --   10kV 关口表 527AMC：amc_meter_1..2 -> /pds/meter/0..1，遥测 1..28（26 频率、27 吸收有功电能、28 释放有功电能，电能单位 kWh）
+--   400V 表 amc_meter_3..11 -> /pds/meter/2..10，点表同上
 --   fast=true 的表走 collect_fast_routes，按 FAST_INTERVAL_MS 上送，其余随主周期（2s）上送
 --   comm_level：通信故障告警等级，不填则只上送状态不带告警
 local METERS = {
     { dev = "amc_meter_1", index = 0, yc_last = 28, comm_level = 3 },
     { dev = "amc_meter_2", index = 1, yc_last = 28, comm_level = 3 },
+    -- /dev/ttyS2 上的 9 块 400V 表（5 秒读一次），点表与上面相同
+    { dev = "amc_meter_3", index = 2, yc_last = 28, comm_level = 3 }, -- 微电网接入
+    { dev = "amc_meter_4", index = 3, yc_last = 28, comm_level = 3 }, -- 测试车间1ALz1
+    { dev = "amc_meter_5", index = 4, yc_last = 28, comm_level = 3 }, -- PACK车间设备
+    { dev = "amc_meter_6", index = 5, yc_last = 28, comm_level = 3 }, -- PACK车间1ALz1
+    { dev = "amc_meter_7", index = 6, yc_last = 28, comm_level = 3 }, -- 测试车间T1BUSa
+    { dev = "amc_meter_8", index = 7, yc_last = 28, comm_level = 3 }, -- 测试车间APG1
+    { dev = "amc_meter_9", index = 8, yc_last = 28, comm_level = 3 }, -- 索英测试设备T2BUSa
+    { dev = "amc_meter_10", index = 9, yc_last = 28, comm_level = 3 }, -- PACK车间1ALz2
+    { dev = "amc_meter_11", index = 10, yc_last = 28, comm_level = 3 }, -- PACK车间室外空调
 }
 
 -- 通信故障字：北向补充遥信点，点号 65535；0=正常在线，1=通信故障/离线

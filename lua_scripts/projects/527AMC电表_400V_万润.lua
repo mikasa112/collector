@@ -16,6 +16,8 @@ MOD = {
     description = "万润5MWh项目_527AMC",
 }
 
+local LINK_S3 = { type = "rtu", serial = "/dev/ttyS3", baud = 9600, parity = "N", timeout = 2000 }
+
 local CONFIG = {
     tick_ms = 1000, -- 轮询节拍；各表 poll_ms 按节拍取整，未单独指定的表用 poll_ms
     poll_ms = 2000,
@@ -29,6 +31,16 @@ local CONFIG = {
           link = { type = "rtu", serial = "/dev/ttyS5", baud = 9600, parity = "N", timeout = 2000 } },
         { dev_id = "amc_meter_2", slave = 5,
           link = { type = "rtu", serial = "/dev/ttyS4", baud = 9600, parity = "N", timeout = 2000 } },
+        -- /dev/ttyS2 一条总线挂 9 块表（共用一个连接），通讯要求不高，5 秒读一次
+        { dev_id = "amc_meter_3", slave = 2, poll_ms = 5000, name = "微电网接入", link = LINK_S3 },
+        { dev_id = "amc_meter_4", slave = 4, poll_ms = 5000, name = "测试车间1ALz1", link = LINK_S3 },
+        { dev_id = "amc_meter_5", slave = 5, poll_ms = 5000, name = "PACK车间设备", link = LINK_S3 },
+        { dev_id = "amc_meter_6", slave = 6, poll_ms = 5000, name = "PACK车间1ALz1", link = LINK_S3 },
+        { dev_id = "amc_meter_7", slave = 7, poll_ms = 5000, name = "测试车间T1BUSa", link = LINK_S3 },
+        { dev_id = "amc_meter_8", slave = 8, poll_ms = 5000, name = "测试车间APG1", link = LINK_S3 },
+        { dev_id = "amc_meter_9", slave = 3, poll_ms = 5000, name = "索英测试设备T2BUSa", link = LINK_S3 },
+        { dev_id = "amc_meter_10", slave = 9, poll_ms = 5000, name = "PACK车间1ALz2", link = LINK_S3 },
+        { dev_id = "amc_meter_11", slave = 10, poll_ms = 5000, name = "PACK车间室外空调", link = LINK_S3 },
     },
 }
 
@@ -94,7 +106,7 @@ local polls = {} -- dev_id -> 已轮询次数，用于慢段分频
 local scales = {} -- dev_id -> 缓存的功率换算系数（慢段的视在功率依赖快段的小数位寄存器）
 local ratios = {} -- dev_id -> { pt =, ct =, age = 距上次读取的成功采集次数 }
 
-local conns = {} -- dev_id -> 连接；modbus.connect 失败时为 nil，轮询里会重试
+local conns = {} -- 串口路径 -> 连接；modbus.connect 失败时为 nil，轮询里会重试
 
 local devs = {}
 for idx, m in ipairs(CONFIG.meters) do
@@ -124,7 +136,7 @@ local function read_regs(m, addr, count)
     local regs, err
     for attempt = 0, CONFIG.read_retries do
         if attempt > 0 then wait(CONFIG.retry_gap_ms) end
-        regs, err = conns[m.dev_id]:read_holding(addr, count, m.slave)
+        regs, err = conns[m.link.serial]:read_holding(addr, count, m.slave)
         wait(1)
         if regs then return regs, nil, attempt end
     end
@@ -295,17 +307,18 @@ if #devs > 0 then
         for _, d in ipairs(devs) do
             if d.every == 1 or tick % d.every == d.phase then
                 local id = d.m.dev_id
-                if not conns[id] then
+                local port = d.m.link.serial -- 连接按串口复用，同一串口上的多块表共用一个连接
+                if not conns[port] then
                     local c, err = modbus.connect(d.m.link)
                     wait(1) -- 连接耗时同样计入预算
                     if c then
-                        conns[id] = c
+                        conns[port] = c
                     else
                         log.warn("[" .. id .. "] 连接失败: " .. tostring(err))
                         d.dev:set_comm(false)
                     end
                 end
-                if conns[id] then
+                if conns[port] then
                     poll_meter(d.m, d.dev)
                     wait(CONFIG.slave_gap_ms)
                 end
