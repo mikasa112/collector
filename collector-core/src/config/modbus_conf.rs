@@ -167,7 +167,8 @@ fn required_address_number(row: &[Data], idx: usize, field: &str) -> anyhow::Res
 }
 
 /// 一行模板配置按"重复次数/地址步长/序号步长"展开为多份（如一堆多簇场景）。
-/// 缺少这三列（或重复次数<=1）时原样返回单行，兼容旧配置文件。
+/// 缺少这三列（或重复次数<1）时原样返回单行，兼容旧配置文件。
+/// 重复次数=1 时仍只生成1行，但 `{n}` 会被替换为1（适用于当前只有1簇、后续可能扩展的场景）。
 fn expand_row(row: &[Data]) -> Vec<Vec<Data>> {
     const REPEAT_COL: usize = 16;
     const ADDR_STEP_COL: usize = 17;
@@ -177,7 +178,7 @@ fn expand_row(row: &[Data]) -> Vec<Vec<Data>> {
         .get(REPEAT_COL)
         .and_then(|cell| cell.get_float())
         .map(|v| v as i64)
-        .filter(|&v| v > 1);
+        .filter(|&v| v >= 1);
     let Some(repeat_count) = repeat_count else {
         return vec![row.to_vec()];
     };
@@ -510,6 +511,19 @@ mod expand_row_tests {
         row.push(Data::Float(1.0)); // 18: 序号步长
         let expanded = expand_row(&row);
         assert_eq!(expanded.len(), 1);
+    }
+
+    #[test]
+    fn expand_row_with_repeat_count_one_and_zero_steps_replaces_placeholder() {
+        let mut row = base_row();
+        row.push(Data::Float(1.0)); // 16: 重复次数
+        row.push(Data::Float(0.0)); // 17: 地址步长
+        row.push(Data::Float(0.0)); // 18: 序号步长
+        let expanded = expand_row(&row);
+        assert_eq!(expanded.len(), 1);
+        assert_eq!(expanded[0][0], Data::Float(50.0));
+        assert_eq!(expanded[0][5], Data::Float(2203.0));
+        assert_eq!(expanded[0][1], Data::String("簇1电压".to_string()));
     }
 
     #[test]
