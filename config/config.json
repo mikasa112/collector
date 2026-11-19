@@ -1,6 +1,6 @@
 {
-  "product_type": "EMS",
-  "project": "盐城6.9MW 测试平台",
+  "product_type": "开发机测试",
+  "project": "开发机测试",
   "program": {
     "emu": {
       "enable": false
@@ -15,51 +15,10 @@
       "path": "lua_scripts"
     },
     "north_modbus": {
-      "enable": false,
+      "enable": true,
       "north_modbus_host": "0.0.0.0",
       "north_modbus_port": 9092,
-      "north_modbus_conf": "./config/MODBUS_REGISTERS.xlsx"
-    },
-    "north_iec104": {
-      "enable": false,
-      "host": "0.0.0.0",
-      "port": 2404,
-      "conf": "./config/北向/IEC104_SERVER.xlsx",
-      "max_connections": 0,
-      "multi_master": false,
-      "select_timeout_ms": 30000,
-      "require_select": false
-    },
-    "coordinator": {
-      "enable": false,
-      "id": "agc",
-      "tick_ms": 500,
-      "upstream_timeout_ms": 60000,
-      "p_deadband": 1,
-      "q_deadband": 1,
-      "positive_is_discharge": true,
-      "members": [
-        {
-          "dev": "ctrl_a",
-          "rated_kva": 2500.0,
-          "p_set": 2005,
-          "q_set": 2006,
-          "p_actual": 13,
-          "q_actual": 14,
-          "p_max_charge": 19,
-          "p_max_discharge": 20
-        },
-        {
-          "dev": "ctrl_b",
-          "rated_kva": 2500.0,
-          "p_set": 2005,
-          "q_set": 2006,
-          "p_actual": 13,
-          "q_actual": 14,
-          "p_max_charge": 19,
-          "p_max_discharge": 20
-        }
-      ]
+      "north_modbus_conf": "./config/北向/MODBUS_REGISTERS.xlsx"
     },
     "eg25_gl": {
       "enable": false
@@ -75,115 +34,19 @@
     }
   },
   "devices": {
-    "pcs1": {
-      "id": "pcs1",
+    "pcs": {
+      "id": "pcs",
       "type": "PCS",
-      "desc": "英博电气2.5MW",
+      "desc": "英博电气125kWPCS",
       "config": {
         "type": "PCS",
         "com_type": "ModbusTCP",
-        "register_file": "./config/pcs/PCS_英博_大机.xlsx",
+        "register_file": "./config/pcs/PCS_英博_125.xlsx",
         "interval": 2000,
         "timeout": 2000,
-        "ip": "192.168.1.20",
-        "port": 502,
+        "ip": "127.0.0.1",
+        "port": 10000,
         "slave": 1,
-        "serial_tty": null,
-        "baud_rate": null,
-        "data_bits": null,
-        "parity": null,
-        "stop_bits": null,
-        "interface": null,
-        "desc": null,
-        "request_interval": 50,
-        "max_gap": null
-      }
-    },
-    "pcs2": {
-      "id": "pcs2",
-      "type": "PCS",
-      "desc": "英博电气2.5MW",
-      "config": {
-        "type": "PCS",
-        "com_type": "ModbusTCP",
-        "register_file": "./config/pcs/PCS_英博_大机.xlsx",
-        "interval": 2000,
-        "timeout": 2000,
-        "ip": "192.168.1.21",
-        "port": 502,
-        "slave": 1,
-        "serial_tty": null,
-        "baud_rate": null,
-        "data_bits": null,
-        "parity": null,
-        "stop_bits": null,
-        "interface": null,
-        "desc": null,
-        "request_interval": 50,
-        "max_gap": null
-      }
-    },
-    "pcs3": {
-      "id": "pcs3",
-      "type": "PCS",
-      "desc": "英博电气2.5MW",
-      "config": {
-        "type": "PCS",
-        "com_type": "ModbusTCP",
-        "register_file": "./config/pcs/PCS_英博_大机.xlsx",
-        "interval": 2000,
-        "timeout": 2000,
-        "ip": "192.168.1.22",
-        "port": 502,
-        "slave": 1,
-        "serial_tty": null,
-        "baud_rate": null,
-        "data_bits": null,
-        "parity": null,
-        "stop_bits": null,
-        "interface": null,
-        "desc": null,
-        "request_interval": 50,
-        "max_gap": null
-      }
-    },
-    "pcs4": {
-      "id": "pcs4",
-      "type": "PCS",
-      "desc": "英博电气2.5MW",
-      "config": {
-        "type": "PCS",
-        "com_type": "ModbusTCP",
-        "register_file": "./config/pcs/PCS_英博_大机.xlsx",
-        "interval": 2000,
-        "timeout": 2000,
-        "ip": "192.168.1.23",
-        "port": 502,
-        "slave": 1,
-        "serial_tty": null,
-        "baud_rate": null,
-        "data_bits": null,
-        "parity": null,
-        "stop_bits": null,
-        "interface": null,
-        "desc": null,
-        "request_interval": 50,
-        "max_gap": null
-      }
-    },
-    "crd": {
-      "id": "crd",
-      "type": "CRD",
-      "desc": "测控",
-      "config": {
-        "type": "CRD",
-        "com_type": "IEC104",
-        "register_file": "./config/测控/测控柜_盐城盈海.xlsx",
-        "interval": 30000,
-        "timeout": 2000,
-        "ip": "192.168.1.24",
-        "port": 2404,
-        "slave": null,
         "serial_tty": null,
         "baud_rate": null,
         "data_bits": null,

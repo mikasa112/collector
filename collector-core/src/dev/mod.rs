@@ -15,7 +15,9 @@ pub(crate) mod dev_config;
 pub(crate) mod dlt645_dev;
 #[cfg(target_os = "linux")]
 pub(crate) mod gpio;
+#[cfg(target_os = "linux")]
 pub(crate) mod iec60870_dev;
+#[cfg(target_os = "linux")]
 pub(crate) mod iec61850_dev;
 pub mod manager;
 pub(crate) mod modbus_dev;

@@ -1,3 +1,6 @@
+// lib60870-C 的封装仅支持 Linux: build.rs 在其他平台不编译 C 源码, 这里同步让整个 crate 为空。
+#![cfg(target_os = "linux")]
+
 mod client;
 mod ffi;
 mod server;

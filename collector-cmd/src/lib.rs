@@ -9,7 +9,9 @@ use collector_core::config::config_provider::{config_provider, init_config_provi
 use collector_core::dev::can_bus::SharedCanBus;
 use collector_core::dev::manager::DevManager;
 use collector_core::dock::mqtt::client::MqttClient;
-use collector_core::dock::{iec104::Iec104Server, modbus::ModbusServer};
+#[cfg(target_os = "linux")]
+use collector_core::dock::iec104::Iec104Server;
+use collector_core::dock::modbus::ModbusServer;
 use collector_core::runtime::core::get_runtime;
 use collector_core::shutdown::ShutdownManager;
 use collector_core::utils::database::close_database;
@@ -174,6 +176,7 @@ fn start_north_modbus_server(shutdown: ShutdownManager) {
 }
 
 /// 按配置启动北向 IEC 104 子站（未启用时跳过）
+#[cfg(target_os = "linux")]
 fn start_north_iec104_server(shutdown: ShutdownManager) {
     let program = &config_provider().program().north_iec104;
     if !program.enable {
@@ -184,6 +187,14 @@ fn start_north_iec104_server(shutdown: ShutdownManager) {
             tokio::spawn(server.start(shutdown));
         }
         Err(e) => error!("北向IEC104配置加载失败: {}", e),
+    }
+}
+
+/// 北向 IEC 104 子站依赖 lib60870-C, 仅 Linux 支持
+#[cfg(not(target_os = "linux"))]
+fn start_north_iec104_server(_shutdown: ShutdownManager) {
+    if config_provider().program().north_iec104.enable {
+        error!("北向IEC104子站仅支持 Linux, 已忽略");
     }
 }
 

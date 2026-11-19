@@ -129,6 +129,7 @@ pub enum CanConfError {
     ValueNotNone(String),
 }
 
+#[cfg(target_os = "linux")]
 #[derive(Clone)]
 pub struct CanDeviceConfig {
     pub interface: String,
@@ -137,6 +138,7 @@ pub struct CanDeviceConfig {
     pub bitrate: Option<u32>,
 }
 
+#[cfg(target_os = "linux")]
 impl TryFrom<DeviceConfig> for CanDeviceConfig {
     type Error = CanConfError;
 
@@ -168,6 +170,7 @@ pub enum Iec104ConfError {
 }
 
 /// IEC 104 主站（客户端）连接参数。
+#[cfg(target_os = "linux")]
 #[derive(Clone)]
 pub struct Iec104DeviceConfig {
     pub ip: String,
@@ -178,6 +181,7 @@ pub struct Iec104DeviceConfig {
     pub timeout: Duration,
 }
 
+#[cfg(target_os = "linux")]
 impl TryFrom<DeviceConfig> for Iec104DeviceConfig {
     type Error = Iec104ConfError;
 
@@ -217,6 +221,7 @@ pub enum Iec61850ConfError {
 }
 
 /// IEC 61850 主站（MMS 客户端）连接参数。
+#[cfg(target_os = "linux")]
 #[derive(Clone)]
 pub struct Iec61850DeviceConfig {
     pub ip: String,
@@ -229,6 +234,7 @@ pub struct Iec61850DeviceConfig {
     pub iso: Option<collector_iec61850::IsoParams>,
 }
 
+#[cfg(target_os = "linux")]
 impl TryFrom<DeviceConfig> for Iec61850DeviceConfig {
     type Error = Iec61850ConfError;
 

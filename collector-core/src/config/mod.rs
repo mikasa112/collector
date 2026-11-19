@@ -10,10 +10,13 @@ use crate::core::point::PointId;
 pub mod can_conf;
 pub mod config_provider;
 pub mod dlt645_conf;
+#[cfg(target_os = "linux")]
 pub mod gpio_conf;
 pub mod iec104_conf;
+#[cfg(target_os = "linux")]
 pub mod iec61850_conf;
 pub mod modbus_conf;
+#[cfg(target_os = "linux")]
 pub mod north_iec104_conf;
 pub mod north_modbus_conf;
 pub mod program_conf;
@@ -92,6 +95,7 @@ async fn load_protocol_configs(dev: &Device) -> ProtocolConfigs {
             )
             .await
         }
+        #[cfg(target_os = "linux")]
         ComType::IEC61850 => {
             load_configs(
                 file,
@@ -100,6 +104,14 @@ async fn load_protocol_configs(dev: &Device) -> ProtocolConfigs {
                 ProtocolConfigs::Iec61850,
             )
             .await
+        }
+        #[cfg(not(target_os = "linux"))]
+        ComType::IEC61850 => {
+            error!(
+                "Failed to build {:?} configs: IEC61850 is only supported on Linux",
+                dev_id
+            );
+            ProtocolConfigs::None
         }
         ComType::DLT645 => {
             load_configs(
@@ -240,6 +252,7 @@ pub struct IsoConfig {
     pub local_tsel: Option<String>,
 }
 
+#[cfg(target_os = "linux")]
 impl From<IsoConfig> for collector_iec61850::IsoParams {
     fn from(c: IsoConfig) -> Self {
         Self {
@@ -261,6 +274,7 @@ impl From<IsoConfig> for collector_iec61850::IsoParams {
 pub enum ProtocolConfigs {
     Modbus(modbus_conf::ModbusConfigs),
     Iec104(iec104_conf::Iec104Configs),
+    #[cfg(target_os = "linux")]
     Iec61850(iec61850_conf::Iec61850Configs),
     Dlt645(dlt645_conf::Dlt645Configs),
     #[cfg(target_os = "linux")]

@@ -46,13 +46,13 @@ impl ModbusDev {
         };
         let configs = match configs {
             config::ProtocolConfigs::Modbus(modbus_configs) => modbus_configs,
-            config::ProtocolConfigs::Iec104(_)
-            | config::ProtocolConfigs::Iec61850(_)
-            | config::ProtocolConfigs::Dlt645(_) => {
+            config::ProtocolConfigs::Iec104(_) | config::ProtocolConfigs::Dlt645(_) => {
                 return Err(DeviceError::UnSupportedComType);
             }
             #[cfg(target_os = "linux")]
-            config::ProtocolConfigs::CAN(_) | config::ProtocolConfigs::GPIO(_) => {
+            config::ProtocolConfigs::Iec61850(_)
+            | config::ProtocolConfigs::CAN(_)
+            | config::ProtocolConfigs::GPIO(_) => {
                 return Err(DeviceError::UnSupportedComType);
             }
             config::ProtocolConfigs::None => {

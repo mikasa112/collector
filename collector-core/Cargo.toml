@@ -4,8 +4,6 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-collector-iec60870 = { path = "../collector-iec60870" }
-collector-iec61850 = { path = "../collector-iec61850" }
 collector-dlt645 = { path = "../collector-dlt645" }
 tokio = { workspace = true }
 tokio-util = { workspace = true }
@@ -31,9 +29,12 @@ tokio-modbus = { version = "0.16.1", features = ["rtu", "tcp", "server", "rtu-se
 calamine = "0.32.0"
 
 [target.'cfg(target_os = "linux")'.dependencies]
+# C 库封装, 仅 Linux 构建 (build.rs 在其他平台跳过 C 编译)
+collector-iec60870 = { path = "../collector-iec60870" }
+collector-iec61850 = { path = "../collector-iec61850" }
 socketcan = { version = "3.5.0", features = ["tokio"] }
 gpio-cdev = { version = "0.6.0", features = ["async-tokio"] }
 
-[dev-dependencies]
+[target.'cfg(target_os = "linux")'.dev-dependencies]
 # 联调测试用: 启用 `server` 后可以起一个与真实 PCS 同模型的本地模拟 IED(构建时需要本机有 java)
 collector-iec61850 = { path = "../collector-iec61850", features = ["server"] }

@@ -13,7 +13,9 @@ use crate::dev::can_dev::CanDev;
 use crate::dev::dlt645_dev::Dlt645Dev;
 #[cfg(target_os = "linux")]
 use crate::dev::gpio::GpioDev;
+#[cfg(target_os = "linux")]
 use crate::dev::iec60870_dev::Iec60870Dev;
+#[cfg(target_os = "linux")]
 use crate::dev::iec61850_dev::Iec61850Dev;
 use crate::{
     config,
@@ -115,8 +117,14 @@ fn init_device(
             let _ = can_bus;
             return Err(DeviceError::UnSupportedComType);
         }
+        #[cfg(target_os = "linux")]
         config::ComType::IEC104 => Box::new(Iec60870Dev::new(dev)?),
+        #[cfg(target_os = "linux")]
         config::ComType::IEC61850 => Box::new(Iec61850Dev::new(dev)?),
+        #[cfg(not(target_os = "linux"))]
+        config::ComType::IEC104 | config::ComType::IEC61850 => {
+            return Err(DeviceError::UnSupportedComType);
+        }
         config::ComType::DLT645 => Box::new(Dlt645Dev::new(dev)?),
         #[cfg(target_os = "linux")]
         config::ComType::GPIO => Box::new(GpioDev::new(dev)?),

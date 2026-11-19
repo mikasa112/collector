@@ -1,7 +1,9 @@
+#[cfg(target_os = "linux")]
 mod server;
 
 use std::sync::atomic::{AtomicI32, Ordering};
 
+#[cfg(target_os = "linux")]
 pub use server::{Iec104Server, Iec104ServerError};
 
 /// 北向子站当前已建立的主站连接数；子站未运行时为 -1。
@@ -12,6 +14,7 @@ pub fn connected_masters() -> Option<u32> {
     u32::try_from(CONNECTED_MASTERS.load(Ordering::Relaxed)).ok()
 }
 
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 pub(crate) fn set_connected_masters(n: i32) {
     CONNECTED_MASTERS.store(n, Ordering::Relaxed);
 }
