@@ -18,8 +18,8 @@ MOD = {
 }
 
 local CONFIG = {
-    dev_id = "temp_humi_ctrl",
-    poll_ms = 2000,
+    dev_id = "dehum",
+    poll_ms = 5000,
     -- RTU 示例（串口参数请按设备实际设置）；改 TCP 则用 { type = "tcp", host = "192.168.1.10", port = 502, slave = 1 }
     -- link = { type = "rtu", serial = "/dev/ttyS1", baud = 9600, parity = "N", slave = 1, timeout = 800 },
     link = { type = "tcp", host = "192.168.0.220", port = 503, slave = 3 },
