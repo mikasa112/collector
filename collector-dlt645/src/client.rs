@@ -104,6 +104,40 @@ where
         Ok(frame.data[4..].to_vec())
     }
 
+    /// 发送任意控制码的请求并返回应答数据域(已去 0x33 偏移)。
+    ///
+    /// 用于写数据(14H)、遥控(1CH)等非读命令:`data` 为逻辑数据域(含 DI、密码、操作者代码等,
+    /// 由调用方按规约自行拼装)。正常应答控制码为 `control | 0x80`,异常应答(bit6)返回
+    /// `MeterException`。注意:写类命令不应自动重试,超时后结果未知,由调用方回读确认。
+    pub async fn request(
+        &mut self,
+        address: MeterAddress,
+        control: u8,
+        data: Vec<u8>,
+    ) -> Result<Vec<u8>, MeterError> {
+        let request = Frame {
+            address,
+            control,
+            data,
+        };
+        self.discard_stale().await;
+        let frame = timeout(self.config.response_timeout, self.exchange(request))
+            .await
+            .map_err(|_| MeterError::Timeout)??;
+        if frame.address != address {
+            return Err(MeterError::AddressMismatch);
+        }
+        if frame.control & CTRL_EXCEPTION_BIT != 0 {
+            return Err(MeterError::MeterException(
+                frame.data.first().copied().unwrap_or(0),
+            ));
+        }
+        if frame.control != control | 0x80 {
+            return Err(MeterError::UnexpectedControl(frame.control));
+        }
+        Ok(frame.data)
+    }
+
     /// 读取并按 `spec` 解码为工程值(已应用小数位和符号)。
     pub async fn read_value(
         &mut self,
@@ -175,6 +209,59 @@ mod tests {
         let value = client.read_data(addr, DI).await.unwrap();
         task.await.unwrap();
         assert_eq!(value, vec![0x78, 0x56, 0x34, 0x12]);
+    }
+
+    #[tokio::test]
+    async fn request_sends_control_and_returns_ack_data() {
+        let addr = MeterAddress::parse("1").unwrap();
+        let (io, mut meter) = duplex(256);
+        let ack = Frame {
+            address: addr,
+            control: 0x9C,
+            data: vec![],
+        }
+        .encode()
+        .unwrap();
+        let expect = Frame {
+            address: addr,
+            control: 0x1C,
+            data: vec![0x01, 0x02],
+        }
+        .encode()
+        .unwrap();
+        let task = tokio::spawn(async move {
+            let mut req = vec![0u8; 4 + expect.len()];
+            meter.read_exact(&mut req).await.unwrap();
+            assert_eq!(&req[4..], &expect[..]);
+            meter.write_all(&ack).await.unwrap();
+        });
+        let mut client = Client::new(io, config(500));
+        let data = client.request(addr, 0x1C, vec![1, 2]).await.unwrap();
+        task.await.unwrap();
+        assert!(data.is_empty());
+    }
+
+    #[tokio::test]
+    async fn request_maps_exception_response() {
+        let addr = MeterAddress::parse("1").unwrap();
+        let (io, mut meter) = duplex(256);
+        let err = Frame {
+            address: addr,
+            control: 0xDC,
+            data: vec![0x04],
+        }
+        .encode()
+        .unwrap();
+        tokio::spawn(async move {
+            let mut req = [0u8; 64];
+            let _ = meter.read(&mut req).await;
+            meter.write_all(&err).await.unwrap();
+        });
+        let mut client = Client::new(io, config(500));
+        assert!(matches!(
+            client.request(addr, 0x1C, vec![1]).await,
+            Err(MeterError::MeterException(0x04))
+        ));
     }
 
     #[tokio::test]

@@ -463,7 +463,7 @@ function modbus.decode(regs, type, order, index) end
 function modbus.encode(value, type, order) end
 
 -----------------------------------------------------------------------
--- dlt645 - 脚本直连 DL/T645-2007 电表（串口，只读，不依赖点表配置）
+-- dlt645 - 脚本直连 DL/T645-2007 电表（串口，支持读取与 request 发送任意控制帧，不依赖点表配置）
 -----------------------------------------------------------------------
 
 ---@class Dlt645ConnectOpts
@@ -507,6 +507,16 @@ function Dlt645Conn:read(di, address, spec) end
 ---@param address string?
 ---@return integer[]|nil, string|nil
 function Dlt645Conn:read_raw(di, address) end
+
+--- 发送任意控制码请求（写数据 14H、遥控 1CH 等），返回应答数据域字节（已去 0x33 偏移，可能为空）。
+--- data 为逻辑数据域字节（DI、密码、操作者代码等由脚本按规约拼装，引擎自动加 0x33 偏移）。
+--- 正常应答控制码须为 control|0x80；异常应答返回 nil, "电表异常: 0xNN"。
+--- 注意：不做重试；超时（nil, "response timed out"）时命令可能已执行，应回读状态确认。
+---@param control integer 控制码，如 0x1C
+---@param data    integer[] 数据域字节（逻辑值，0~255）
+---@param address string?
+---@return integer[]|nil, string|nil
+function Dlt645Conn:request(control, data, address) end
 
 ---@return boolean
 function Dlt645Conn:is_connected() end

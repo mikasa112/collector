@@ -88,6 +88,30 @@ impl Inner {
             Err(e) => Err(e.to_string()),
         }
     }
+
+    /// 发送任意控制码请求（写数据 14H、遥控 1CH 等），返回应答数据域（已去 0x33 偏移）。
+    /// 与读取不同：超时后命令是否已执行未知，不做重试，由脚本回读确认。
+    async fn request(
+        &mut self,
+        control: u8,
+        data: Vec<u8>,
+        addr: Option<String>,
+    ) -> Result<Vec<u8>, String> {
+        let address = self.resolve_address(addr)?;
+        if self.client.is_none() {
+            self.client = Some(open(&self.link, self.timeout)?);
+        }
+        let client = self.client.as_mut().expect("client 刚刚已建立");
+        match client.request(address, control, data).await {
+            Ok(data) => Ok(data),
+            Err(e @ MeterError::Io(_)) => {
+                self.client = None;
+                Err(e.to_string())
+            }
+            Err(MeterError::MeterException(code)) => Err(format!("电表异常: 0x{code:02X}")),
+            Err(e) => Err(e.to_string()),
+        }
+    }
 }
 
 /// 脚本持有的 DL/T645 连接句柄，作为 UserData 返回给 Lua。
@@ -181,11 +205,28 @@ impl UserData for Dlt645Handle {
             },
         );
 
+        // request(control, data, address?) -> table | nil, err
+        // 发送任意控制码帧：control 为控制码（如 0x1C 遥控、0x14 写数据），data 为逻辑数据域
+        // 字节数组（引擎自动加 0x33 偏移，DI/密码/操作者代码等由脚本按规约拼装）。
+        // 成功返回应答数据域字节数组（可能为空）；异常应答/超时返回 nil, err。
+        methods.add_async_method(
+            "request",
+            |lua, this, (control, data, address): (u8, Vec<u8>, Option<String>)| async move {
+                if data.len() > collector_dlt645::frame::MAX_DATA_LEN {
+                    return Ok((Value::Nil, Some("数据域超过 200 字节".to_string())));
+                }
+                match this.0.lock().await.request(control, data, address).await {
+                    Ok(d) => Ok((Value::Table(lua.create_sequence_from(d)?), None)),
+                    Err(e) => Ok((Value::Nil, Some(e))),
+                }
+            },
+        );
+
         methods.add_async_method("is_connected", |_, this, ()| async move {
             Ok(this.0.lock().await.client.is_some())
         });
 
-        // 主动关闭串口；之后再调用读方法会自动重开
+        // 主动关闭串口；之后再调用读/写方法会自动重开
         methods.add_async_method("close", |_, this, ()| async move {
             this.0.lock().await.client = None;
             Ok(())

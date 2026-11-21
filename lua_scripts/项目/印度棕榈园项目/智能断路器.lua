@@ -4,14 +4,32 @@
 -- 读数据 C=11H / 应答 91H，异常 D1H），因此直接复用 dlt645 API 的 read_raw 读取规约自定义的 DI。
 -- 规约 DI 表见 附录 A（A.2.1 当前变量 / A.2.2 累计记录 / A.2.5 参数变量）。
 --
--- 限制：dlt645 API 只读，规约里的遥控跳闸/合闸（C=1CH，需密码）、告警查询（C=19H）暂不支持。
+-- 下发（MQTT yk/yt → dc.dispatch → on_write）：
+--   remoteTrip  (id 28) 值为 1 → 立即远程跳闸
+--   remoteClose (id 29) 值为 1 → 立即远程合闸
+--   其他值（含 0）一律忽略，避免误操作。
+--   实现：dlt645 conn:request(0x1C, ...)，数据域 = DI(4) + PA P0 P1 P2(密码) + C0~C3(操作者代码) + DATA，
+--   DI = 06010101（预约远程跳闸）/ 06010201（预约远程合闸），DATA = NN uu（NN=0 立即执行）。
+--   正常应答 9CH（L=0），异常应答 DCH + ERR（B.3.2：bit3 远程控制失败 bit2 密码错/未授权 bit1 无请求数据项 bit0 数据非法）。
+-- 限制：告警查询（C=19H）暂不支持。
+-- 注意：MQTT topic 为 /asw/{前缀}/{序号}/yk 时，设备 ID = 前缀 + (序号+1)，所以 dev_id 必须形如 breaker1。
 MOD = {
     name = "智能断路器",
     description = "印尼棕榈园区EMS_智能断路器（2LC 重合闸剩余电流动作保护器）",
 }
 
 local CONFIG = {
-    dev_id = "breaker",
+    dev_id = "breaker1", -- MQTT /asw/breaker/0/yk → breaker1
+    -- 遥控授权。规约未给默认值，必须按现场设备（04000C01~03 的 0~2 级密码）配置后再联调：
+    --   pa = 密码权限 00~02（00 最高）；pw = P0 P1 P2 三个字节（线上顺序）；operator = C0~C3 操作者代码
+    control = {
+        pa = 0x00,
+        pw = { 0x00, 0x00, 0x00 },
+        operator = { 0x00, 0x00, 0x00, 0x00 },
+        -- DATA(NN uu) 线上字节顺序：规约按小端传输，默认 uu 在前 NN 在后；联调时若设备拒绝可改为 "nn_first"
+        data_order = "uu_first",
+        unit = 0x02, -- uu：02=分 03=小时（NN=0 立即执行时仅占位）
+    },
     poll_ms = 5000,
     -- 规约默认 2400bps / 8E1，现场按设备实际设置；address 为 12 位十进制通信地址
     link = { serial = "/dev/ttyS0", baud = 2400, parity = "E", address = "000000000001", timeout = 1200 },
@@ -60,6 +78,34 @@ local ID_BREAKER_POS  = 25 -- 状态字1 Bit6~5：闸位（0=合闸 1=保留 2=�
 local ID_FAULT_REASON = 26 -- 状态字1 Bit4~0：跳闸/告警原因（B.1.1，0=正常运行）
 local ID_TRIP_POINTER = 27 -- 状态字2 Bit2~0：跳闸次数指针
 
+-- 可下发的控制点（值必须为 1 才执行）
+local CONTROLS = {
+    remoteTrip  = { id = 28, name = "远程跳闸", di = { 0x01, 0x01, 0x01, 0x06 } }, -- DI 06010101，线上 DI0..DI3
+    remoteClose = { id = 29, name = "远程合闸", di = { 0x01, 0x02, 0x01, 0x06 } }, -- DI 06010201
+}
+local CONTROLS_BY_ID = {}
+for k, def in pairs(CONTROLS) do
+    def.key = k
+    CONTROLS_BY_ID[def.id] = def
+end
+
+local ERR_BITS = { [0] = "数据非法", [1] = "无请求数据项", [2] = "密码错/未授权", [3] = "远程控制失败" }
+
+--- 把引擎返回的 "电表异常: 0xNN" 翻译成 B.3.2 的错误含义
+local function explain_err(err)
+    local code = tonumber(tostring(err):match("电表异常: 0x(%x+)"), 16)
+    if not code then
+        return tostring(err)
+    end
+    local parts = {}
+    for bit = 0, 3 do
+        if code & (1 << bit) ~= 0 then
+            parts[#parts + 1] = ERR_BITS[bit]
+        end
+    end
+    return string.format("%s（%s）", tostring(err), table.concat(parts, "/"))
+end
+
 local conn
 local logged_fail = {} -- di -> true：已经告警过的读取失败，恢复后清除
 
@@ -76,7 +122,58 @@ local function ensure_conn()
     return conn
 end
 
-local dev, derr = dc.register(CONFIG.dev_id)
+local poll -- 前向声明，on_write 下发后回读用
+
+local function send_control(def)
+    local c = ensure_conn()
+    if not c then
+        return nil, "未连接"
+    end
+    local cc = CONFIG.control
+    local data = {}
+    for _, b in ipairs(def.di) do data[#data + 1] = b end
+    data[#data + 1] = cc.pa
+    for _, b in ipairs(cc.pw) do data[#data + 1] = b end
+    for _, b in ipairs(cc.operator) do data[#data + 1] = b end
+    -- DATA：NN=00（立即执行），uu=单位
+    if cc.data_order == "nn_first" then
+        data[#data + 1] = 0x00
+        data[#data + 1] = cc.unit
+    else
+        data[#data + 1] = cc.unit
+        data[#data + 1] = 0x00
+    end
+    return c:request(0x1C, data, CONFIG.link.address)
+end
+
+local function on_write(points)
+    local acted = false
+    for _, p in ipairs(points) do
+        local def = CONTROLS[p.key or ""] or CONTROLS_BY_ID[p.id or -1]
+        if not def then
+            log.warn("[" .. CONFIG.dev_id .. "] 不支持下发的点位: " .. tostring(p.key or p.id or p.name))
+        elseif p.value ~= 1 then
+            log.warn(string.format("[%s] %s 下发值 %s 被忽略（仅 1 触发）", CONFIG.dev_id, def.name, tostring(p.value)))
+        else
+            log.warn(string.format("[%s] 执行%s", CONFIG.dev_id, def.name))
+            local ok, err = send_control(def)
+            if ok then
+                acted = true
+                log.warn(string.format("[%s] %s 成功（设备已应答 9CH）", CONFIG.dev_id, def.name))
+            else
+                -- 超时时命令可能已执行，靠下面的回读确认闸位
+                log.error(string.format("[%s] %s 失败: %s", CONFIG.dev_id, def.name, explain_err(err)))
+                acted = true
+            end
+        end
+    end
+    if acted then
+        wait(500) -- 给设备动作时间再回读闸位
+        poll()
+    end
+end
+
+local dev, derr = dc.register(CONFIG.dev_id, on_write)
 if not dev then
     log.error("注册设备失败: " .. tostring(derr))
     return
@@ -101,7 +198,7 @@ local function read_point(c, def)
     return dlt645.decode(bytes, def.decimals or 0)
 end
 
-local function poll()
+poll = function()
     local c = ensure_conn()
     if not c then
         dev:set_comm(false)
