@@ -175,28 +175,36 @@ impl ModbusServer {
                         _ = tokio::time::sleep(tokio::time::Duration::from_millis(1000)) => {}
                     }
                 };
+                // subscribe() 返回的接收器已把订阅时刻的快照视为"已读"，changed() 不会再为它触发：
+                // 若不先处理这份初始快照，订阅前就已存在、之后数值又不再变化的点位
+                // （如稳定的电网频率）永远不会写入寄存器表，北向读到的就是 0。
+                let apply = |snapshot: &[crate::core::point::DataPoint]| {
+                    let current = state.table.read().clone();
+                    let mut new_tbl = (*current).clone();
+                    for point in snapshot.iter() {
+                        let Some(cfg_indices) = point_index.get(&point.id) else { continue; };
+                        for &ci in cfg_indices {
+                            let cfg = &configs[ci];
+                            if let Some(reg_val) = cfg.encode_val(&point.value) {
+                                match reg_val {
+                                    RegValue::Bool(b) => new_tbl.write_bool(cfg.register_type, cfg.register_address, b),
+                                    RegValue::Word(w) => new_tbl.write_u16(cfg.register_type, cfg.register_address, w),
+                                    RegValue::DWord(dw) => new_tbl.write_u16_pair(cfg.register_type, cfg.register_address, dw),
+                                }
+                            }
+                        }
+                    }
+                    *state.table.write() = Arc::new(new_tbl);
+                };
+                let initial = rx.borrow_and_update().clone();
+                apply(&initial);
                 loop {
                     tokio::select! {
                         _ = shutdown.wait_for_shutdown() => break,
                         changed = rx.changed() => {
                             if changed.is_err() { break; }
                             let snapshot = rx.borrow_and_update().clone();
-                            let current = state.table.read().clone();
-                            let mut new_tbl = (*current).clone();
-                            for point in snapshot.iter() {
-                                let Some(cfg_indices) = point_index.get(&point.id) else { continue; };
-                                for &ci in cfg_indices {
-                                    let cfg = &configs[ci];
-                                    if let Some(reg_val) = cfg.encode_val(&point.value) {
-                                        match reg_val {
-                                            RegValue::Bool(b) => new_tbl.write_bool(cfg.register_type, cfg.register_address, b),
-                                            RegValue::Word(w) => new_tbl.write_u16(cfg.register_type, cfg.register_address, w),
-                                            RegValue::DWord(dw) => new_tbl.write_u16_pair(cfg.register_type, cfg.register_address, dw),
-                                        }
-                                    }
-                                }
-                            }
-                            *state.table.write() = Arc::new(new_tbl);
+                            apply(&snapshot);
                         }
                     }
                 }
