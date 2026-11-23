@@ -1,16 +1,13 @@
 -- 关口表 + 计量电表（标准 DL/T645-2007）：两块电表分别接 /dev/ttyXRUSB1、/dev/ttyXRUSB2，
 -- 各自注册为一个数据中心设备，只采集现场关注的点位。
 --
---   gateway_meter  关口表     表号 012400023482：正/反向有功功率、频率、正/反向有功电能
---   metering_meter 计量电表   表号 000003050215：正/反向有功功率、频率、正/反向总有功电能、
---                                                 正/反向有功电能 尖/峰/平/谷/深谷
+--   gateway_meter  关口表     表号 012400023482：总有功/无功功率、频率、正/反向有功电能、总有功电能
+--   metering_meter 计量电表   表号 000003050215：总有功/无功功率、频率、正/反向总有功电能、
+--                                                 正/反向有功电能 尖/峰/平/谷/深谷、总有功电能
 --
--- 正/反向有功功率：DL/T645 没有分开的 DI，由总有功功率（02030000，带符号）拆出：
---   值 > 0 为正向（反向=0），值 < 0 为反向（取绝对值，正向=0）。
+-- 总有功功率（02030000）、总无功功率（02040000）带符号，原值上送；总有功电能取组合有功总电能（00000000）。
 -- 费率电能：费率 1~5 依次为 尖/峰/平/谷/深谷（DI0 = 01~05），实际费率顺序以电表设置为准；
 --   电表只有 4 个费率时深谷读不到属正常（可选点位，仅首次失败提示）。
---
--- 另采集三相电压 / 电流、总无功功率、总功率因数（见 electrical()）。
 --
 -- 变比换算：电表内变比寄存值为 1（未设置），故不再读取，改为在 CONFIG 中按现场铭牌配置 pt / ct，
 --   scale = "pt" 的点位（电压）乘 pt，"ct"（电流）乘 ct，"ptct"（功率、电能）乘 pt×ct。
@@ -29,54 +26,29 @@ MOD = {
 --   len      数据域字节数（小端压缩 BCD，不含 4 字节 DI）
 --   decimals 隐含小数位
 --   signed   最高字节 bit7 为符号位
---   split    "pos" / "neg"：由带符号读数拆出正向 / 反向分量（均为非负值）
 --   optional 部分电表不支持，读取失败属正常，仅首次失败时以 info 提示
-local DI_ACTIVE_POWER = { di = 0x02030000, len = 3, decimals = 4, signed = true }
-local DI_FREQUENCY    = { di = 0x02800002, len = 2, decimals = 2 }
+local DI_FREQUENCY = { di = 0x02800002, len = 2, decimals = 2 }
 
 local function energy(id, key, name, di, optional)
     return { id = id, key = key, name = name, di = di, len = 4, decimals = 2, unit = "kWh", optional = optional, scale = "ptct" }
 end
 
-local function power(id, key, name, split)
-    return {
-        id = id, key = key, name = name, unit = "kW", split = split, scale = "ptct",
-        di = DI_ACTIVE_POWER.di, len = DI_ACTIVE_POWER.len,
-        decimals = DI_ACTIVE_POWER.decimals, signed = DI_ACTIVE_POWER.signed,
-    }
+-- 组合有功总电能（00000000）：正向+反向的代数和，可能为负，按带符号解码
+local function total_energy(id, key, name)
+    return { id = id, key = key, name = name, di = 0x00000000, len = 4, decimals = 2, signed = true, unit = "kWh", scale = "ptct" }
+end
+
+-- 总有功功率（带符号，正为正向、负为反向，不拆分）
+local function total_power(id, key, name)
+    return { id = id, key = key, name = name, unit = "kW", di = 0x02030000, len = 3, decimals = 4, signed = true, scale = "ptct" }
+end
+
+local function reactive_power(id, key, name)
+    return { id = id, key = key, name = name, unit = "kvar", di = 0x02040000, len = 3, decimals = 4, signed = true, scale = "ptct" }
 end
 
 local function frequency(id, key, name)
     return { id = id, key = key, name = name, unit = "Hz", di = DI_FREQUENCY.di, len = DI_FREQUENCY.len, decimals = DI_FREQUENCY.decimals }
-end
-
--- 三相电压 / 电流 / 总无功功率 / 总功率因数（两块表共用）。
--- 换算：电压 ×pt，电流 ×ct，无功功率 ×pt×ct，功率因数不换算。
--- 三相三线表没有 B 相电压，读失败属正常（optional，仅首次提示）。
-local function electrical(prefix, label, first_id)
-    local pts, id = {}, first_id
-    local function add(p)
-        p.id = id
-        id = id + 1
-        pts[#pts + 1] = p
-    end
-    for i, ph in ipairs({ "A", "B", "C" }) do
-        add({ key = prefix .. "Voltage" .. ph, name = label .. ph .. "相电压", unit = "V",
-              di = 0x02010000 + i * 0x100, len = 2, decimals = 1, scale = "pt", optional = (ph == "B") })
-    end
-    for i, ph in ipairs({ "A", "B", "C" }) do
-        add({ key = prefix .. "Current" .. ph, name = label .. ph .. "相电流", unit = "A",
-              di = 0x02020000 + i * 0x100, len = 3, decimals = 3, signed = true, scale = "ct" })
-    end
-    add({ key = prefix .. "ReactivePower", name = label .. "总无功功率", unit = "kvar",
-          di = 0x02040000, len = 3, decimals = 4, signed = true, scale = "ptct" })
-    add({ key = prefix .. "PowerFactor", name = label .. "总功率因数",
-          di = 0x02060000, len = 2, decimals = 3, signed = true })
-    return pts
-end
-
-local function append(dst, src)
-    table.move(src, 1, #src, #dst + 1, dst)
 end
 
 local CONFIG = {
@@ -88,11 +60,12 @@ local CONFIG = {
             pt = 1, ct = 3000 / 5, -- 电流互感器 3000/5
             link = { serial = "/dev/ttyXRUSB1", baud = 9600, parity = "E", address = "012400023482", timeout = 1200 },
             points = {
-                power(1, "gateMeterForwardActivePower", "关口电表正向有功功率", "pos"),
-                power(2, "gateMeterReverseActivePower", "关口电表反向有功功率", "neg"),
+                total_power(1, "gateMeterTotalPower", "关口电表总有功功率"),
+                reactive_power(2, "gateMeterTotalReactivePwr", "关口电表总无功功率"),
                 frequency(3, "gateMeterFrequency", "关口电表频率"),
                 energy(4, "gateMeterForwardActiveEnergy", "关口电表正向有功电能", 0x00010000),
                 energy(5, "gateMeterReverseActiveEnergy", "关口电表反向有功电能", 0x00020000),
+                total_energy(6, "gateMetertotalActiveEnergy", "关口电表总有功电能"),
             },
         },
         {
@@ -100,8 +73,8 @@ local CONFIG = {
             pt = 1, ct = 300 / 5, -- 电流互感器 300/5
             link = { serial = "/dev/ttyXRUSB2", baud = 9600, parity = "E", address = "000003050215", timeout = 1200 },
             points = {
-                power(1, "meterForwardActivePower", "计量电表正向有功功率", "pos"),
-                power(2, "meterReverseActivePower", "计量电表反向有功功率", "neg"),
+                total_power(1, "meterTotalPower", "计量电表总有功功率"),
+                reactive_power(2, "meterTotalReactivePwr", "计量电表总无功功率"),
                 frequency(3, "meterFrequency", "计量电表频率"),
                 energy(4, "meterForwardTotalActiveEnergy", "计量电表正向总有功电能", 0x00010000),
                 energy(5, "meterReverseTotalActiveEnergy", "计量电表反向总有功电能", 0x00020000),
@@ -117,14 +90,11 @@ local CONFIG = {
                 energy(13, "meterReverseActiveEnergyFlat",      "计量电表反向有功电能平",   0x00020300),
                 energy(14, "meterReverseActiveEnergyValley",    "计量电表反向有功电能谷",   0x00020400),
                 energy(15, "meterReverseActiveEnergyDeepValley", "计量电表反向有功电能深谷", 0x00020500, true),
+                total_energy(16, "metertotalActiveEnergy", "计量电表总有功电能"),
             },
         },
     },
 }
-
--- 追加三相电压 / 电流 / 无功 / 功率因数点位（点位 ID 从 20 起，避开旧版本遗留的 ID）
-append(CONFIG.meters[1].points, electrical("gateMeter", "关口电表", 20))
-append(CONFIG.meters[2].points, electrical("meter", "计量电表", 20))
 
 -- 换算系数：pt / ct / pt×ct
 for _, m in ipairs(CONFIG.meters) do
@@ -202,11 +172,6 @@ local function poll_meter(c, m)
         if v then
             logged_fail[fkey] = nil
             fails = 0
-            if def.split == "pos" then
-                v = v > 0 and v or 0
-            elseif def.split == "neg" then
-                v = v < 0 and -v or 0
-            end
             if def.scale then
                 v = v * m.factor[def.scale]
             end
