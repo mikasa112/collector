@@ -1,9 +1,10 @@
 -- 关口表 + 计量电表（标准 DL/T645-2007）：两块电表分别接 /dev/ttyXRUSB1、/dev/ttyXRUSB2，
 -- 各自注册为一个数据中心设备，只采集现场关注的点位。
 --
---   gateway_meter  关口表     表号 012400023482：总有功/无功功率、频率、正/反向有功电能、总有功电能
+--   gateway_meter  关口表     表号 012400023482：总有功/无功功率、频率、正/反向有功电能、总有功电能、三相电压/电流、总功率因数
 --   metering_meter 计量电表   表号 000003050215：总有功/无功功率、频率、正/反向总有功电能、
---                                                 正/反向有功电能 尖/峰/平/谷/深谷、总有功电能
+--                                                 正/反向有功电能 尖/峰/平/谷/深谷、总有功电能、
+--                                                 三相电压/电流、总功率因数
 --
 -- 总有功功率（02030000）、总无功功率（02040000）带符号，原值上送；总有功电能取组合有功总电能（00000000）。
 -- 费率电能：费率 1~5 依次为 尖/峰/平/谷/深谷（DI0 = 01~05），实际费率顺序以电表设置为准；
@@ -40,7 +41,8 @@ end
 
 -- 总有功功率（带符号，正为正向、负为反向，不拆分）
 local function total_power(id, key, name)
-    return { id = id, key = key, name = name, unit = "kW", di = 0x02030000, len = 3, decimals = 4, signed = true, scale = "ptct" }
+    -- fast：防逆流 / 需量保护依赖关口功率的实时性，单独走快速轮询（见文件末尾轮询循环）
+    return { id = id, key = key, name = name, unit = "kW", di = 0x02030000, len = 3, decimals = 4, signed = true, scale = "ptct", fast = true }
 end
 
 local function reactive_power(id, key, name)
@@ -51,8 +53,33 @@ local function frequency(id, key, name)
     return { id = id, key = key, name = name, unit = "Hz", di = DI_FREQUENCY.di, len = DI_FREQUENCY.len, decimals = DI_FREQUENCY.decimals }
 end
 
+-- 三相电压 / 电流 / 总功率因数（两块表共用，点位 ID 从 20 起，与时序库列一致）。
+-- 换算：电压 ×pt，电流 ×ct，功率因数不换算。
+-- 三相三线表没有 B 相电压，读失败属正常（optional，仅首次提示）。
+local function electrical(prefix, label)
+    local pts = {}
+    for i, ph in ipairs({ "A", "B", "C" }) do
+        pts[#pts + 1] = { id = 19 + i, key = prefix .. "Voltage" .. ph, name = label .. ph .. "相电压", unit = "V",
+              di = 0x02010000 + i * 0x100, len = 2, decimals = 1, scale = "pt", optional = (ph == "B") }
+    end
+    for i, ph in ipairs({ "A", "B", "C" }) do
+        pts[#pts + 1] = { id = 22 + i, key = prefix .. "Current" .. ph, name = label .. ph .. "相电流", unit = "A",
+              di = 0x02020000 + i * 0x100, len = 3, decimals = 3, signed = true, scale = "ct" }
+    end
+    pts[#pts + 1] = { id = 27, key = prefix .. "PowerFactor", name = label .. "总功率因数",
+          di = 0x02060000, len = 2, decimals = 3, signed = true }
+    return pts
+end
+
+local function append(dst, src)
+    table.move(src, 1, #src, #dst + 1, dst)
+end
+
 local CONFIG = {
-    poll_ms = 2000,
+    -- 每次迭代：必读快速点位（总有功功率）+ 轮流读 slow_batch 个其余点位，
+    -- 迭代间隔 loop_ms；总有功功率刷新周期 ≈ loop_ms + 读取耗时，其余点位约 N/slow_batch 次迭代轮完一遍
+    loop_ms = 200,
+    slow_batch = 3,
     -- 两块表各用一个串口（9600 / 8E1），各自独立连接、独立轮询
     meters = {
         {
@@ -95,6 +122,10 @@ local CONFIG = {
         },
     },
 }
+
+-- 追加三相电压 / 电流 / 功率因数点位
+append(CONFIG.meters[1].points, electrical("gateMeter", "关口电表"))
+append(CONFIG.meters[2].points, electrical("meter", "计量电表"))
 
 -- 换算系数：pt / ct / pt×ct
 for _, m in ipairs(CONFIG.meters) do
@@ -157,7 +188,23 @@ local function poll_meter(c, m)
     local points, fails = {}, 0
     local cache = {} -- di -> 本轮已读结果（正/反向功率共用同一个 DI，只读一次）
 
+    -- 本次迭代要读的点位：快速点位 + 轮转窗口内的慢点位
+    local slow = {}
     for _, def in ipairs(m.points) do
+        if not def.fast then
+            slow[#slow + 1] = def
+        end
+    end
+    local selected = {}
+    for i = 0, math.min(CONFIG.slow_batch, #slow) - 1 do
+        selected[slow[(m.cursor + i) % #slow + 1]] = true
+    end
+    if #slow > 0 then
+        m.cursor = (m.cursor + CONFIG.slow_batch) % #slow
+    end
+
+    for _, def in ipairs(m.points) do
+      if def.fast or selected[def] then
         local fkey = m.dev_id .. string.format("%08X", def.di)
         local cached = cache[def.di]
         local v, err
@@ -200,6 +247,7 @@ local function poll_meter(c, m)
                 end
             end
         end
+      end
     end
 
     if #points > 0 then
@@ -217,11 +265,15 @@ local function poll(m)
     poll_meter(c, m)
 end
 
+-- 全量点位一轮要读 20 个 DI（约 4~5 秒），总功率若跟着整轮上送会明显滞后于 PCS 功率，
+-- 使防逆流用「新的 PCS 功率 + 旧的关口功率」做预估而来回振荡。
+-- 因此每次迭代都先刷新总有功功率，再轮流读几个其余点位。
 for _, m in ipairs(CONFIG.meters) do
+    m.cursor = 0
     task.spawn(function()
         while true do
             poll(m)
-            wait(CONFIG.poll_ms)
+            wait(CONFIG.loop_ms)
         end
     end)
 end
