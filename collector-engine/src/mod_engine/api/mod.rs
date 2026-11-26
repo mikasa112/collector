@@ -1,5 +1,6 @@
 pub(super) mod can;
 pub(super) mod dc;
+pub(crate) mod db;
 pub(super) mod dlt645_client;
 pub(super) mod json;
 pub(super) mod log;

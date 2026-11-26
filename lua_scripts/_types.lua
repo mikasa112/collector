@@ -244,6 +244,64 @@ function save.get(key) end
 function save.del(key) end
 
 -----------------------------------------------------------------------
+-- db - 业务库（data.db）读写 API
+--
+-- 访问哪些表须在 _manifest.lua 中声明（read / write），未声明的表一律拒绝；
+-- 拒绝依据是 SQL 实际访问的表（子查询/视图/触发器同样检查）。
+-- 失败统一返回 nil, err。只允许单条语句；DDL / PRAGMA / ATTACH / 手写 BEGIN 均被拒绝。
+-- 所有 db.exec 写操作（含被拒绝/失败）都会记录到 t_operation_log。
+-----------------------------------------------------------------------
+
+---@class DbExecResult
+---@field changes integer 受影响行数
+---@field last_id integer 最近一次 INSERT 的 rowid（非 INSERT 语句无意义）
+
+---@class DbTx
+local DbTx = {}
+--- 事务内只读查询
+---@param sql string
+---@param params? any[]
+---@return table[]? rows
+---@return string? err
+function DbTx:query(sql, params) end
+--- 事务内写入
+---@param sql string
+---@param params? any[]
+---@return DbExecResult? result
+---@return string? err
+function DbTx:exec(sql, params) end
+--- 提交事务；未 commit/rollback 就丢弃的事务会自动回滚（并在日志里告警）
+---@return boolean? ok
+---@return string? err
+function DbTx:commit() end
+--- 回滚事务（已执行的语句仍会在操作日志里留痕，标注"事务已回滚"）
+---@return boolean? ok
+---@return string? err
+function DbTx:rollback() end
+
+---@class DbApi
+db = {}
+
+--- 只读 SQL，返回行数组（列名为 key，值为 NULL 的列不出现）。最多返回 10000 行，使用 ? 占位符绑定参数
+---@param sql string
+---@param params? any[]
+---@return table[]? rows
+---@return string? err
+function db.query(sql, params) end
+
+--- 写 SQL（INSERT / UPDATE / DELETE）
+---@param sql string
+---@param params? any[]
+---@return DbExecResult? result
+---@return string? err
+function db.exec(sql, params) end
+
+--- 开启事务。事务期间独占一条数据库连接，请尽快 commit/rollback，不要在事务中 wait 很久
+---@return DbTx? tx
+---@return string? err
+function db.begin() end
+
+-----------------------------------------------------------------------
 -- plugin - 插件目录自动发现 API（只在加载时扫描一次，不支持热重载）
 -----------------------------------------------------------------------
 

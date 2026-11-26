@@ -12,6 +12,7 @@ use crate::mod_engine::{
     api::store::{LuaStore, new_store},
     engine::{ModEngine, ModEngineHandle},
     global_bus::GlobalBus,
+    api::db::DbPerm,
     manifest::{MANIFEST_FILE, Manifest},
     script_loader::{self, ScriptMeta},
     watcher::{FileEvent, watch_dir},
@@ -28,9 +29,12 @@ struct ScriptInstance {
     bus: GlobalBus,
     /// 在 `bus` 中登记时使用的 key（脚本路径字符串），卸载时用于反注册
     key: String,
+    /// 启动时授予的数据库表权限；总纲里的权限变化后据此判断是否需要重启该脚本
+    db_perm: DbPerm,
 }
 
 impl ScriptInstance {
+    #[allow(clippy::too_many_arguments)]
     async fn spawn(
         meta: &ScriptMeta,
         override_store: Option<MqttOverrideStore>,
@@ -39,6 +43,7 @@ impl ScriptInstance {
         script_dir: PathBuf,
         data_file: PathBuf,
         bus: GlobalBus,
+        db_perm: DbPerm,
     ) -> Option<Self> {
         let owned_topics: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
         let key = meta.path.to_string_lossy().to_string();
@@ -51,6 +56,7 @@ impl ScriptInstance {
             data_file,
             bus.clone(),
             meta.name.clone(),
+            db_perm.clone(),
         ) {
             Ok(pair) => pair,
             Err(e) => {
@@ -83,6 +89,7 @@ impl ScriptInstance {
             override_store,
             bus,
             key,
+            db_perm,
         })
     }
 
@@ -144,6 +151,14 @@ impl ScriptManager {
         }
     }
 
+    /// 脚本当前应得的数据库表权限；未启用总纲时没有任何权限声明，db 一律拒绝
+    fn db_perm_for(&self, path: &std::path::Path) -> DbPerm {
+        match &self.manifest {
+            Some(m) => m.db_perm(&file_name_of(path)),
+            None => DbPerm::default(),
+        }
+    }
+
     /// 该文件名对应的脚本当前是否正在运行
     fn is_running_filename(&self, filename: &str) -> bool {
         self.scripts.keys().any(|p| file_name_of(p) == filename)
@@ -162,6 +177,7 @@ impl ScriptManager {
             .unwrap_or(&name)
             .to_string();
         let data_file = self.save_dir.join(format!("{stem}.json"));
+        let db_perm = self.db_perm_for(&meta.path);
         if let Some(instance) = ScriptInstance::spawn(
             &meta,
             self.override_store.clone(),
@@ -170,6 +186,7 @@ impl ScriptManager {
             self.script_dir.clone(),
             data_file,
             self.bus.clone(),
+            db_perm,
         )
         .await
         {
@@ -308,8 +325,14 @@ impl ScriptManager {
         }
 
         for meta in ordered {
-            if !self.scripts.contains_key(&meta.path) {
-                self.load(meta).await;
+            match self.scripts.get(&meta.path) {
+                None => self.load(meta).await,
+                // 总纲里的 db 权限变了：必须重启，否则收回的权限在脚本重启前一直有效
+                Some(inst) if inst.db_perm != self.db_perm_for(&meta.path) => {
+                    tracing::info!("[mod] 模块 {} 的数据库权限已变更，重启生效", meta.name);
+                    self.load(meta).await;
+                }
+                Some(_) => {}
             }
         }
     }

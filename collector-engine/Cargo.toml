@@ -19,6 +19,7 @@ serde_json = { workspace = true }
 parking_lot = { workspace = true }
 futures-util = { workspace = true }
 sqlx = { workspace = true }
+libsqlite3-sys = "0.30"
 taos = { workspace = true }
 rumqttc = { workspace =true }
 bytes = { workspace = true }

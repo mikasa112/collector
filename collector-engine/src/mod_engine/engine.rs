@@ -15,6 +15,7 @@ use crate::mod_engine::{
     self,
     api::{
         can::create_can_table,
+        db::{DbPerm, create_db_table},
         dc::create_dc_table,
         dlt645_client::create_dlt645_table,
         json::create_json_table,
@@ -253,6 +254,8 @@ struct RegisterApiArgs {
     cmd_tx: mpsc::UnboundedSender<EngineCmd>,
     data_file: PathBuf,
     script_dir: PathBuf,
+    db_perm: DbPerm,
+    script_name: String,
 }
 
 impl ModEngine {
@@ -265,6 +268,7 @@ impl ModEngine {
         data_file: PathBuf,
         bus: GlobalBus,
         name: String,
+        db_perm: DbPerm,
     ) -> mod_engine::Result<(Self, ModEngineHandle)> {
         let (tx, rx) = mpsc::unbounded_channel();
         let (watch_tx, dc_changed_rx) = mpsc::unbounded_channel();
@@ -315,6 +319,8 @@ impl ModEngine {
             cmd_tx: tx.clone(),
             data_file,
             script_dir,
+            db_perm,
+            script_name: name.clone(),
         })?;
         engine.register_event(bus.clone(), handle.clone())?;
         engine.register_hook()?;
@@ -343,6 +349,8 @@ impl ModEngine {
             cmd_tx,
             data_file,
             script_dir,
+            db_perm,
+            script_name,
         } = args;
         let globals = self.lua.globals();
         globals.set("log", create_log_table(&self.lua)?)?;
@@ -354,6 +362,7 @@ impl ModEngine {
         globals.set("dlt645", create_dlt645_table(&self.lua)?)?;
         globals.set("store", create_store_table(&self.lua, store)?)?;
         globals.set("save", create_save_table(&self.lua, data_file)?)?;
+        globals.set("db", create_db_table(&self.lua, db_perm, script_name)?)?;
         globals.set("plugin", create_plugin_table(&self.lua, script_dir)?)?;
         if let Some(mqtt_store) = override_store {
             globals.set(
