@@ -14,6 +14,7 @@ use salvo::{
     prelude::WebSocketUpgrade,
     websocket::{Message, WebSocket},
 };
+use chrono::TimeZone;
 use serde::{Deserialize, Serialize};
 use tokio::sync::watch;
 use tokio::time::{self, Instant};
@@ -179,11 +180,24 @@ async fn handle_ws(ws: &mut WebSocket, query: DevQueryParams) {
     }
 }
 
+/// 首页推送的数值统一保留 3 位小数（前端最多显示 3 位）：
+/// 既避免 f64 运算噪声（如 380.12345678901234）撑大 JSON，也让"变化检测"能正确命中
+fn ser_round3<S: serde::Serializer>(v: &Option<f64>, s: S) -> Result<S::Ok, S::Error> {
+    match v {
+        Some(x) => s.serialize_some(&((x * 1000.0).round() / 1000.0)),
+        None => s.serialize_none(),
+    }
+}
+
 #[derive(Debug, Serialize)]
 struct HomeAcData {
+    #[serde(serialize_with = "ser_round3")]
     voltage: Option<f64>,
+    #[serde(serialize_with = "ser_round3")]
     current: Option<f64>,
+    #[serde(serialize_with = "ser_round3")]
     power: Option<f64>,
+    #[serde(serialize_with = "ser_round3")]
     frequency: Option<f64>,
 }
 
@@ -240,14 +254,23 @@ impl HomeAcData {
 #[derive(Debug, Serialize)]
 struct HomeDcData {
     name: Option<String>,
+    #[serde(serialize_with = "ser_round3")]
     soc: Option<f64>,
+    #[serde(serialize_with = "ser_round3")]
     voltage: Option<f64>,
+    #[serde(serialize_with = "ser_round3")]
     highest_single_voltage: Option<f64>,
+    #[serde(serialize_with = "ser_round3")]
     lowest_single_voltage: Option<f64>,
+    #[serde(serialize_with = "ser_round3")]
     current: Option<f64>,
+    #[serde(serialize_with = "ser_round3")]
     power: Option<f64>,
+    #[serde(serialize_with = "ser_round3")]
     avg_temp: Option<f64>,
+    #[serde(serialize_with = "ser_round3")]
     highest_temp: Option<f64>,
+    #[serde(serialize_with = "ser_round3")]
     lowest_temp: Option<f64>,
 }
 
@@ -394,6 +417,8 @@ pub async fn home_ws_handler(req: &mut Request, res: &mut Response) -> Result<()
 
 async fn handle_home_ws(ws: &mut WebSocket) {
     let mut ticker = tokio::time::interval(Duration::from_secs(1));
+    // 上一次推送的 JSON；数据没变化就不推送（4G 流量有限），前端保持上次的值
+    let mut last_json = String::new();
     loop {
         tokio::select! {
             _ = ticker.tick() => {
@@ -407,8 +432,13 @@ async fn handle_home_ws(ws: &mut WebSocket) {
                     dc: dc_data,
                     warns: warn_datas,
                 };
-                if let Ok(json) = serde_json::to_string(&home_common_data) {
-                    let _ = ws.send(Message::text(json)).await;
+                if let Ok(json) = serde_json::to_string(&home_common_data)
+                    && json != last_json
+                {
+                    if ws.send(Message::text(json.clone())).await.is_err() {
+                        break;
+                    }
+                    last_json = json;
                 }
             }
             msg = ws.recv() => {
@@ -441,12 +471,61 @@ struct HistoryPoint {
     value: Option<f64>,
 }
 
+/// 聚合窗口（INTERVAL(1m)），列式序列按该步长等间隔排布
+const HISTORY_STEP_MS: i64 = 60_000;
+
+/// 紧凑曲线：第 i 个值对应时间 `start + i * step`，缺失的窗口填 null。
+/// 相比逐点 `{"ts":..,"value":..}`，省掉了重复的字段名和每点 13 位时间戳，
+/// 且数值按显示精度取整，体积约为原来的 1/7
+#[derive(Debug, Serialize)]
+struct CompactSeries {
+    /// 第一个点的时间戳(ms)；无数据时为 0
+    start: i64,
+    values: Vec<Option<f64>>,
+}
+
+impl CompactSeries {
+    /// `points` 须按 ts 升序；`decimals` 为保留的小数位数（与前端显示精度一致）
+    fn from_points(points: &[HistoryPoint], decimals: i32) -> Self {
+        let Some(first) = points.first() else {
+            return Self {
+                start: 0,
+                values: Vec::new(),
+            };
+        };
+        let start = first.ts;
+        let k = 10f64.powi(decimals);
+        let mut values: Vec<Option<f64>> = Vec::with_capacity(points.len());
+        for p in points {
+            let idx = ((p.ts - start) / HISTORY_STEP_MS).max(0) as usize;
+            if idx < values.len() {
+                continue; // 同一窗口重复，保留先到的
+            }
+            values.resize(idx, None);
+            values.push(p.value.map(|v| (v * k).round() / k));
+        }
+        Self { start, values }
+    }
+}
+
 #[derive(Debug, Serialize)]
 struct HistoryCurves {
-    //PCS总输出有功功率，1分钟聚合
-    pcs_power: Vec<HistoryPoint>,
-    //显示SOC，1分钟聚合
-    soc: Vec<HistoryPoint>,
+    /// true：全量（当天 0 点至今），前端整体替换；
+    /// false：增量，前端按 ts 合并（同 ts 覆盖，新 ts 追加）
+    full: bool,
+    /// 列式序列的步长(ms)，前端据此还原时间戳
+    step: i64,
+    //PCS总输出有功功率，1分钟聚合，保留 2 位小数
+    pcs_power: CompactSeries,
+    //显示SOC，1分钟聚合，保留 1 位小数
+    soc: CompactSeries,
+}
+
+/// 单个连接已推送的进度：基准日期 + 两条曲线各自最后一个点的时间戳(ms)
+struct HistoryCursor {
+    day: chrono::NaiveDate,
+    pcs_last: Option<i64>,
+    soc_last: Option<i64>,
 }
 
 /// 拼出按1分钟聚合的查询语句：`_wstart` 转为毫秒时间戳别名为 ts，聚合值别名为 val
@@ -457,34 +536,62 @@ fn build_agg_sql(table: &str, column: &str, start: &str, end: &str) -> String {
     )
 }
 
-async fn query_history() -> Result<HistoryCurves, TaosDbError> {
+const TS_FMT: &str = "%Y-%m-%d %H:%M:%S";
+
+/// 查询一条曲线。`since_ms` 为 None 时从当天 0 点查全量，否则从该时间戳所在分钟起查增量（含）
+async fn query_series(
+    table: &str,
+    column: &str,
+    day_start: &str,
+    day_end: &str,
+    since_ms: Option<i64>,
+) -> Result<Vec<HistoryPoint>, TaosDbError> {
+    let start = since_ms
+        .and_then(|ms| chrono::Local.timestamp_millis_opt(ms).single())
+        .map(|dt| dt.format(TS_FMT).to_string())
+        .unwrap_or_else(|| day_start.to_string());
+    let rows: Vec<AggRow> = query_rows(&build_agg_sql(table, column, &start, day_end)).await?;
+    Ok(rows
+        .into_iter()
+        .map(|r| HistoryPoint {
+            ts: r.ts,
+            value: r.val,
+        })
+        .collect())
+}
+
+/// 按游标查询：游标为空或已跨天则返回全量并重置游标，否则只返回增量。
+/// 任一查询失败时游标保持不变，下个周期会补发。
+async fn query_history(cursor: &mut Option<HistoryCursor>) -> Result<HistoryCurves, TaosDbError> {
     let today = chrono::Local::now().date_naive();
-    let start = today.and_hms_opt(0, 0, 0).unwrap();
-    let end = start + chrono::Duration::days(1);
-    let start = start.format("%Y-%m-%d %H:%M:%S").to_string();
-    let end = end.format("%Y-%m-%d %H:%M:%S").to_string();
+    let day_start = today.and_hms_opt(0, 0, 0).unwrap();
+    let day_end = (day_start + chrono::Duration::days(1))
+        .format(TS_FMT)
+        .to_string();
+    let day_start = day_start.format(TS_FMT).to_string();
 
-    let pcs_sql = build_agg_sql("pcs_data", "pcs_p_total", &start, &end);
-    let soc_sql = build_agg_sql("bcu_data", "soc", &start, &end);
+    let (full, pcs_since, soc_since) = match cursor.as_ref() {
+        Some(c) if c.day == today => (false, c.pcs_last, c.soc_last),
+        _ => (true, None, None),
+    };
 
-    let pcs_rows: Vec<AggRow> = query_rows(&pcs_sql).await?;
-    let soc_rows: Vec<AggRow> = query_rows(&soc_sql).await?;
+    let pcs_power = query_series("pcs_data", "pcs_p_total", &day_start, &day_end, pcs_since).await?;
+    let soc = query_series("bcu_data", "soc", &day_start, &day_end, soc_since).await?;
+
+    // 推进游标：取本次最后一个点的 ts；增量为空时沿用旧值
+    let pcs_last = pcs_power.last().map(|p| p.ts).or(pcs_since);
+    let soc_last = soc.last().map(|p| p.ts).or(soc_since);
+    *cursor = Some(HistoryCursor {
+        day: today,
+        pcs_last,
+        soc_last,
+    });
 
     Ok(HistoryCurves {
-        pcs_power: pcs_rows
-            .into_iter()
-            .map(|r| HistoryPoint {
-                ts: r.ts,
-                value: r.val,
-            })
-            .collect(),
-        soc: soc_rows
-            .into_iter()
-            .map(|r| HistoryPoint {
-                ts: r.ts,
-                value: r.val,
-            })
-            .collect(),
+        full,
+        step: HISTORY_STEP_MS,
+        pcs_power: CompactSeries::from_points(&pcs_power, 2),
+        soc: CompactSeries::from_points(&soc, 1),
     })
 }
 
@@ -559,11 +666,17 @@ async fn handle_history_ws(ws: &mut WebSocket) {
     // 1分钟聚合窗口，无需更高频率刷新；tokio::time::interval 首次 tick 立即触发，
     // 相当于连接建立后立即推送一次当天曲线
     let mut ticker = tokio::time::interval(Duration::from_secs(60));
+    // 首包全量，之后只推增量（4G 流量有限）；跨天时自动再发一次全量
+    let mut cursor: Option<HistoryCursor> = None;
     loop {
         tokio::select! {
             _ = ticker.tick() => {
-                match query_history().await {
+                match query_history(&mut cursor).await {
                     Ok(data) => {
+                        // 增量为空则不推送
+                        if !data.full && data.pcs_power.values.is_empty() && data.soc.values.is_empty() {
+                            continue;
+                        }
                         if let Ok(json) = serde_json::to_string(&data)
                             && ws.send(Message::text(json)).await.is_err() {
                                 break;
@@ -588,5 +701,44 @@ async fn handle_history_ws(ws: &mut WebSocket) {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod history_compact_tests {
+    use super::*;
+
+    fn pt(min: i64, v: f64) -> HistoryPoint {
+        HistoryPoint {
+            ts: 1_764_000_000_000 + min * HISTORY_STEP_MS,
+            value: Some(v),
+        }
+    }
+
+    #[test]
+    fn 空洞填null且取整() {
+        let s = CompactSeries::from_points(&[pt(0, 1.23456), pt(1, 2.0), pt(4, 3.987)], 2);
+        assert_eq!(s.start, 1_764_000_000_000);
+        assert_eq!(
+            s.values,
+            vec![Some(1.23), Some(2.0), None, None, Some(3.99)]
+        );
+    }
+
+    #[test]
+    fn 无数据() {
+        let s = CompactSeries::from_points(&[], 2);
+        assert!(s.values.is_empty());
+    }
+
+    #[test]
+    fn 体积对比() {
+        let pts: Vec<_> = (0..950).map(|i| pt(i, 123.456789012345 + i as f64)).collect();
+        let old = serde_json::to_string(&pts).unwrap().len();
+        let new = serde_json::to_string(&CompactSeries::from_points(&pts, 2))
+            .unwrap()
+            .len();
+        println!("旧 {old} 字节 -> 新 {new} 字节");
+        assert!(new * 4 < old);
     }
 }
